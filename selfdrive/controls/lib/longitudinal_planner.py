@@ -80,6 +80,7 @@ class LongitudinalPlanner:
     self.regen_shaper = RegenStopShaper()
     self.regen_a_early = 0.0
     self.regen_stop_dist = -1.0
+    self.regen_a_plan_in = 0.0
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -237,6 +238,7 @@ class LongitudinalPlanner:
     """Earlier gentle regen-only onset for known stops. Returns min(a_plan, early)."""
     fcs = sm['frogpilotCarState']
     v_ego = sm['carState'].vEgo
+    self.regen_a_plan_in = float(a_plan)
     amb = getattr(fcs, 'ap1AmbientTempC', float('nan'))
     amb = None if amb != amb else amb
     self.regen_est.update(v_ego, sm['carControl'].actuators.accel, getattr(fcs, 'ap1MotorTorqueNm', 0.0),
@@ -244,6 +246,7 @@ class LongitudinalPlanner:
     if reset_state or sm['carState'].gasPressed:
       self.regen_shaper.reset()
       self.regen_a_early = 0.0
+      self.regen_stop_dist = -1.0
       return a_plan
     stop_gap = STOP_DISTANCE + float(getattr(frogpilot_toggles, 'increase_stopped_distance', 0.0) or 0.0)
     lead = sm['radarState'].leadOne
@@ -280,5 +283,13 @@ class LongitudinalPlanner:
     longitudinalPlan.shouldStop = bool(self.output_should_stop)
     longitudinalPlan.allowBrake = True
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)
+
+    if self.ap1_regen_aware:
+      longitudinalPlan.ap1RegenEarlyAccel = float(self.regen_a_early)
+      longitudinalPlan.ap1RegenStopDist = float(self.regen_stop_dist)
+      longitudinalPlan.ap1RegenPlanAccel = float(self.regen_a_plan_in)
+      longitudinalPlan.ap1RegenPowerKw = float(self.regen_est.p_kw)
+    else:
+      longitudinalPlan.ap1RegenStopDist = -1.0
 
     pm.send('longitudinalPlan', plan_send)

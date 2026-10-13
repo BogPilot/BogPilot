@@ -1103,6 +1103,13 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   allowThrottle @38: Bool;
   allowBrake @39: Bool;
 
+  # BogPilot AP1 regen-aware stop shaper debug (tesla/regen_aware.py). Appended,
+  # backward compatible; 0 / -1 on other cars or when the shaper is off.
+  ap1RegenEarlyAccel @40 :Float32;   # shaper early target (m/s^2, <= 0); output = min(plan, early)
+  ap1RegenStopDist @41 :Float32;     # stop distance used (m), -1 = no known stop
+  ap1RegenPlanAccel @42 :Float32;    # plan accel before the shaper (m/s^2)
+  ap1RegenPowerKw @43 :Float32;      # estimated regen power limit (kW)
+
 
   solverExecutionTime @35 :Float32;
 
