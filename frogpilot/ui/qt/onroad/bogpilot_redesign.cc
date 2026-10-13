@@ -454,7 +454,7 @@ void paintIconButton(QPainter &p, const QRectF &r, const QPixmap &icon, qreal op
 QRect alertBannerRect(const QSize &widget, bool mid) {
   if (widget.width() >= 1800) {
     const int left = REC_CX + REC_HIT / 2 + ALERT_GAP;                    // 36 px right of the record button
-    const int right = widget.width() - REC_HIT;                           // right margin = record button width
+    const int right = widget.width() - ALERT_RIGHT_MARGIN;                // right margin = record button width
     const int top = GRAPH_TOP + GRAPH_HEIGHT + ALERT_GAP;                 // 36 px below the accel graph
     const int bottom = CLUSTER_CY - CLUSTER_D / 2 - PILL_LABEL_SPACE - ALERT_GAP;   // 36 px above the button row + label
     const int h = mid ? bottom - top : std::min(bottom - top, 170);

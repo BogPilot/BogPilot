@@ -45,9 +45,10 @@ constexpr int EDGE = 30;                // left/right inset from the camera-view
 constexpr int SPEED_ROW_TOP = 24;       // capsule y 24..200 (screen 54..230)
 constexpr int SPEED_ROW_HEIGHT = 176;
 constexpr int SPEED_ROW_MIN_RIGHT = 740;  // capsule reaches at least x 740 (screen 770) when a limit is shown
+constexpr int CLUSTER_LEFT_FOR_REC = 20;   // = CLUSTER_LEFT (static_assert below)
 constexpr int REC_DIAMETER = 124;       // record button disc
-constexpr int REC_HIT = 150;            // record button widget (touch target)
-constexpr int REC_CX = 75, REC_CY = 708;    // record centre (screen 105, 738): above the personality pill, hit box
+constexpr int REC_HIT = 174;            // record button widget (touch target): 25 px beyond the disc's outer ring
+constexpr int REC_CX = CLUSTER_LEFT_FOR_REC + 75, REC_CY = 696;   // v5: centred over the personality circle    // record centre (screen 105, 738): above the personality pill, hit box
                                             // left-aligned with the pill (x 0..150)
 constexpr int GRAPH_TOP = 228;          // accel graph 30..590 x 228..468 (screen 60..620 x 258..498)
 constexpr int GRAPH_WIDTH = 560;
@@ -55,11 +56,12 @@ constexpr int GRAPH_HEIGHT = 240;
 constexpr int PEDAL_W = 60, PEDAL_H = 120;  // pedal icons (0.625 of the 96x192 pixmaps), under the graph
 constexpr int PEDAL_GAP = 18;
 constexpr int STATUS_ICON = 132;        // CEM / paused icons, row beside the record button
-constexpr int STATUS_X = 168, STATUS_Y = 642, STATUS_STEP = 150;   // screen x 198 / 348 / 498, y 672..804
+constexpr int STATUS_X = 196, STATUS_Y = 642, STATUS_STEP = 150;   // screen x 198 / 348 / 498, y 672..804
 constexpr int CLUSTER_CY = 900;         // lower-left cluster centre line (screen y 930)
 constexpr int CLUSTER_D = 150;          // DM / map button diameter
 constexpr int CLUSTER_LEFT = 20;       // v5: 20 px buffer between the personality circle and the engage border
 constexpr int CLUSTER_GAP = 6;
+static_assert(CLUSTER_LEFT_FOR_REC == CLUSTER_LEFT, "record button must stay centred over the personality circle");
 constexpr int PILL_W = 150;             // v5: personality is a single CLUSTER_D circle (was a 411 px pill); DM and map
                                         // slide left, so the map disc now ends x 462 (screen 492)
 constexpr int PILL_H = 150;             // = CLUSTER_D
@@ -158,6 +160,7 @@ void paintIconButton(QPainter &p, const QRectF &r, const QPixmap &icon, qreal op
 // vertically it sits ALERT_GAP below the accel graph and ALERT_GAP above the personality / DM / map row. Mid alerts fill
 // that space; small alerts are a shorter banner centred in it. Full width minus 40 px margins when narrower.
 constexpr int ALERT_GAP = 36;
+constexpr int ALERT_RIGHT_MARGIN = 150;   // record button width rule (kept at the pre-v5 150 px)
 QRect alertBannerRect(const QSize &widget, bool mid);
 void paintAlertBanner(QPainter &p, const QRect &r, bool mid, const QString &text1, const QString &text2, const QColor &fill);
 
