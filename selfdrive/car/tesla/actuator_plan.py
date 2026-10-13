@@ -42,6 +42,7 @@ DAS_CONTROL_POWERTRAIN = 0x2BF
 # 4 (ACC_ON) in drive and 3 (ACC_HOLD) only for static cruise.
 ACC_HOLD = 3
 ACC_ON = 4
+ACC_CANCEL_GENERIC_SILENT = 13
 
 # AP1 standstill-engage experiment (toggle AP1StandstillEngage + panda
 # TESLA_FLAG_AP1_STANDSTILL). Tinkla tesla_unity_dev LONG_module.py 246-255 /
@@ -121,7 +122,12 @@ def ap1_long_acc_state(camera_acc_state, chassis_das_only):
   # AP1: stock DAS reports accState 0 below ~18 mph with no lead (stock TACC
   # minimum speed). Forwarding that 0 made the DI drop cruise ~100 ms after
   # every sub-18 mph engage (routes 53/54). Tinkla always sends 4 in drive.
-  if chassis_das_only and camera_acc_state in (0, ACC_HOLD):
+  # Stock DAS also sends 13 (ACC_CANCEL_GENERIC_SILENT) on some low-speed
+  # roads (route 57: dirt track / unmarked roads, 16:53:37, 17:03:09, 17:03:23).
+  # Forwarding it cancelled DI cruise within ~20 ms with no driver input. The
+  # stock DAS is not the cruise owner while openpilot is engaged; driver cancel
+  # (stalk, brake, gas) uses its own path. Tinkla always sends 4 in drive.
+  if chassis_das_only and camera_acc_state in (0, ACC_HOLD, ACC_CANCEL_GENERIC_SILENT):
     return ACC_ON
   return camera_acc_state
 
