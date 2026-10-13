@@ -38,6 +38,11 @@ def always_run(started, params, CP: car.CarParams, classic_model, tinygrad_model
 def only_onroad(started: bool, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
   return started
 
+def hevc_stream(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
+  # BogPilot experimental: /data/params_bogpilot/HevcStream (default on, 0 disables). Onroad only.
+  from openpilot.system.hevc_stream.config import should_run
+  return should_run(started)
+
 def only_offroad(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
   return not started
 
@@ -106,6 +111,7 @@ procs = [
   PythonProcess("updated", "system.updated.updated", always_run, enabled=not PC),
   PythonProcess("uploader", "system.loggerd.uploader", allow_uploads),
   PythonProcess("statsd", "system.statsd", allow_logging),
+  PythonProcess("hevc_streamd", "system.hevc_stream.hevc_streamd", hevc_stream, enabled=not PC),
 
   # debug procs
   NativeProcess("bridge", "cereal/messaging", ["./bridge"], notcar),
