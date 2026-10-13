@@ -52,6 +52,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (  # 
   get_T_FOLLOW,
   get_safe_obstacle_distance,
   get_stopped_equivalence_factor,
+  lead_comfort_brake,
 )
 
 
@@ -380,3 +381,30 @@ def test_following_uses_ap1_comfort_for_desired_distance():
   from pathlib import Path
   src = (Path(__file__).resolve().parents[4] / "frogpilot/controls/lib/frogpilot_following.py").read_text()
   assert "ap1_comfort_brake" in src
+
+
+# --- Braking lead: lead stopping term goes to stock (route 57 16:57:44 FCW) ----
+
+def test_lead_comfort_brake_blend():
+  cb = AP1_REGEN_COMFORT_BRAKE
+  assert lead_comfort_brake(cb, 0.0) == cb
+  assert lead_comfort_brake(cb, 0.5) == cb  # accelerating lead: regen value
+  assert lead_comfort_brake(cb, -2.0) == COMFORT_BRAKE
+  assert cb < lead_comfort_brake(cb, -0.6) < COMFORT_BRAKE
+  # Non-AP1 / toggle off: unchanged.
+  assert lead_comfort_brake(COMFORT_BRAKE, -2.0) == COMFORT_BRAKE
+
+
+@pytest.mark.parametrize("a_lead", [-0.5, -1.0, -2.0, -3.0])
+def test_braking_lead_obstacle_closer_than_before_and_stock(monkeypatch, a_lead):
+  """Braking lead: x_obstacle <= the old regen-only value and <= stock (add-only)."""
+  v_ego, v_lead, d_rel = 7.0, 3.5, 19.0
+  stock = _mpc_with_solution(monkeypatch, v_ego, d_rel, COMFORT_BRAKE, v_lead=v_lead, a_lead=a_lead)
+  regen = _mpc_with_solution(monkeypatch, v_ego, d_rel, AP1_REGEN_COMFORT_BRAKE, v_lead=v_lead, a_lead=a_lead)
+  assert np.all(regen.params[:, 2] <= stock.params[:, 2] + 0.01)
+  # Old behaviour (regen comfort on the lead term too) would put the obstacle farther.
+  lead_x = regen.lead_xv_0[:, 0]
+  lead_v = regen.lead_xv_0[:, 1]
+  delta = comfort_distance_delta(np.maximum(regen.v_solution, 0.0), AP1_REGEN_COMFORT_BRAKE)
+  old = lead_x + get_stopped_equivalence_factor(lead_v, AP1_REGEN_COMFORT_BRAKE) - delta
+  assert np.all(regen.params[:, 2] <= old + 1e-6)

@@ -118,6 +118,25 @@ def desired_follow_distance(v_ego, v_lead, t_follow=None, comfort_brake=COMFORT_
   return get_safe_obstacle_distance(v_ego, t_follow, comfort_brake) - get_stopped_equivalence_factor(v_lead, comfort_brake)
 
 
+# AP1: the lead's stopping term blends from the regen-sized comfort brake to stock
+# COMFORT_BRAKE as the lead decelerates (radar aLeadK, m/s^2 of braking).
+LEAD_BRAKING_BP = [0.3, 1.0]
+
+
+def lead_comfort_brake(comfort_brake, a_lead):
+  """Comfort brake for the lead's stopped-equivalence term.
+
+  Steady lead (|a| small): the regen value, so its v_lead^2 term cancels our own
+  regen-sized term and the steady-follow gap equals stock. Braking lead: stock
+  COMFORT_BRAKE, so a hard-braking lead is not assumed to stop gently (route 57
+  16:57:44 FCW: the plan plateaued at -0.86 m/s^2). Never below comfort_brake,
+  so x_obstacle only moves closer (add-only braking).
+  """
+  if comfort_brake >= COMFORT_BRAKE - 1e-9:
+    return comfort_brake
+  return float(np.interp(-a_lead, LEAD_BRAKING_BP, [comfort_brake, COMFORT_BRAKE]))
+
+
 def comfort_distance_delta(v_ego, comfort_brake):
   """Extra desired follow distance vs stock COMFORT_BRAKE baked into acados.
 
@@ -408,8 +427,10 @@ class LongitudinalMpc:
     # and then treat that as a stopped car/obstacle at this new distance.
     # comfort_brake only reshapes the soft desired-distance cost for lead approaches
     # (AP1 regen-sized). Hard accel limits stay at accel_min (typically ACCEL_MIN).
-    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1], comfort_brake)
-    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1], comfort_brake)
+    lead_0_cb = lead_comfort_brake(comfort_brake, radarstate.leadOne.aLeadK if radarstate.leadOne.status else 0.0)
+    lead_1_cb = lead_comfort_brake(comfort_brake, radarstate.leadTwo.aLeadK if radarstate.leadTwo.status else 0.0)
+    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1], lead_0_cb)
+    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1], lead_1_cb)
 
     # Emulate lower COMFORT_BRAKE in the compiled desired_dist cost by shrinking
     # lead x_obstacle. Cruise obstacle keeps stock COMFORT_BRAKE (matches acados).
