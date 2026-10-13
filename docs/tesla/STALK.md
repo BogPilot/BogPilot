@@ -36,9 +36,9 @@ From `opendbc/tesla_can.dbc` (`VAL_ 69 SpdCtrlLvr_Stat`) and `BUTTONS` in `selfd
 | --- | --- | --- | --- |
 | Tip up or down (first position or full tip) | 16, 32, 4, 8 | Stock cruise engages. openpilot latches the **current speed** (sticky) and holds it through posted-limit changes in both directions until a pull or a disengage. It does not jump to the posted limit. | First position: set ± 1 mph. Full tip: next multiple of 5 up / next-lower multiple of 5 down. |
 | Short pull | 2 | Stock cruise engages. openpilot sets **posted limit + offset** and tracks the limit. | Clears any tip or sticky latch and returns to **posted limit + offset** (tracking). |
-| Pull held ~2 s | 2 | Same as a short pull. The engage pull never toggles Experimental Mode. | One Experimental Mode toggle (see below). The pull itself also returns to posted limit + offset. |
+| Pull held ~1.23 s | 2 | Same as a short pull. The engage pull never toggles Experimental Mode. | One Experimental Mode toggle (see below). The pull itself also returns to posted limit + offset. |
 | Short push forward | 1 | Nothing from openpilot. | Stock cancel. openpilot disengages; tip and sticky latch are cleared. |
-| Push forward held ~2 s | 1 | One Experimental Mode toggle (see below). | Stock cancel. Does not toggle, even after it disengages. |
+| Push forward held ~1.23 s | 1 | One Experimental Mode toggle (see below). | Stock cancel. Does not toggle, even after it disengages. |
 
 ### Engage classification
 
@@ -76,8 +76,8 @@ A pull (any length) clears the tip and the sticky latch. openpilot goes back to 
 
 Both are timing helpers driven from `carstate.py` at 100 Hz (`DT_CTRL`) and act through `frogpilot_card.py` with FrogPilot's existing `handle_experimental_mode`: with Conditional Experimental Mode on, that flips the CEM override (the same as the distance-button toggle); otherwise it toggles `ExperimentalMode`. Device-side only: no new CAN frame, no panda change, no new Params key. Each fires once per hold; returning the stalk to IDLE re-arms it.
 
-- **Engaged pull hold** (`stalk_pull_hold.py`, `PULL_HOLD_S = 2.0`, `PULL_HOLD_ENABLED = True`): RWD held continuously for 2.0 s, armed only if cruise was already enabled when the pull started. The engage pull itself never toggles. Known tradeoff: the stock DI treats a held pull as resume, and about 0.7 s into the hold the car's own set speed may jump to its remembered set (drive 18: 15 → 31 mph).
-- **Disengaged forward hold** (`stalk_fwd_hold.py`, `FWD_HOLD_S = 2.0`, `FWD_HOLD_ENABLED = True`): FWD held continuously for 2.0 s, armed only if cruise was not enabled when the push started. A cancel push that starts engaged never toggles, even after it disengages, and engaging during the hold aborts it. Short forward pushes keep their normal cancel meaning.
+- **Engaged pull hold** (`stalk_pull_hold.py`, `PULL_HOLD_S = 1.23`, `PULL_HOLD_ENABLED = True`): RWD held continuously for 1.23 s, armed only if cruise was already enabled when the pull started. The engage pull itself never toggles. Known tradeoff: the stock DI treats a held pull as resume, and about 0.7 s into the hold the car's own set speed may jump to its remembered set (drive 18: 15 → 31 mph).
+- **Disengaged forward hold** (`stalk_fwd_hold.py`, `FWD_HOLD_S = 1.23`, `FWD_HOLD_ENABLED = True`): FWD held continuously for 1.23 s, armed only if cruise was not enabled when the push started. A cancel push that starts engaged never toggles, even after it disengages, and engaging during the hold aborts it. Short forward pushes keep their normal cancel meaning.
 
 ## Follow distance (`DTR_Dist_Rq`)
 

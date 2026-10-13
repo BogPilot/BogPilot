@@ -86,7 +86,7 @@ def test_non_fwd_values_ignored():
 
 def test_defaults():
   assert FWD == 1
-  assert FWD_HOLD_S == 2.0
+  assert FWD_HOLD_S == 1.23
   assert FWD_HOLD_ENABLED is True
 
 

@@ -4,7 +4,7 @@ Pure timing helper. No CAN sockets, no params, no actuation.
 
 SpdCtrlLvr_Stat == 2 is RWD (pull toward the driver) in tesla_can.dbc.
 BogPilot maps that value to ButtonType.resumeCruise. Short RWD pulses
-engage / resume; a continuous hold of ~2.0 s while already engaged is
+engage / resume; a continuous hold of ~1.23 s while already engaged is
 repurposed as one Experimental Mode toggle. Release returns to IDLE and
 re-arms.
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 # DBC VAL_ SpdCtrlLvr_Stat 2 "RWD"
 RWD = 2
 # Require this continuous assertion while engaged before toggling once.
-PULL_HOLD_S = 2.0
+PULL_HOLD_S = 1.23
 # CarState only runs the helper when this is True. See module docstring.
 PULL_HOLD_ENABLED = True
 

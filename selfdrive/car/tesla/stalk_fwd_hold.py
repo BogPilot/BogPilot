@@ -4,7 +4,7 @@ Pure timing helper. No CAN sockets, no params, no actuation.
 
 SpdCtrlLvr_Stat == 1 is FWD (push away / cancel) in tesla_can.dbc.
 BogPilot maps that value to ButtonType.cancel. Short FWD pulses cancel /
-disengage; a continuous hold of ~2.0 s while already disengaged is
+disengage; a continuous hold of ~1.23 s while already disengaged is
 repurposed as one Experimental Mode toggle. Release returns to IDLE and
 re-arms.
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 # DBC VAL_ SpdCtrlLvr_Stat 1 "FWD"
 FWD = 1
 # Require this continuous assertion while disengaged before toggling once.
-FWD_HOLD_S = 2.0
+FWD_HOLD_S = 1.23
 # CarState only runs the helper when this is True.
 FWD_HOLD_ENABLED = True
 

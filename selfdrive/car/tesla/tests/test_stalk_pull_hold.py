@@ -63,7 +63,7 @@ def test_non_rwd_values_ignored():
 
 def test_defaults():
   assert RWD == 2
-  assert PULL_HOLD_S == 2.0
+  assert PULL_HOLD_S == 1.23
   # Re-enabled; DI may bump set mid-hold (accepted).
   assert PULL_HOLD_ENABLED is True
 
