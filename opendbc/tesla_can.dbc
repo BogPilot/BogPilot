@@ -169,6 +169,9 @@ BO_ 264 DI_torque1: 8 DI
  SG_ DI_pedalPos : 48|8@1+ (0.4,0) [0|100] "%"  NEO
  SG_ DI_torque1Checksum : 56|8@1+ (1,0) [0|0] ""  NEO
 
+BO_ 520 GTW_ESP1: 8 GTW
+ SG_ GTW_ambientTemperature : 8|8@1+ (0.5,-40) [-40|87.5] "C"  NEO
+
 BO_ 280 DI_torque2: 6 DI
  SG_ DI_torqueEstimate : 0|12@1- (0.5,0) [-750|750] "Nm" NEO
  SG_ DI_gear : 12|3@1+ (1,0) [0|0] "" NEO

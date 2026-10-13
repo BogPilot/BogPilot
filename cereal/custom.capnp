@@ -134,6 +134,11 @@ struct FrogPilotCarState @0xda96579883444c35 {
   # AP1: raw SpdCtrlLvr_Stat (0 IDLE, 2 RWD, 4 UP_2ND, 8 DN_2ND, 16 UP_1ST, 32 DN_1ST).
   # Tip next-5 uses 4/8; ±1 uses 16/32. button_states OR pos1+pos2 so detent is here.
   spdCtrlLvr @17 :UInt8;
+  # AP1 regen-aware stop braking inputs (tesla/regen_aware.py).
+  # 0x208 GTW_ambientTemperature (C, NaN when absent), 0x108 DI_torqueMotor (Nm), DI_motorRPM.
+  ap1AmbientTempC @18 :Float32;
+  ap1MotorTorqueNm @19 :Float32;
+  ap1MotorRpm @20 :Float32;
 
   struct ButtonEvent {
     enum Type {

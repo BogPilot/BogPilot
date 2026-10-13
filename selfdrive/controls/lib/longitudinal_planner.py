@@ -15,6 +15,9 @@ from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX, V_CRUIS
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.fcw_gate import planner_fcw
 from openpilot.selfdrive.car.tesla.regen_brake import ap1_comfort_brake
+from openpilot.selfdrive.car.tesla.regen_aware import (RegenPowerEstimator, RegenStopShaper, lead_stop_distance,
+                                                        model_stop_distance, regen_aware_enabled)
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
 from openpilot.selfdrive.car.tesla.throttle_gate import ap1_throttle_gate_for, apply_cut
 
 from openpilot.frogpilot.common.frogpilot_variables import MINIMUM_LATERAL_ACCELERATION
@@ -71,6 +74,12 @@ class LongitudinalPlanner:
     # AP1: at engagement the braking limit is not ramped up from 0 when a lead needs it (see update()).
     self.ap1_engage_brake = self.ap1_throttle_gate is not None
     self.ap1_engage_ramp = False
+    # AP1: regen-aware early stop braking (tesla/regen_aware.py). Adds braking only.
+    self.ap1_regen_aware = regen_aware_enabled(CP.carFingerprint)
+    self.regen_est = RegenPowerEstimator()
+    self.regen_shaper = RegenStopShaper()
+    self.regen_a_early = 0.0
+    self.regen_stop_dist = -1.0
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -217,10 +226,37 @@ class LongitudinalPlanner:
         # Ends once the braking limit has reached frogpilotPlan's (non-zero) value.
         if accel_clip[0] < 0.0 and self.prev_accel_clip[0] <= accel_clip[0] + 0.05:
           self.ap1_engage_ramp = False
+    if self.ap1_regen_aware:
+      output_a_target = self.ap1_regen_shape(sm, output_a_target, mode, reset_state, frogpilot_toggles)
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
+
+  def ap1_regen_shape(self, sm, a_plan, mode, reset_state, frogpilot_toggles):
+    """Earlier gentle regen-only onset for known stops. Returns min(a_plan, early)."""
+    fcs = sm['frogpilotCarState']
+    v_ego = sm['carState'].vEgo
+    amb = getattr(fcs, 'ap1AmbientTempC', float('nan'))
+    amb = None if amb != amb else amb
+    self.regen_est.update(v_ego, sm['carControl'].actuators.accel, getattr(fcs, 'ap1MotorTorqueNm', 0.0),
+                          getattr(fcs, 'ap1MotorRpm', 0.0), amb, self.dt)
+    if reset_state or sm['carState'].gasPressed:
+      self.regen_shaper.reset()
+      self.regen_a_early = 0.0
+      return a_plan
+    stop_gap = STOP_DISTANCE + float(getattr(frogpilot_toggles, 'increase_stopped_distance', 0.0) or 0.0)
+    lead = sm['radarState'].leadOne
+    d_stop = lead_stop_distance(lead.status, lead.dRel, lead.vLead, stop_gap)
+    if mode == 'blended':
+      # Model stops (red lights / stop signs) only where the e2e plan acts on them.
+      m = sm['modelV2']
+      d_model = model_stop_distance(list(m.position.x), list(m.velocity.x))
+      if d_model is not None:
+        d_stop = d_model if d_stop is None else min(d_stop, d_model)
+    self.regen_stop_dist = -1.0 if d_stop is None else d_stop
+    a_out, self.regen_a_early = self.regen_shaper.update(v_ego, a_plan, d_stop, self.regen_est.p_kw, self.dt)
+    return a_out
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')

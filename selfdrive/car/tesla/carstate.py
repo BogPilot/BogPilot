@@ -223,6 +223,13 @@ class CarState(CarStateBase):
         fused, ui_map, gps.get("UI_mppSpeedLimit"), gps.get("UI_mapSpeedLimitUnits"),
       )
 
+    if ap1:
+      # Regen-aware stop braking inputs (regen_aware.py).
+      fp_ret.ap1MotorTorqueNm = float(cp.vl["DI_torque1"]["DI_torqueMotor"])
+      fp_ret.ap1MotorRpm = float(cp.vl["DI_torque1"]["DI_motorRPM"])
+      amb = cp.vl.get("GTW_ESP1", {})
+      fp_ret.ap1AmbientTempC = float(amb["GTW_ambientTemperature"]) if getattr(cp, "ts_nanos", {}).get("GTW_ESP1", {}).get("GTW_ambientTemperature", 0) else float("nan")
+
     return ret, fp_ret
 
   @staticmethod
@@ -266,6 +273,8 @@ class CarState(CarStateBase):
       messages.append(("UI_gpsVehicleSpeed", 0))
       # EPB EAC allow (0x214) for the EPB revoke fault. Frequency 0, same reason.
       messages.append(("EPB_epasControl", 0))
+      # 0x208 outside air temperature for regen_aware.py. Frequency 0 (no canValid effect).
+      messages.append(("GTW_ESP1", 0))
 
     return CANParser(DBC[CP.carFingerprint]['chassis'], messages, CANBUS.chassis)
 
