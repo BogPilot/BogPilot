@@ -251,46 +251,48 @@ SpeedRowGeometry paintSpeedRow(QPainter &p, const SpeedRowInputs &in) {
 
 void paintPersonalityPill(QPainter &p, const QRectF &pill, int personality, bool traffic_mode, const QString &label) {
   static const QColor TRAFFIC_RED(232, 70, 80);
-  static const int BARS[3] = {1, 2, 3};   // aggressive, standard, relaxed: more bars = longer gap
 
   p.save();
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
 
-  const qreal r = pill.height() / 2;
-  paintPanel(p, pill, r);
+  const qreal d = std::min(pill.width(), pill.height());
+  const QRectF disc(pill.center().x() - d / 2, pill.center().y() - d / 2, d, d);
+  paintPanel(p, disc, d / 2, PANEL_DARK, traffic_mode ? TRAFFIC_RED : QColor(255, 255, 255, 60), 3);
 
-  p.setFont(font(24, QFont::DemiBold));
+  p.setFont(font(20, QFont::DemiBold));
   p.setPen(traffic_mode ? TRAFFIC_RED : QColor(255, 255, 255, 200));
-  p.drawText(QRectF(pill.left(), pill.top() - PILL_LABEL_SPACE, pill.width(), PILL_LABEL_SPACE - 4), Qt::AlignCenter, label.toUpper());
+  p.drawText(QRectF(disc.left(), disc.top() - PILL_LABEL_SPACE, disc.width(), PILL_LABEL_SPACE - 4), Qt::AlignCenter, label.toUpper());
 
-  const int active = traffic_mode ? 0 : std::clamp(personality, 0, 2);
-  // inner parts keep the original 252x92 pill's proportions, scaled by PILL_H / 92 (~1.63)
-  const qreal seg = (pill.width() - 26) / 3;
-  for (int i = 0; i < 3; ++i) {
-    const qreal sx0 = pill.left() + 13 + i * seg, sx1 = sx0 + seg;
-    const bool on = i == active;
-    if (on) {
-      p.setPen(Qt::NoPen);
-      p.setBrush(traffic_mode ? QColor(TRAFFIC_RED.red(), TRAFFIC_RED.green(), TRAFFIC_RED.blue(), 235) : QColor(240, 240, 240, 235));
-      const QRectF hl(QPointF(sx0 + 3, pill.top() + 13), QPointF(sx1 - 3, pill.bottom() - 13));
-      p.drawRoundedRect(hl, hl.height() / 2, hl.height() / 2);
-    }
-    p.setPen(Qt::NoPen);
-    p.setBrush(on ? QColor(20, 20, 20) : QColor(255, 255, 255, 150));
-    const int nb = BARS[i];
-    const qreal mx = (sx0 + sx1) / 2;
-    for (int k = 0; k < nb; ++k) {
-      const qreal yb = pill.center().y() - (nb - 1) * 13 + k * 26;
-      p.drawRoundedRect(QRectF(mx - 29, yb - 6.5, 58, 13), 6.5, 6.5);
-    }
+  // one / two / three bars (more bars = longer following gap), same bar size as the old pill segments
+  const int nb = traffic_mode ? 1 : std::clamp(personality, 0, 2) + 1;
+  p.setPen(Qt::NoPen);
+  p.setBrush(traffic_mode ? TRAFFIC_RED : QColor(245, 245, 245, 240));
+  const qreal mx = disc.center().x();
+  for (int k = 0; k < nb; ++k) {
+    const qreal yb = disc.center().y() - (nb - 1) * 15 + k * 30;
+    p.drawRoundedRect(QRectF(mx - 34, yb - 7.5, 68, 15), 7.5, 7.5);
   }
   p.restore();
 }
 
-int personalityAt(const QRectF &pill, const QPointF &pos) {
+int personalityAt(const QRectF &pill, const QPointF &pos, int current) {
   if (!pill.adjusted(-6, -PILL_LABEL_SPACE, 6, 10).contains(pos)) return -1;
-  const qreal seg = (pill.width() - 26) / 3;
-  return std::clamp(int((pos.x() - pill.left() - 13) / seg), 0, 2);
+  return (std::clamp(current, 0, 2) + 1) % 3;
+}
+
+QColor leadDistanceColor(float d_rel, bool adjacent) {
+  // stops: far, mid, close (distance in metres)
+  constexpr float FAR = 60.0f, MID = 30.0f, NEAR = 12.0f;
+  const QColor far = adjacent ? QColor(150, 150, 155, 200) : QColor(255, 255, 255, 245);
+  const QColor mid = adjacent ? QColor(190, 130, 80, 210) : QColor(255, 140, 0, 250);
+  const QColor near = adjacent ? QColor(185, 80, 80, 215) : QColor(240, 40, 40, 255);
+  auto mix = [](const QColor &a, const QColor &b, float k) {
+    k = std::clamp(k, 0.0f, 1.0f);
+    return QColor(qRound(a.red() + (b.red() - a.red()) * k), qRound(a.green() + (b.green() - a.green()) * k),
+                  qRound(a.blue() + (b.blue() - a.blue()) * k), qRound(a.alpha() + (b.alpha() - a.alpha()) * k));
+  };
+  if (d_rel >= MID) return mix(mid, far, (d_rel - MID) / (FAR - MID));
+  return mix(near, mid, (d_rel - NEAR) / (MID - NEAR));
 }
 
 // ---------------- lead lock-on box ----------------
@@ -448,36 +450,51 @@ void paintIconButton(QPainter &p, const QRectF &r, const QPixmap &icon, qreal op
 // ---------------- alert banner ----------------
 
 QRect alertBannerRect(const QSize &widget, bool mid) {
-  const int h = mid ? 156 : 110;
-  const int bottom = widget.height() - 186;   // screen y 864: clears the raised steering arc (arc B)
   if (widget.width() >= 1800) {
-    return QRect(QPoint(690, bottom - h), QPoint(1630, bottom));   // left edge clears the map button's top (round 3b)
+    const int left = REC_CX + REC_HIT / 2 + ALERT_GAP;                    // 36 px right of the record button
+    const int right = widget.width() - REC_HIT;                           // right margin = record button width
+    const int top = GRAPH_TOP + GRAPH_HEIGHT + ALERT_GAP;                 // 36 px below the accel graph
+    const int bottom = CLUSTER_CY - CLUSTER_D / 2 - PILL_LABEL_SPACE - ALERT_GAP;   // 36 px above the button row + label
+    const int h = mid ? bottom - top : std::min(bottom - top, 170);
+    const int y = top + (bottom - top - h) / 2;
+    return QRect(left, y, right - left, h);
   }
-  return QRect(40, bottom - h, widget.width() - 80, h);
+  const int h = mid ? 300 : 170;
+  return QRect(40, widget.height() - 230 - h, widget.width() - 80, h);
 }
 
 void paintAlertBanner(QPainter &p, const QRect &r, bool mid, const QString &text1, const QString &text2, const QColor &fill) {
   p.save();
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+  // FrogPilot alert style: status colour plus the 5 % -> 35 % dark vertical gradient, 30 px corners
   paintPanel(p, r, 30, fill, STROKE, 2);
+  QLinearGradient g(0, r.top(), 0, r.bottom());
+  g.setColorAt(0, QColor::fromRgbF(0, 0, 0, 0.05));
+  g.setColorAt(1, QColor::fromRgbF(0, 0, 0, 0.35));
+  p.setPen(Qt::NoPen);
+  p.setBrush(g);
+  p.drawRoundedRect(r, 30, 30);
 
   auto fitted = [&](const QString &text, int px, QFont::Weight w) {
     QFont f = font(px, w);
-    const qreal max_w = r.width() - 60;
+    const qreal max_w = r.width() - 120;   // generous 60 px side margins
     const qreal tw = QFontMetricsF(f).horizontalAdvance(text);
-    if (tw > max_w) f.setPixelSize(std::max(24, int(px * max_w / tw)));
+    if (tw > max_w) f.setPixelSize(std::max(28, int(px * max_w / tw)));
     return f;
   };
 
+  // roughly FrogPilot's mid-alert sizing (Inter Bold 88 / Regular 66), a touch larger for the wider banner
   p.setPen(TEXT);
   if (mid) {
-    p.setFont(fitted(text1, 54, QFont::Bold));
-    p.drawText(QRect(r.left(), r.top() + 18, r.width(), 80), Qt::AlignCenter, text1);
-    p.setFont(fitted(text2, 30, QFont::Medium));
-    p.setPen(QColor(255, 255, 255, 200));
-    p.drawText(QRect(r.left(), r.top() + 92, r.width(), 42), Qt::AlignCenter, text2);
+    const QFont f1 = fitted(text1, 96, QFont::Bold), f2 = fitted(text2, 70, QFont::Normal);
+    const qreal h1 = QFontMetricsF(f1).capHeight(), h2 = QFontMetricsF(f2).capHeight(), gap = 56;
+    const qreal y0 = r.center().y() - (h1 + gap + h2) / 2;
+    p.setFont(f1);
+    drawCentredBaseline(p, r.center().x(), y0 + h1, text1);
+    p.setFont(f2);
+    drawCentredBaseline(p, r.center().x(), y0 + h1 + gap + h2, text2);
   } else {
-    p.setFont(fitted(text1, 54, QFont::Bold));
+    p.setFont(fitted(text1, 80, QFont::DemiBold));
     p.drawText(r, Qt::AlignCenter, text1);
   }
   p.restore();

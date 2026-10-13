@@ -215,6 +215,7 @@ void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState
     // Driver steering (shown while lateral is off or the driver overrides): actual lateral accel, steering angle at low speed
     arc.human = SteeringArc::humanUtilization(cs.getCurvature(), car_state.getSteeringAngleDeg(), car_state.getVEgo(), roll, max_lat,
                                               &arc.human_lat_weight);
+    arc.steering_angle_deg = car_state.getSteeringAngleDeg();
     arc.lat_active = car_control.getLatActive();
     arc.override_ = s.status == STATUS_OVERRIDE;
     arc.active = s.status != STATUS_DISENGAGED;
@@ -703,7 +704,8 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
     // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: lead speed pill above
     // the box and a distance tag below (option A2); adjacent leads get the box only.
     const QRectF box = bogpilot::leadLockBox(vd, d_rel, width(), height());
-    QColor color = adjacent ? QColor(marker_color.red(), marker_color.green(), marker_color.blue(), 230) : whiteColor(245);
+    // v5: colour by distance (primary white -> orange -> red, adjacent muted grey -> orange -> red)
+    const QColor color = bogpilot::leadDistanceColor(lead_data.getDRel(), adjacent);
     bogpilot::paintLeadLock(painter, box, QString(), color);
     if (!adjacent) {
       frogpilot_nvg->leadTextRect = QRect();
