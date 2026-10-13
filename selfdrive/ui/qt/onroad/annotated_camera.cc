@@ -704,8 +704,8 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
     // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: lead speed pill above
     // the box and a distance tag below (option A2); adjacent leads get the box only.
     const QRectF box = bogpilot::leadLockBox(vd, d_rel, width(), height());
-    // v5: colour by distance (primary white -> orange -> red, adjacent muted grey -> orange -> red)
-    const QColor color = bogpilot::leadDistanceColor(lead_data.getDRel(), adjacent);
+    // v5: colour by time gap at the car's speed (primary white -> orange -> red, adjacent muted grey -> orange -> red)
+    const QColor color = bogpilot::leadDistanceColor(lead_data.getDRel(), adjacent, (*uiState()->sm)["carState"].getCarState().getVEgo());
     bogpilot::paintLeadLock(painter, box, QString(), color);
     if (!adjacent) {
       frogpilot_nvg->leadTextRect = QRect();

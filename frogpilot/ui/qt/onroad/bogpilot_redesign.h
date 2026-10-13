@@ -58,7 +58,7 @@ constexpr int STATUS_ICON = 132;        // CEM / paused icons, row beside the re
 constexpr int STATUS_X = 168, STATUS_Y = 642, STATUS_STEP = 150;   // screen x 198 / 348 / 498, y 672..804
 constexpr int CLUSTER_CY = 900;         // lower-left cluster centre line (screen y 930)
 constexpr int CLUSTER_D = 150;          // DM / map button diameter
-constexpr int CLUSTER_LEFT = 0;        // pill left edge, flush with the border (the confidence ball may overlap it)
+constexpr int CLUSTER_LEFT = 20;       // v5: 20 px buffer between the personality circle and the engage border
 constexpr int CLUSTER_GAP = 6;
 constexpr int PILL_W = 150;             // v5: personality is a single CLUSTER_D circle (was a 411 px pill); DM and map
                                         // slide left, so the map disc now ends x 462 (screen 492)
@@ -118,9 +118,12 @@ void paintPersonalityPill(QPainter &p, const QRectF &pill, int personality, bool
 int personalityAt(const QRectF &pill, const QPointF &pos, int current);
 
 // ---- lead box colour by distance (v5) ----
-// Primary lead: white (>= 60 m) -> orange (30 m) -> red (<= 12 m). Adjacent / non-primary: muted grey -> muted
-// orange -> muted red over the same distances.
-QColor leadDistanceColor(float d_rel, bool adjacent);
+// Time-gap thresholds scaled by the car's speed (v_ego, m/s), each with a distance floor so crawling / stop-and-go
+// does not read red: white at >= max(2.0 s * v, 10 m), orange at max(1.0 s * v, 5 m), red at <= max(0.5 s * v, 2 m),
+// blended between. Adjacent / non-primary leads use the same thresholds with muted grey / orange / red.
+// Below WHITE_BELOW_V (8 mph) the box is always white (muted grey for non-primary).
+constexpr float WHITE_BELOW_V = 3.58f;   // m/s, 8 mph
+QColor leadDistanceColor(float d_rel, bool adjacent, float v_ego);
 
 // ---- lead lock-on box v3 ----
 // box = inner edge of the square. Thin side segments are centred on the 8 px bracket centreline, so the thick corner

@@ -280,9 +280,11 @@ int personalityAt(const QRectF &pill, const QPointF &pos, int current) {
   return (std::clamp(current, 0, 2) + 1) % 3;
 }
 
-QColor leadDistanceColor(float d_rel, bool adjacent) {
-  // stops: far, mid, close (distance in metres)
-  constexpr float FAR = 60.0f, MID = 30.0f, NEAR = 12.0f;
+QColor leadDistanceColor(float d_rel, bool adjacent, float v_ego) {
+  const float v = std::max(0.0f, v_ego);
+  const QColor far0 = adjacent ? QColor(150, 150, 155, 200) : QColor(255, 255, 255, 245);
+  if (v < WHITE_BELOW_V) return far0;   // crawling / stop-and-go: always white (muted grey)
+  const float FAR = std::max(2.0f * v, 10.0f), MID = std::max(1.0f * v, 5.0f), NEAR = std::max(0.5f * v, 2.0f);
   const QColor far = adjacent ? QColor(150, 150, 155, 200) : QColor(255, 255, 255, 245);
   const QColor mid = adjacent ? QColor(190, 130, 80, 210) : QColor(255, 140, 0, 250);
   const QColor near = adjacent ? QColor(185, 80, 80, 215) : QColor(240, 40, 40, 255);
