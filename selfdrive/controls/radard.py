@@ -7,6 +7,7 @@ from typing import Any
 
 import capnp
 from cereal import messaging, log, car, custom
+from openpilot.selfdrive.car.tesla.lead_filter import Ap1LeadGlitchFilter
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.numpy_fast import interp
 from openpilot.common.params import Params
@@ -250,6 +251,14 @@ def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capn
   return lead_dict
 
 
+def _model_lead_x(lead_msg) -> float:
+  return float(lead_msg.x[0] - RADAR_TO_CAMERA) if len(lead_msg.x) else 0.0
+
+
+def _model_lead_v(lead_msg) -> float:
+  return float(lead_msg.v[0]) if len(lead_msg.v) else 0.0
+
+
 def get_adjacent_lead(tracks: dict[int, Track], model_data: capnp._DynamicStructReader, left: bool = True) -> dict[str, Any]:
   lead_dict = {'status': False}
 
@@ -262,8 +271,10 @@ def get_adjacent_lead(tracks: dict[int, Track], model_data: capnp._DynamicStruct
 
 
 class RadarD:
-  def __init__(self, radar_ts: float, delay: int = 0):
+  def __init__(self, radar_ts: float, delay: int = 0, ap1_lead_filter: bool = False):
     self.current_time = 0.0
+    # AP1 one-frame radar lead glitch filter (tesla/lead_filter.py). None elsewhere.
+    self.ap1_lead_filters = [Ap1LeadGlitchFilter(radar_ts), Ap1LeadGlitchFilter(radar_ts)] if ap1_lead_filter else None
 
     self.tracks: dict[int, Track] = {}
     self.kalman_params = KalmanParams(radar_ts)
@@ -333,8 +344,14 @@ class RadarD:
       model_v_ego = self.v_ego
     leads_v3 = sm['modelV2'].leadsV3
     if len(leads_v3) > 1:
-      self.radar_state.leadOne = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, sm['modelV2'], sm['frogpilotPlan'], self.frogpilot_toggles, low_speed_override=True)
-      self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, sm['modelV2'], sm['frogpilotPlan'], self.frogpilot_toggles, low_speed_override=False)
+      lead_one = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, sm['modelV2'], sm['frogpilotPlan'], self.frogpilot_toggles, low_speed_override=True)
+      lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, sm['modelV2'], sm['frogpilotPlan'], self.frogpilot_toggles, low_speed_override=False)
+      if self.ap1_lead_filters is not None:
+        th = self.frogpilot_toggles.lead_detection_probability
+        lead_one = self.ap1_lead_filters[0].update(lead_one, leads_v3[0].prob, _model_lead_x(leads_v3[0]), _model_lead_v(leads_v3[0]), th)
+        lead_two = self.ap1_lead_filters[1].update(lead_two, leads_v3[1].prob, _model_lead_x(leads_v3[1]), _model_lead_v(leads_v3[1]), th)
+      self.radar_state.leadOne = lead_one
+      self.radar_state.leadTwo = lead_two
 
     if (self.frogpilot_toggles.adjacent_lead_tracking or self.frogpilot_toggles.human_lane_changes) and self.ready:
       self.frogpilot_radar_state.leadLeft = get_adjacent_lead(self.tracks, sm['modelV2'], left=True)
@@ -393,7 +410,7 @@ def main():
   RI = RadarInterface(CP)
 
   rk = Ratekeeper(1.0 / CP.radarTimeStep, print_delay_threshold=None)
-  RD = RadarD(CP.radarTimeStep, RI.delay)
+  RD = RadarD(CP.radarTimeStep, RI.delay, ap1_lead_filter=CP.carFingerprint == "TESLA_AP1_MODELS")
 
   while 1:
     can_strings = messaging.drain_sock_raw(can_sock, wait_for_one=True)
