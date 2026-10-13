@@ -7,6 +7,7 @@ from openpilot.selfdrive.car.tesla.actuator_plan import (
   AP1_ENGAGE_SOFT_START_FRAMES,
   DAS_CONTROL_POWERTRAIN,
   ap1_gas_neutral,
+  ap1_hold_measured_angle,
   ap1_should_send_hold_clear,
   build_actuator_plan,
   longitudinal_command_allowed,
@@ -14,7 +15,8 @@ from openpilot.selfdrive.car.tesla.actuator_plan import (
 from openpilot.selfdrive.car.tesla.cluster import (
   CLUSTER_BUS, ClusterController, HudInputs, path_from_model_v2,
 )
-from openpilot.selfdrive.car.tesla.hso import Ap1DriverYield, ap1_lat_active, ap1_steering_pressed
+from openpilot.selfdrive.car.tesla.engage_ramp import Ap1EngageSteerRamp
+from openpilot.selfdrive.car.tesla.hso import AP1_HANDS_ON_LEVEL, Ap1DriverYield, ap1_lat_active, ap1_steering_pressed
 from openpilot.selfdrive.car.tesla.long_smooth import Ap1AccelSmoother, Ap1JerkLimit, ap1_brake_urgent, ap1_fcw
 from openpilot.selfdrive.car.tesla.steer_counter import Ap1SteerCounterSync
 from openpilot.selfdrive.car.tesla.teslacan import TeslaCAN
@@ -46,6 +48,8 @@ class CarController(CarControllerBase):
     # AP1 hands pause + resume hold (hso.Ap1DriverYield). Read by the
     # interface for the steerOverride event so the border stays grey.
     self.ap1_yield = Ap1DriverYield()
+    # AP1 engage / lat-resume blend from the measured wheel (engage_ramp.py).
+    self.ap1_steer_ramp = Ap1EngageSteerRamp() if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
     # AP1 0x488 phase and counter follow the stock DAS (steer_counter.py).
     self.ap1_steer_sync = Ap1SteerCounterSync() if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
     # AP1 accel slew (long_smooth.py): drive release at 5 m/s^3, regen ramps in
@@ -91,6 +95,16 @@ class CarController(CarControllerBase):
       lat_active = ap1_lat_active(CC.latActive, CS.hands_on_level) and not driver_yield
     else:
       lat_active = CC.latActive
+    requested_angle = actuators.steeringAngleDeg
+    if self.ap1_steer_ramp is not None:
+      # Planner path this step: same gate as build_actuator_plan's lkas branch
+      # (hands pause / yield, EAC fault and soft-start hold take other branches).
+      hands_pause = CS.hands_on_level >= AP1_HANDS_ON_LEVEL or driver_yield
+      held = ap1_hold_measured_angle(True, bool(CC.enabled), bool(CS.eac_fault), hands_pause,
+                                     CS.eac_status, CS.steer_warning, soft_start)
+      path_active = (bool(CC.enabled) and lat_active and not hands_on_fault and not hands_pause and
+                     not bool(CS.eac_fault) and not held)
+      requested_angle = self.ap1_steer_ramp.update(path_active, CS.out.steeringAngleDeg, actuators.steeringAngleDeg)
     accel = actuators.accel
     jerk_limits = {}
     if self.ap1_accel_smoother is not None:
@@ -119,7 +133,7 @@ class CarController(CarControllerBase):
       CC.enabled,
       CC.longActive,
       CS.out.steeringAngleDeg,
-      actuators.steeringAngleDeg,
+      requested_angle,
       self.apply_angle_last,
       CS.out.vEgo,
       accel,
