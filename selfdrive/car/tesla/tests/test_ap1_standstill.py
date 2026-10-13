@@ -2,7 +2,8 @@
 
 Tinkla tesla_unity_dev LONG_module.py 246-255 sends accState 4, setSpeed 0 and
 standby limits while disengaged in drive. BogPilot sends accelMax 0 (not
-Tinkla's +1.8) behind the AP1StandstillEngage file toggle and panda
+Tinkla's +1.8) behind the AP1StandstillEngage file toggle (default ON on the
+bogpilot-tesla-standstill test branch; write 0 to turn off) and panda
 TESLA_FLAG_AP1_STANDSTILL. Frames are packed from the DBC and run through
 libpanda. Not a driving validation: only a car test shows whether the DI
 accepts a 0 mph engage with these values.
@@ -58,14 +59,26 @@ def lp():
                          tx=lambda f: bool(l.safety_tx_hook(libpanda_py.make_CANPacket(f[0], f[3], bytes(f[2])))))
 
 
-def test_toggle_default_off_and_ap1_only(tmp_path, monkeypatch):
+def test_toggle_default_on_test_branch_and_ap1_only(tmp_path, monkeypatch):
+  # bogpilot-tesla-standstill test branch: file missing means ON.
   monkeypatch.setattr(toggles, "_ap1_standstill_path", tmp_path / "AP1StandstillEngage")
-  assert toggles.ap1_standstill_engage(CAR.TESLA_AP1_MODELS) is False
+  assert toggles.ap1_standstill_engage(CAR.TESLA_AP1_MODELS) is True
+  for v in ("0", "false", "off", " off\n"):
+    (tmp_path / "AP1StandstillEngage").write_text(v)
+    assert toggles.ap1_standstill_engage(CAR.TESLA_AP1_MODELS) is False, v
   (tmp_path / "AP1StandstillEngage").write_text("1")
   assert toggles.ap1_standstill_engage(CAR.TESLA_AP1_MODELS) is True
   assert toggles.ap1_standstill_engage(CAR.TESLA_MODELS_RAVEN) is False
-  for v in ("0", "", "yes", "2"):
+  for v in ("0", "false", "off"):
     assert toggles.ap1_standstill_engage(CAR.TESLA_AP1_MODELS, v) is False
+  for v in ("1", "on", ""):
+    assert toggles.ap1_standstill_engage(CAR.TESLA_AP1_MODELS, v) is True
+
+
+def test_interface_sets_panda_bit_when_on():
+  src = (__import__("pathlib").Path(toggles.__file__).parent / "interface.py").read_text()
+  assert "ap1_standstill_engage(candidate)" in src
+  assert "flags_for_candidate(candidate, fingerprint, standstill=standstill)" in src
 
 
 def test_safety_flag_bit():
