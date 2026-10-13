@@ -165,3 +165,15 @@ Upstream FrogPilot toggles Experimental Mode from the distance button or LKAS bu
 
 comma devices lose RTC across power-off and boot into a fixed AGNOS/systemd epoch (~Nov 2023) until GPS or NTP sets the clock, so rlog wall-clock stamps and route directory names collide across boots. BogPilot writes the current UTC unix time to `/data/params_bogpilot/LastKnownTime` about every 5 minutes from `system.timed` once `system_time_valid()` is true (tiny file; same durable dir as other BogPilot file-backed prefs; not a Params key). At `manager_init`, before `save_bootlog` / loggerd, `maybe_restore_last_known_time` sets the clock from that file when the clock is still on the bogus epoch or far behind the saved stamp. GPS/NTP via `timed.set_time` still correct afterward (`set_time` uses `abs(diff)` so a restored-but-slightly-stale clock can be advanced). First boot after install stays wrong until one valid-time period saves a stamp. Code: `common/bogpilot_clock.py`. No panda change; not car-specific.
 
+
+## AP1 standstill-engage experiment (branch `bogpilot-tesla-standstill`, default OFF)
+
+Tinkla `tesla_unity_dev` `selfdrive/car/tesla/LONG_module.py` 246-255 / 355-367 sends `DAS_control` while openpilot is disengaged and the car is in Drive (stock AP not active): `accState` 4, `setSpeed` 0, accel [-1.4, +1.8], jerk [-0.46, +0.476], comment "so we can enable at 0 km/h". Tinkla's panda has no shape check for this.
+
+BogPilot port (experiment, not yet car-tested):
+- Toggle: file-backed `/data/params_bogpilot/AP1StandstillEngage` (`1` = on; absent = off), read once at car init (`toggles.ap1_standstill_engage`), only with openpilot long on. It sets panda safety bit `TESLA_FLAG_AP1_STANDSTILL` (16; `Panda.FLAG_TESLA_AP1_STANDSTILL`), and CarController sends standby frames only when that bit is in the installed safety param.
+- Frame: `accState` 4 (ACC_ON), `setSpeed` 0, **accelMax 0** (not Tinkla's +1.8), accelMin -1.4, jerk -0.46 / +0.476, on the stock `DAS_controlCounter`s (same counter path as engaged 0x2b9). Sent only while disengaged, `gearShifter == drive`, and stock `autopilotStatus` (0x399 bus 2) not 3-5 (`actuator_plan.ap1_standby_allowed`).
+- Panda (`safety_tesla.h` `tesla_ap1_standby_frame`): with `TESLA_FLAG_AP1 | LONG_CONTROL | AP1_STANDSTILL` and longitudinal not allowed, the only 0x2b9 shape accepted besides the inactive 0/0 frame is setSpeed 0, accState 0 or 4, aebEvent 0, accelMax <= 0 m/s^2, accelMin in [min_accel, 0], min <= max. Stock-AEB rejection and the engaged checks are unchanged. Without the bit nothing changes.
+- Side effect: while standby frames are sent, the panda's recent-TX drop replaces the stock bus-2 0x2b9 on bus 0 (as Tinkla did). Stock AEB still forwards (the drop is skipped while stock AEB is active, and the panda rejects OP 0x2b9 then).
+- Open: whether the DI needs accelMax > 0 to accept a 0 mph engage. Only a car test can tell; raising it needs a panda change.
+- Tests: `panda/tests/safety/test_tesla_ap1_standstill.py`, `selfdrive/car/tesla/tests/test_ap1_standstill.py`. Replay: `/workspace/out/standstill_replay/`.

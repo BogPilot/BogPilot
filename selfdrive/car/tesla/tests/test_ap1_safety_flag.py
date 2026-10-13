@@ -80,7 +80,7 @@ def test_dashcam_only_false_for_ap1_true_for_ap2_and_raven():
   assert dashcam_only_for_candidate(CAR.TESLA_AP2_MODELS) is True
   assert dashcam_only_for_candidate(CAR.TESLA_MODELS_RAVEN) is True
   assert "dashcam_only_for_candidate(candidate)" in INTERFACE
-  assert "flags_for_candidate(candidate, fingerprint)" in INTERFACE
+  assert "flags_for_candidate(candidate, fingerprint, standstill=standstill)" in INTERFACE
   assert "ret.openpilotLongitudinalControl = False" in INTERFACE
   assert "ret.openpilotLongitudinalControl = not frogpilot_toggles.disable_openpilot_long" in INTERFACE
   # AP1 uses the same toggle. There is no literal assignment to True.

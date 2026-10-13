@@ -62,7 +62,7 @@ def test_tx_hook_picks_ap1_table_only_when_flag_is_set():
 
 def test_interface_delegates_dashcam_and_ap1_flag():
   assert "dashcam_only_for_candidate(candidate)" in INTERFACE
-  assert "flags_for_candidate(candidate, fingerprint)" in INTERFACE
+  assert "flags_for_candidate(candidate, fingerprint, standstill=standstill)" in INTERFACE
   # The bit is applied in safety_flags.py, not inlined here.
   assert "FLAG_TESLA_AP1" not in INTERFACE
   assert "TESLA_FLAG_AP1" not in INTERFACE

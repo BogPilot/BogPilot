@@ -3,6 +3,7 @@ from opendbc.can.packer import CANPacker
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.interfaces import CarControllerBase
 from openpilot.selfdrive.car.tesla.actuator_plan import (
+  ap1_standby_allowed,
   AP1_ENGAGE_SOFT_START_FRAMES,
   DAS_CONTROL_POWERTRAIN,
   ap1_gas_neutral,
@@ -19,6 +20,7 @@ from openpilot.selfdrive.car.tesla.steer_counter import Ap1SteerCounterSync
 from openpilot.selfdrive.car.tesla.teslacan import TeslaCAN
 from openpilot.selfdrive.car.tesla.slc_raise import cruise_set_mph
 from openpilot.selfdrive.car.tesla.toggles import enable_ic_integration
+from panda import Panda
 from openpilot.selfdrive.car.tesla.values import DBC, CANBUS, CAR
 
 VisualAlert = car.CarControl.HUDControl.VisualAlert
@@ -53,6 +55,11 @@ class CarController(CarControllerBase):
     # AP1 DAS_jerkMin/Max: +/-1.5 in the comfort band, full +/-8 once the request
     # sent is at or below -0.5 m/s^2, on urgent frames and below 1 m/s (long_smooth.Ap1JerkLimit).
     self.ap1_jerk_limit = Ap1JerkLimit() if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
+    # AP1 standstill experiment: on only when the installed safety param has
+    # TESLA_FLAG_AP1_STANDSTILL (interface sets it from AP1StandstillEngage).
+    configs = list(getattr(CP, "safetyConfigs", []) or [])
+    self.ap1_standstill = (CP.carFingerprint == CAR.TESLA_AP1_MODELS and len(configs) > 0 and
+                           bool(int(getattr(configs[0], "safetyParam", 0)) & Panda.FLAG_TESLA_AP1_STANDSTILL))
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
     actuators = CC.actuators
@@ -131,6 +138,9 @@ class CarController(CarControllerBase):
       # AP1: neutral DAS_control while the driver presses the accelerator.
       gas_pressed=bool(getattr(CS.out, "gasPressed", False)) if ap1 else False,
       steer_tick=steer_tick,
+      standby=ap1_standby_allowed(self.ap1_standstill, self.CP.openpilotLongitudinalControl, CC.enabled,
+                                  CS.out.gearShifter == car.CarState.GearShifter.drive,
+                                  bool(getattr(CS, "stock_ap_active", False))) if (ap1 and self.ap1_standstill) else False,
     )
     self.apply_angle_last = plan.apply_angle_last
     if plan.steer is not None and self.ap1_steer_sync is not None:
@@ -144,7 +154,8 @@ class CarController(CarControllerBase):
     # Longitudinal control (in sync with stock message, about 40Hz)
     chassis_only = DAS_CONTROL_POWERTRAIN not in plan.longitudinal_addrs
     for cmd in plan.longitudinal:
-      can_sends.extend(self.tesla_can.create_longitudinal_commands(cmd.acc_state, cmd.target_speed, cmd.min_accel, cmd.max_accel, cmd.counter, chassis_only=chassis_only, **jerk_limits))
+      jl = jerk_limits if cmd.jerk_min is None else {"jerk_min": cmd.jerk_min, "jerk_max": cmd.jerk_max}
+      can_sends.extend(self.tesla_can.create_longitudinal_commands(cmd.acc_state, cmd.target_speed, cmd.min_accel, cmd.max_accel, cmd.counter, chassis_only=chassis_only, **jl))
 
     # Cancel on user steering override, since there is no steering torque blending
     if plan.cancel:

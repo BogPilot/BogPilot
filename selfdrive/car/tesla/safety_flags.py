@@ -25,7 +25,7 @@ def _has_powertrain_das(fingerprint):
   return (bus in fingerprint.keys()) and (0x2bf in fingerprint[bus].keys())
 
 
-def flags_for_candidate(candidate, fingerprint):
+def flags_for_candidate(candidate, fingerprint, standstill=False):
   """Safety params for the Tesla safety model.
 
   AP1 with no 0x2bf is one config: FLAG_TESLA_AP1 | FLAG_TESLA_LONG_CONTROL
@@ -44,6 +44,9 @@ def flags_for_candidate(candidate, fingerprint):
     flags |= FLAG_TESLA_AP1
     # Chassis longitudinal is 0x2b9. Do not require 0x2bf. Do not set POWERTRAIN.
     flags |= Panda.FLAG_TESLA_LONG_CONTROL
+    # Standstill experiment (AP1StandstillEngage, default off): standby 0x2b9.
+    if standstill:
+      flags |= Panda.FLAG_TESLA_AP1_STANDSTILL
 
   if _has_powertrain_das(fingerprint):
     flags |= Panda.FLAG_TESLA_LONG_CONTROL

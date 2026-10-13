@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from cereal import car
 from openpilot.selfdrive.car.tesla.hso import ap1_hso_event_names, ap1_steering_pressed
+from openpilot.selfdrive.car.tesla.toggles import ap1_standstill_engage
 from openpilot.selfdrive.car.tesla.safety_flags import dashcam_only_for_candidate, flags_for_candidate
 from openpilot.selfdrive.car.tesla.values import CANBUS, CAR
 from openpilot.selfdrive.car import get_safety_config
@@ -28,7 +29,11 @@ class CarInterface(CarInterfaceBase):
     # AP1 does not need that frame. flags_for_candidate sets AP1|LONG (10) for
     # TESLA_AP1_MODELS with no powertrain bit. The command is still planned only
     # when this param, CC.enabled, and CC.longActive are all true.
-    safety_params = flags_for_candidate(candidate, fingerprint)
+    # AP1StandstillEngage only matters with openpilot long on.
+    long_toggle_on = not getattr(frogpilot_toggles, "disable_openpilot_long", True)
+    standstill = (candidate == CAR.TESLA_AP1_MODELS and long_toggle_on and
+                  ap1_standstill_engage(candidate))
+    safety_params = flags_for_candidate(candidate, fingerprint, standstill=standstill)
     has_powertrain_das = (CANBUS.autopilot_powertrain in fingerprint.keys()) and (0x2bf in fingerprint[CANBUS.autopilot_powertrain].keys())
     if has_powertrain_das:
       ret.openpilotLongitudinalControl = not frogpilot_toggles.disable_openpilot_long

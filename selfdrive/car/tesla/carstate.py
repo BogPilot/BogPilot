@@ -210,6 +210,11 @@ class CarState(CarStateBase):
     # AP1: Mobileye fused (stock 0x399 on cp_cam / bus 2) then GTW UI map/mpp
     # into FrogPilot dashboardSpeedLimit (m/s). Cluster TX is on bus 0 and
     # never reaches cp_cam. Freq-0 UI msgs on chassis; missing → 0.
+    # AP1: stock Autopilot active (stock 0x399 on bus 2, state 3/4/5). Gates the
+    # standstill-experiment standby DAS_control (Tinkla: not while stock AP).
+    if ap1:
+      st = cp_cam.vl.get("AutopilotStatus", {}).get("autopilotStatus", 0)
+      self.stock_ap_active = 3 <= int(st or 0) <= 5
     if ap1:
       fused = cp_cam.vl.get("AutopilotStatus", {}).get("DAS_fusedSpeedLimit")
       ui_map = cp.vl.get("UI_driverAssistMapData", {}).get("UI_mapSpeedLimit")

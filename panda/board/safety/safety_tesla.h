@@ -45,6 +45,13 @@ const int TESLA_FLAG_RAVEN = 4;
 // tesla_tx_hook uses 0x2b9 when the powertrain flag is unset, and 0x2bf only
 // when it is set.
 const int TESLA_FLAG_AP1 = 8;
+// Bit 4, value 16. AP1 standstill-engage experiment (Tinkla LONG_module standby
+// DAS_control "so we can enable at 0 km/h"). Only honored together with
+// TESLA_FLAG_AP1 and TESLA_FLAG_LONGITUDINAL_CONTROL. While longitudinal is not
+// allowed, it admits exactly one extra 0x2b9 shape (tesla_ap1_standby_frame):
+// setSpeed 0, accState ACC_CANCEL (0) or ACC_ON (4), aebEvent 0, accelMax <= 0,
+// accelMin in [TESLA_LONG_LIMITS.min_accel, 0]. Everything else is unchanged.
+const int TESLA_FLAG_AP1_STANDSTILL = 16;
 
 const CanMsg TESLA_TX_MSGS[] = {
   {0x488, 0, 4},  // DAS_steeringControl
@@ -103,6 +110,7 @@ bool tesla_longitudinal = false;
 bool tesla_powertrain = false;  // Are we the second panda intercepting the powertrain bus?
 bool tesla_raven = false;
 bool tesla_ap1 = false;
+bool tesla_ap1_standstill = false;
 
 bool tesla_stock_aeb = false;
 
@@ -230,6 +238,19 @@ static void tesla_rx_hook(const CANPacket_t *to_push) {
 }
 
 
+// AP1 standstill experiment. The one 0x2b9 shape accepted while longitudinal
+// is not allowed (besides the inactive 0/0 frame). Raw accel: 0.04 * raw - 15.
+static bool tesla_ap1_standby_frame(const CANPacket_t *to_send, int raw_accel_min, int raw_accel_max) {
+  int set_speed = GET_BYTE(to_send, 0) | ((GET_BYTE(to_send, 1) & 0x0FU) << 8);
+  int acc_state = GET_BYTE(to_send, 1) >> 4;
+  int aeb_event = GET_BYTE(to_send, 2) & 0x03U;
+  bool ok = (set_speed == 0) && ((acc_state == 0) || (acc_state == 4)) && (aeb_event == 0);
+  ok = ok && (raw_accel_max >= TESLA_LONG_LIMITS.min_accel) && (raw_accel_max <= TESLA_LONG_LIMITS.inactive_accel);
+  ok = ok && (raw_accel_min >= TESLA_LONG_LIMITS.min_accel) && (raw_accel_min <= TESLA_LONG_LIMITS.inactive_accel);
+  ok = ok && (raw_accel_min <= raw_accel_max);
+  return ok;
+}
+
 static bool tesla_tx_hook(const CANPacket_t *to_send) {
   bool tx = true;
   int addr = GET_ADDR(to_send);
@@ -278,8 +299,12 @@ static bool tesla_tx_hook(const CANPacket_t *to_send) {
       // Don't allow any acceleration limits above the safety limits
       int raw_accel_max = ((GET_BYTE(to_send, 6) & 0x1FU) << 4) | (GET_BYTE(to_send, 5) >> 4);
       int raw_accel_min = ((GET_BYTE(to_send, 5) & 0x0FU) << 5) | (GET_BYTE(to_send, 4) >> 3);
-      violation |= longitudinal_accel_checks(raw_accel_max, TESLA_LONG_LIMITS);
-      violation |= longitudinal_accel_checks(raw_accel_min, TESLA_LONG_LIMITS);
+      bool standby_ok = tesla_ap1 && tesla_ap1_standstill && !get_longitudinal_allowed() &&
+                        tesla_ap1_standby_frame(to_send, raw_accel_min, raw_accel_max);
+      if (!standby_ok) {
+        violation |= longitudinal_accel_checks(raw_accel_max, TESLA_LONG_LIMITS);
+        violation |= longitudinal_accel_checks(raw_accel_min, TESLA_LONG_LIMITS);
+      }
     } else {
       violation = true;
     }
@@ -379,6 +404,7 @@ static safety_config tesla_init(uint16_t param) {
   tesla_longitudinal = GET_FLAG(param, TESLA_FLAG_LONGITUDINAL_CONTROL);
   tesla_raven = GET_FLAG(param, TESLA_FLAG_RAVEN);
   tesla_ap1 = GET_FLAG(param, TESLA_FLAG_AP1);
+  tesla_ap1_standstill = GET_FLAG(param, TESLA_FLAG_AP1_STANDSTILL);
 
   tesla_stock_aeb = false;
   tesla_steer_tx_seen = false;

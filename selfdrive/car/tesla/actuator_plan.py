@@ -43,6 +43,23 @@ DAS_CONTROL_POWERTRAIN = 0x2BF
 ACC_HOLD = 3
 ACC_ON = 4
 
+# AP1 standstill-engage experiment (toggle AP1StandstillEngage + panda
+# TESLA_FLAG_AP1_STANDSTILL). Tinkla tesla_unity_dev LONG_module.py 246-255 /
+# 355-367 sends, while disengaged and in drive, DAS_control with accState 4,
+# setSpeed 0, accel [-1.4, +1.8], jerk [-0.46, +0.476] "so we can enable at
+# 0 km/h". BogPilot sends the same but with accelMax 0 (no positive request
+# while not engaged); the panda rejects any other shape while long is not allowed.
+AP1_STANDBY_ACCEL_MIN = -1.4
+AP1_STANDBY_ACCEL_MAX = 0.0
+AP1_STANDBY_JERK_MIN = -0.46
+AP1_STANDBY_JERK_MAX = 0.476
+
+
+def ap1_standby_allowed(standstill_flag, openpilot_longitudinal_control, enabled, in_drive, stock_ap_active):
+  """True when AP1 sends the standby DAS_control (experiment, default off)."""
+  return (bool(standstill_flag) and bool(openpilot_longitudinal_control) and not bool(enabled)
+          and bool(in_drive) and not bool(stock_ap_active))
+
 # ~300 ms at 100 Hz CarController. Rising edge of enabled holds measured
 # ANGLE before the planner angle so EPAS can leave AVAILABLE/INHIBITED.
 AP1_ENGAGE_SOFT_START_FRAMES = 30
@@ -71,6 +88,9 @@ class LongCommand:
   min_accel: float
   max_accel: float
   counter: int
+  # AP1 standby frame only: fixed jerk fields. None = CarController's jerk limits.
+  jerk_min: float | None = None
+  jerk_max: float | None = None
 
 
 @dataclass(frozen=True)
@@ -187,7 +207,7 @@ def build_actuator_plan(frame, lat_active, hands_on_fault, openpilot_longitudina
                         acc_state, das_counters, pcm_cancel, chassis_das_only=False,
                         epas_error=None, eac_fault=False, hands_on_level=0,
                         eac_status=None, soft_start=False, driver_yield=False, gas_pressed=False,
-                        steer_tick=None):
+                        steer_tick=None, standby=False):
   """Same steering branches CarController.update had before this function existed.
 
   Disengaged lateral: no steering frame. Sending type-NONE 0x488 while
@@ -264,6 +284,13 @@ def build_actuator_plan(frame, lat_active, hands_on_fault, openpilot_longitudina
         longitudinal_addrs = (DAS_CONTROL_CHASSIS,)
       else:
         longitudinal_addrs = (DAS_CONTROL_CHASSIS, DAS_CONTROL_POWERTRAIN)
+  elif standby and chassis_das_only:
+    # AP1 standstill experiment: standby DAS_control on the stock counters.
+    while len(das_counters) > 0:
+      longitudinal.append(LongCommand(ACC_ON, 0.0, AP1_STANDBY_ACCEL_MIN, AP1_STANDBY_ACCEL_MAX, das_counters.popleft(),
+                                      AP1_STANDBY_JERK_MIN, AP1_STANDBY_JERK_MAX))
+    if longitudinal:
+      longitudinal_addrs = (DAS_CONTROL_CHASSIS,)
 
   # Cancel on user steering override, since there is no steering torque blending
   if hands_on_fault:

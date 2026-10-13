@@ -117,3 +117,23 @@ def _as_text(stored: str | bytes | None) -> str:
   if isinstance(stored, bytes):
     stored = stored.decode()
   return stored.strip()
+
+
+# AP1 standstill-engage experiment (Tinkla standby DAS_control). File-backed,
+# default OFF: /data/params_bogpilot/AP1StandstillEngage ("1" = on). Read once
+# at car init (interface.py) and turned into panda TESLA_FLAG_AP1_STANDSTILL.
+AP1_STANDSTILL_PATH = IC_INTEGRATION_DIR / "AP1StandstillEngage"
+_ap1_standstill_path = AP1_STANDSTILL_PATH
+
+
+def ap1_standstill_engage(fingerprint: str | None, stored: str | bytes | None = None) -> bool:
+  """True only for AP1 with the file (or `stored`) explicitly 1/true/on."""
+  from openpilot.selfdrive.car.tesla.values import CAR
+  if fingerprint != CAR.TESLA_AP1_MODELS:
+    return False
+  if stored is None:
+    try:
+      stored = _ap1_standstill_path.read_text(encoding="utf-8", errors="replace") if _ap1_standstill_path.is_file() else ""
+    except OSError:
+      stored = ""
+  return _as_text(stored) in ("1", "true", "on")
