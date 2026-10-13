@@ -118,7 +118,10 @@ def ap1_long_acc_state(camera_acc_state, chassis_das_only):
   cruise are both on. Copying the camera ACC_HOLD (3) made the car wait for
   the accelerator at a stop. Non-AP1 still passes the camera state through.
   """
-  if chassis_das_only and camera_acc_state == ACC_HOLD:
+  # AP1: stock DAS reports accState 0 below ~18 mph with no lead (stock TACC
+  # minimum speed). Forwarding that 0 made the DI drop cruise ~100 ms after
+  # every sub-18 mph engage (routes 53/54). Tinkla always sends 4 in drive.
+  if chassis_das_only and camera_acc_state in (0, ACC_HOLD):
     return ACC_ON
   return camera_acc_state
 

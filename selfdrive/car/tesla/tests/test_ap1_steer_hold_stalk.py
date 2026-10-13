@@ -65,7 +65,8 @@ def test_ap1_hold_rewrites_acc_hold_to_acc_on_and_sends_zero_0x349():
   # Non-AP1 still copies the camera HOLD.
   assert ap1_long_acc_state(ACC_HOLD, False) == ACC_HOLD
   assert ap1_long_acc_state(ACC_ON, True) == ACC_ON
-  assert ap1_long_acc_state(0, True) == 0
+  assert ap1_long_acc_state(0, True) == ACC_ON  # stock DAS 0 below 18 mph (route 53)
+  assert ap1_long_acc_state(0, False) == 0
   # AP1 adaptive cruise is not Tinkla static cruise, so HOLD becomes ACC_ON.
   assert ap1_long_acc_state(ACC_HOLD, True) == ACC_ON
 
