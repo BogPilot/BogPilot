@@ -68,6 +68,9 @@ class LongitudinalPlanner:
     # AP1-only allowThrottle smoothing (tesla/throttle_gate.py); None elsewhere.
     self.throttle_cut = 0.0
     self.ap1_throttle_gate = ap1_throttle_gate_for(CP.carFingerprint)
+    # AP1: at engagement the braking limit is not ramped up from 0 when a lead needs it (see update()).
+    self.ap1_engage_brake = self.ap1_throttle_gate is not None
+    self.ap1_engage_ramp = False
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -201,6 +204,19 @@ class LongitudinalPlanner:
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
 
+    if self.ap1_engage_brake:
+      # FrogPilot publishes minAcceleration = 0 while disengaged, so the 0.05/step slew below held
+      # braking to ~1 m/s^2 per second after engaging behind a closing lead (route 3c seg 4, FCW).
+      # AP1: during that engage ramp, if the MPC is following a lead, the braking limit goes to its
+      # normal value at once. No lead (cruise / curve slowdown) and the max-accel side keep the ramp.
+      if reset_state:
+        self.ap1_engage_ramp = True
+      elif self.ap1_engage_ramp:
+        if self.mpc.source in ('lead0', 'lead1'):
+          self.prev_accel_clip[0] = min(self.prev_accel_clip[0], accel_clip[0] + 0.05)
+        # Ends once the braking limit has reached frogpilotPlan's (non-zero) value.
+        if accel_clip[0] < 0.0 and self.prev_accel_clip[0] <= accel_clip[0] + 0.05:
+          self.ap1_engage_ramp = False
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
