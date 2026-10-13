@@ -31,6 +31,10 @@ class FrogPilotEvents:
     self.random_event_timer = 0
     self.tracked_lead_distance = 0
 
+    # AP1 stalk follow dial: last applied follow seconds and alert frames left.
+    self.ap1_follow_s = 0.0
+    self.ap1_follow_alert_frames = 0
+
     self.played_events = set()
 
   def update(self, v_cruise, sm, frogpilot_toggles):
@@ -63,6 +67,17 @@ class FrogPilotEvents:
         self.events.add(FrogPilotEventName.openpilotCrashedRandomEvent)
       else:
         self.events.add(FrogPilotEventName.openpilotCrashed)
+
+    if getattr(frogpilot_toggles, "car_make", "") == "tesla":
+      # cruiseState.speedOffset carries the debounced AP1 stalk follow seconds (0 = not ready).
+      follow_s = sm["carState"].cruiseState.speedOffset
+      if follow_s > 0 and self.ap1_follow_s > 0 and abs(follow_s - self.ap1_follow_s) > 1e-3:
+        self.ap1_follow_alert_frames = int(2. / DT_MDL)
+      if follow_s > 0:
+        self.ap1_follow_s = follow_s
+      if self.ap1_follow_alert_frames > 0:
+        self.ap1_follow_alert_frames -= 1
+        self.events.add(FrogPilotEventName.ap1FollowDistanceChanged)
 
     if self.frogpilot_planner.frogpilot_vcruise.forcing_stop:
       self.events.add(FrogPilotEventName.forcingStop)

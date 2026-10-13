@@ -6,7 +6,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.car.tesla.blindspot import Ap1Blindspot, frames_from_vl_all
 from openpilot.selfdrive.car.tesla.cluster import CLUSTER_ADDRS, COUNTER_SIGNALS, MSG_NAMES
 from openpilot.selfdrive.car.tesla.hso import ap1_driver_input
-from openpilot.selfdrive.car.tesla.stalk_follow import dtr_sample, follow_seconds, parse_stalk_raw
+from openpilot.selfdrive.car.tesla.stalk_follow import StalkFollowDebounce, dtr_sample, follow_seconds, parse_stalk_raw
 from openpilot.selfdrive.car.tesla.stalk_pull_hold import PULL_HOLD_ENABLED, StalkPullHold
 from openpilot.selfdrive.car.tesla.stalk_fwd_hold import FWD_HOLD_ENABLED, StalkFwdHold
 from openpilot.selfdrive.car.tesla.speed_limit import dashboard_speed_limit_ms
@@ -33,6 +33,9 @@ class CarState(CarStateBase):
     # DTR_Dist_Rq decision. Python only; cereal was not extended.
     self.spd_ctrl_lvr = 0
     self.stalk_follow = None
+    # Raw per-sample decision (map_stalk_follow history) and the 0.5 s debounce.
+    self.stalk_follow_raw = None
+    self.stalk_follow_debounce = StalkFollowDebounce(DT_CTRL)
     # AP1 long RWD pull → Experimental Mode (see stalk_pull_hold.py).
     self.stalk_pull_hold = StalkPullHold()
     self.stalk_pull_toggle = False
@@ -175,7 +178,8 @@ class CarState(CarStateBase):
       raw = None
     else:
       raw = dtr_sample(stw.get("DTR_Dist_Rq"), ts_map.get("DTR_Dist_Rq", 0))
-    self.stalk_follow = parse_stalk_raw(raw, self.stalk_follow)
+    self.stalk_follow_raw = parse_stalk_raw(raw, self.stalk_follow_raw)
+    self.stalk_follow = self.stalk_follow_debounce.update(self.stalk_follow_raw)
     # Existing cruiseState.speedOffset is unused on Tesla. AP1 publishes the
     # stalk follow seconds there so FrogPilotFollowing can set tFollow.
     # 0 means no ready detent. 255 holds the last seconds via parse_stalk_raw.

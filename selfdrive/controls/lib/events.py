@@ -380,6 +380,17 @@ def holiday_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, 
     Priority.LOWEST, VisualAlert.none, FrogPilotAudibleAlert.startup, 5.)
 
 
+def ap1_follow_distance_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
+  # AP1 stalk dial (tesla/stalk_follow.py): follow seconds ride on cruiseState.speedOffset.
+  follow_s = CS.cruiseState.speedOffset
+  label = " (traffic)" if 0 < follow_s <= 1.0 + 1e-6 else ""
+  return Alert(
+    f"Follow distance: {follow_s:.2f} s{label}",
+    "",
+    FrogPilotAlertStatus.frogpilot, AlertSize.small,
+    Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.)
+
+
 def no_lane_available_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   lane_width = sm["frogpilotPlan"].laneWidthLeft if CS.leftBlinker else sm["frogpilotPlan"].laneWidthRight
   lane_width_msg = f"{lane_width:.1f} meters" if metric else f"{lane_width * CV.METER_TO_FOOT:.1f} feet"
@@ -1082,6 +1093,10 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "",
       AlertStatus.userPrompt, AlertSize.small,
       Priority.LOW, VisualAlert.none, AudibleAlert.warningSoft, .1),
+  },
+
+  FrogPilotEventName.ap1FollowDistanceChanged: {
+    ET.PERMANENT: ap1_follow_distance_changed_alert,
   },
 
   FrogPilotEventName.leadDeparting: {

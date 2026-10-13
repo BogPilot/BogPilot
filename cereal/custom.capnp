@@ -95,6 +95,9 @@ struct FrogPilotCarEvent @0x81c2f05a394cf4af {
     vCruise69 @26;
     yourFrogTriedToKillMe @27;
     youveGotMail @28;
+
+    # BogPilot AP1: stalk follow-distance dial applied a new setting.
+    ap1FollowDistanceChanged @29;
   }
 }
 
