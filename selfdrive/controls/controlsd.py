@@ -45,7 +45,9 @@ CAMERA_OFFSET = 0.04
 REPLAY = "REPLAY" in os.environ
 SIMULATION = "SIMULATION" in os.environ
 TESTING_CLOSET = "TESTING_CLOSET" in os.environ
-IGNORE_PROCESSES = {"loggerd", "encoderd", "statsd"}
+# qcomgpsd: GPS is optional on AP1 (missing/failed modem must not block engagement).
+# GPS consumers (SLC, maps, etc.) still use gpsLocation when the daemon is running.
+IGNORE_PROCESSES = {"loggerd", "encoderd", "statsd", "qcomgpsd"}
 
 ThermalStatus = log.DeviceState.ThermalStatus
 State = log.ControlsState.OpenpilotState
