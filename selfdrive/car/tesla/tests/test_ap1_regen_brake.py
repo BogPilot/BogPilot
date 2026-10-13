@@ -385,7 +385,15 @@ def test_following_uses_ap1_comfort_for_desired_distance():
 
 # --- Braking lead: lead stopping term goes to stock (route 57 16:57:44 FCW) ----
 
-def test_lead_comfort_brake_blend():
+def test_lead_comfort_brake_blend_off_by_default():
+  import openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc as long_mpc
+  assert long_mpc.AP1_LEAD_BRAKE_BLEND is False
+  assert lead_comfort_brake(AP1_REGEN_COMFORT_BRAKE, -3.0) == AP1_REGEN_COMFORT_BRAKE
+
+
+def test_lead_comfort_brake_blend(monkeypatch):
+  import openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc as long_mpc
+  monkeypatch.setattr(long_mpc, "AP1_LEAD_BRAKE_BLEND", True)
   cb = AP1_REGEN_COMFORT_BRAKE
   assert lead_comfort_brake(cb, 0.0) == cb
   assert lead_comfort_brake(cb, 0.5) == cb  # accelerating lead: regen value
@@ -397,7 +405,9 @@ def test_lead_comfort_brake_blend():
 
 @pytest.mark.parametrize("a_lead", [-0.5, -1.0, -2.0, -3.0])
 def test_braking_lead_obstacle_closer_than_before_and_stock(monkeypatch, a_lead):
-  """Braking lead: x_obstacle <= the old regen-only value and <= stock (add-only)."""
+  """Braking lead (blend enabled): x_obstacle <= the old regen-only value and <= stock (add-only)."""
+  import openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc as long_mpc
+  monkeypatch.setattr(long_mpc, "AP1_LEAD_BRAKE_BLEND", True)
   v_ego, v_lead, d_rel = 7.0, 3.5, 19.0
   stock = _mpc_with_solution(monkeypatch, v_ego, d_rel, COMFORT_BRAKE, v_lead=v_lead, a_lead=a_lead)
   regen = _mpc_with_solution(monkeypatch, v_ego, d_rel, AP1_REGEN_COMFORT_BRAKE, v_lead=v_lead, a_lead=a_lead)

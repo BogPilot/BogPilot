@@ -121,6 +121,12 @@ def desired_follow_distance(v_ego, v_lead, t_follow=None, comfort_brake=COMFORT_
 # AP1: the lead's stopping term blends from the regen-sized comfort brake to stock
 # COMFORT_BRAKE as the lead decelerates (radar aLeadK, m/s^2 of braking).
 LEAD_BRAKING_BP = [0.3, 1.0]
+# Off by default. Closed-loop sim (bundle_1013 report): mixing a stock lead term
+# with the regen-sized ego term demands 0.3*v^2 m of extra gap the moment the lead
+# brakes (−3.5 m/s^2 slams, 48 m stop gap at 30 m/s), and an open-loop replay of
+# the route 57 16:57:44 FCW shows the old matched-cb plan already brakes −1.4 to
+# −1.7 m/s^2 there, so the logged −0.86 plateau is not explained by this term.
+AP1_LEAD_BRAKE_BLEND = False
 
 
 def lead_comfort_brake(comfort_brake, a_lead):
@@ -132,7 +138,7 @@ def lead_comfort_brake(comfort_brake, a_lead):
   16:57:44 FCW: the plan plateaued at -0.86 m/s^2). Never below comfort_brake,
   so x_obstacle only moves closer (add-only braking).
   """
-  if comfort_brake >= COMFORT_BRAKE - 1e-9:
+  if not AP1_LEAD_BRAKE_BLEND or comfort_brake >= COMFORT_BRAKE - 1e-9:
     return comfort_brake
   return float(np.interp(-a_lead, LEAD_BRAKING_BP, [comfort_brake, COMFORT_BRAKE]))
 
