@@ -96,7 +96,8 @@ class CarController(CarControllerBase):
       # Standstill: relax a deeper hold request to AP1_STANDSTILL_HOLD_ACCEL (stock DAS
       # sends accelMin 0) so the DI latches less HOLD pressure to dump at the launch.
       accel = self.ap1_accel_smoother.update(actuators.accel, long_allowed_now, CS.out.vEgo, gas_neutral=gas_neutral,
-                                             urgent=urgent, standstill=bool(getattr(CS.out, "standstill", False)), fcw=fcw)
+                                             urgent=urgent, standstill=bool(getattr(CS.out, "standstill", False)), fcw=fcw,
+                                             a_ego=getattr(CS.out, "aEgo", None))
       jerk_min, jerk_max = self.ap1_jerk_limit.update(accel, long_allowed_now, CS.out.vEgo, gas_neutral=gas_neutral,
                                                       urgent=urgent, fcw=fcw)
       jerk_limits = {"jerk_min": jerk_min, "jerk_max": jerk_max}

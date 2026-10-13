@@ -142,6 +142,16 @@ AP1_BRAKE_HARD_ACCEL = -2.0
 AP1_STANDSTILL_HOLD_ACCEL = -1.0
 # m/s^3. How fast a deeper standstill request relaxes up to the floor.
 AP1_STANDSTILL_RELAX_JERK = 1.0
+# Gas handoff. While the driver presses the accelerator, DAS_control carries the
+# neutral frame (0). Before this, the first frame after the release restarted
+# the slew from 0, so a driver at +1.2 m/s^2 saw the request drop to 0 and climb
+# back at AP1_RISE_JERK (~0.5 s), felt as a brief lift. Now the measured
+# CarState.aEgo during the press is latched and the first active frame after
+# the release starts from it: a higher plan keeps rising from there, a lower
+# plan is reached through the normal drive-release S-curve. Seed is clipped to
+# [0, AP1_GAS_HANDOFF_MAX] (never a brake seed; never above the panda max of
+# +2.0), and only used at or above AP1_SLEW_MIN_SPEED.
+AP1_GAS_HANDOFF_MAX = 2.0
 # m/s^3. DAS_jerkMax below AP1_SLEW_MIN_SPEED (stock DAS sends about 1.2 at
 # standstill). DAS_jerkMin stays at AP1_FULL_JERK_LIMIT there.
 AP1_LAUNCH_JERK_MAX = 1.5
@@ -180,12 +190,15 @@ class Ap1AccelSmoother:
     self.min_speed = min_speed
     self.last = None
     self.release_j = 0.0  # current drive-release jerk (m/s^3), 0 when not releasing
+    self.gas_seed = None  # latched aEgo from the last gas-neutral frame
 
   def reset(self):
     self.last = None
     self.release_j = 0.0
+    self.gas_seed = None
 
-  def update(self, target, active, v_ego, gas_neutral=False, urgent=False, dt=DT_CTRL, standstill=False, fcw=False):
+  def update(self, target, active, v_ego, gas_neutral=False, urgent=False, dt=DT_CTRL, standstill=False, fcw=False,
+             a_ego=None):
     """urgent: FCW or LongControl stopping. A falling request passes through.
 
     standstill: the car is stopped (CarState.standstill). Without an FCW a
@@ -195,10 +208,23 @@ class Ap1AccelSmoother:
     target = float(target)
     if gas_neutral:
       self.last = 0.0
+      self.release_j = 0.0
+      if a_ego is not None and v_ego >= self.min_speed:
+        self.gas_seed = min(max(float(a_ego), 0.0), AP1_GAS_HANDOFF_MAX)
+      else:
+        self.gas_seed = None
       return 0.0
     if not active:
       self.last = None
+      self.gas_seed = None
       return target
+    if self.gas_seed is not None:
+      # First active frame after a driver gas press: continue from the car's
+      # measured accel instead of the neutral 0. FCW / urgent / hard braking
+      # still pass through below because target <= hard_brake bypasses.
+      if v_ego >= self.min_speed and not fcw:
+        self.last = self.gas_seed
+      self.gas_seed = None
     if standstill and not fcw and target < AP1_STANDSTILL_HOLD_ACCEL:
       floor = AP1_STANDSTILL_HOLD_ACCEL
       if self.last is None or self.last >= floor:
