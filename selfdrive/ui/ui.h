@@ -207,7 +207,7 @@ void update_model(UIState *s, FrogPilotUIState *fs,
 void update_dmonitoring(UIState *s, const cereal::DriverStateV2::Reader &driverstate, float dm_fade_state, bool is_rhd);
 void update_leads(UIState *s, const cereal::RadarState::Reader &radar_state, const cereal::XYZTData::Reader &line);
 void update_line_data(const UIState *s, const cereal::XYZTData::Reader &line,
-                      float y_off, float z_off, QPolygonF *pvd, int max_idx, bool allow_invert);
+                      float y_off, float z_off, QPolygonF *pvd, int max_idx, bool allow_invert, bool clip = true);
 
 // FrogPilot variables
 void update_leads_frogpilot(UIState *s, FrogPilotUIState *fs, const cereal::FrogPilotRadarState::Reader &frogpilot_radar_state, const cereal::XYZTData::Reader &line);

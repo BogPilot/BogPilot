@@ -18,7 +18,7 @@
 
 // Projects a point in car to space to the corresponding point in full frame
 // image space.
-static bool calib_frame_to_full_frame(const UIState *s, float in_x, float in_y, float in_z, QPointF *out) {
+static bool calib_frame_to_full_frame(const UIState *s, float in_x, float in_y, float in_z, QPointF *out, bool clip = true) {
   const float margin = 500.0f;
   const QRectF clip_region{-margin, -margin, s->fb_w + 2 * margin, s->fb_h + 2 * margin};
 
@@ -26,9 +26,13 @@ static bool calib_frame_to_full_frame(const UIState *s, float in_x, float in_y, 
   const vec3 Ep = matvecmul3(s->scene.wide_cam ? s->scene.view_from_wide_calib : s->scene.view_from_calib, pt);
   const vec3 KEp = matvecmul3(s->scene.wide_cam ? ECAM_INTRINSIC_MATRIX : FCAM_INTRINSIC_MATRIX, Ep);
 
+  // Points behind the camera project mirrored; never use them
+  if (KEp.v[2] <= 1e-3f) return false;
+
   // Project.
   QPointF point = s->car_space_transform.map(QPointF{KEp.v[0] / KEp.v[2], KEp.v[1] / KEp.v[2]});
-  if (clip_region.contains(point)) {
+  // clip=false (blind-spot adjacent-lane fill): keep far off-screen points; the screen edge trims the polygon
+  if (!clip || clip_region.contains(point)) {
     *out = point;
     return true;
   }
@@ -92,7 +96,7 @@ void update_radar_tracks(capnp::List<cereal::LiveTracks>::Reader &tracks_msg, ce
 }
 
 void update_line_data(const UIState *s, const cereal::XYZTData::Reader &line,
-                      float y_off, float z_off, QPolygonF *pvd, int max_idx, bool allow_invert=true) {
+                      float y_off, float z_off, QPolygonF *pvd, int max_idx, bool allow_invert=true, bool clip) {
   const auto line_x = line.getX(), line_y = line.getY(), line_z = line.getZ();
   QPointF left, right;
   pvd->clear();
@@ -100,8 +104,8 @@ void update_line_data(const UIState *s, const cereal::XYZTData::Reader &line,
     // highly negative x positions  are drawn above the frame and cause flickering, clip to zy plane of camera
     if (line_x[i] < 0) continue;
 
-    bool l = calib_frame_to_full_frame(s, line_x[i], line_y[i] - y_off, line_z[i] + z_off, &left);
-    bool r = calib_frame_to_full_frame(s, line_x[i], line_y[i] + y_off, line_z[i] + z_off, &right);
+    bool l = calib_frame_to_full_frame(s, line_x[i], line_y[i] - y_off, line_z[i] + z_off, &left, clip);
+    bool r = calib_frame_to_full_frame(s, line_x[i], line_y[i] + y_off, line_z[i] + z_off, &right, clip);
     if (l && r) {
       // For wider lines the drawn polygon will "invert" when going over a hill and cause artifacts
       if (!allow_invert && pvd->size() && left.y() > pvd->back().y()) {
@@ -163,8 +167,8 @@ void update_model(UIState *s, FrogPilotUIState *fs,
   update_line_data(s, plan_position, frogpilot_toggles.value("model_ui").toBool() ? path_width : 0, 1.22, &frogpilot_scene.track_edge_vertices, max_idx, false);
 
   // Update adjacent lanes
-  update_line_data(s, lane_lines[4], frogpilot_scene.lane_width_left / 2.0f, 0, &frogpilot_scene.track_adjacent_vertices[0], max_idx, false);
-  update_line_data(s, lane_lines[5], frogpilot_scene.lane_width_right / 2.0f, 0, &frogpilot_scene.track_adjacent_vertices[1], max_idx, false);
+  update_line_data(s, lane_lines[4], frogpilot_scene.lane_width_left / 2.0f, 0, &frogpilot_scene.track_adjacent_vertices[0], max_idx, false, false);
+  update_line_data(s, lane_lines[5], frogpilot_scene.lane_width_right / 2.0f, 0, &frogpilot_scene.track_adjacent_vertices[1], max_idx, false, false);
 
   frogpilot_scene.model_length = model.getPosition().getX()[33 - 1];
 }
