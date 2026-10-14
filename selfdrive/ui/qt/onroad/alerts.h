@@ -11,6 +11,8 @@ public:
   OnroadAlerts(QWidget *parent = 0) : QWidget(parent) {}
   void updateState(const UIState &s, const FrogPilotUIState &fs);
   void clear();
+  // BogPilot: true while any alert (small / mid / full) is on screen; the Developer HUD hides itself then
+  bool alertShowing() const { return isVisible() && alert.size != cereal::ControlsState::AlertSize::NONE; }
 
   // FrogPilot variables
   bool displayFerg;

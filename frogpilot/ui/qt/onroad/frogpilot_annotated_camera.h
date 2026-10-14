@@ -27,6 +27,7 @@ public:
   bool redesign = false;    // BogPilot redesign layout (set by AnnotatedCameraWidget)
   bool bigMapOpen = false;  // BogPilot: was uninitialized; only set once a map widget exists
   bool developerHudEnabled = false;
+  bool alertShowing = false;  // BogPilot: set from OnroadAlerts each update; hides the Developer HUD
   bool hideBottomIcons;
   bool isCruiseSet;
   bool mapButtonVisible;

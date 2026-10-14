@@ -257,7 +257,9 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
     paintStoppingPoint(p, scene, frogpilot_scene, frogpilot_toggles);
   }
 
-  if (hudShown) {
+  // BogPilot: the Developer HUD is hidden while any alert banner is up so the banner stands alone.
+  // hudShown still drives the button layout, so nothing moves when the HUD blinks off.
+  if (hudShown && !alertShowing) {
     paintDeveloperHUDPanel(p, s, sm, fpsm, frogpilot_toggles);
   }
 
@@ -554,8 +556,7 @@ void FrogPilotAnnotatedCameraWidget::paintDeveloperHUDPanel(QPainter &p, UIState
   }
   in.memory_usage_percent = deviceState.getMemoryUsagePercent();
 
-  // Drawn even while an alert is up: the alert banner is painted above it and may cover its lower part
-  // (redesign: the banner ends left of the HUD, so it stays fully visible)
+  // Not drawn while an alert is up (see alertShowing in paintFrogPilotWidgets)
   if (redesign) {
     paintDeveloperHudV2(p, developerHudPanelRect(), in);
   } else {
