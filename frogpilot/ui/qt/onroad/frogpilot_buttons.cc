@@ -8,9 +8,10 @@ DistanceButton::DistanceButton(QWidget *parent) : QPushButton(parent) {
   setFixedSize(btn_size + UI_BORDER_SIZE, btn_size);
 
   QObject::connect(frogpilotUIState(), &FrogPilotUIState::themeUpdated, this, &DistanceButton::updateTheme);
-  // The redesign pill selects a personality directly in mouseReleaseEvent instead of emulating the distance button
-  QObject::connect(this, &QPushButton::pressed, [this] {if (!redesign) params_memory.putBool("OnroadDistanceButtonPressed", true);});
-  QObject::connect(this, &QPushButton::released, [this] {if (!redesign) params_memory.putBool("OnroadDistanceButtonPressed", false);});
+  // Both layouts emulate the distance button: controlsd steps the personality on a tap (Relaxed -> Standard ->
+  // Aggressive, like the stalk) and frogpilot_card toggles Traffic Mode on a 2.5 s hold (no Experimental Mode)
+  QObject::connect(this, &QPushButton::pressed, [this] {press_timer.start(); params_memory.putBool("OnroadDistanceButtonPressed", true);});
+  QObject::connect(this, &QPushButton::released, [this] {params_memory.putBool("OnroadDistanceButtonPressed", false);});
 }
 
 void DistanceButton::setRedesign(bool on) {
@@ -35,11 +36,12 @@ void DistanceButton::mouseReleaseEvent(QMouseEvent *event) {
   if (!redesign) {
     return;
   }
-  // Same param the Driving Personality setting and controlsd's distance-button handling write; controlsd re-reads it every 0.1 s
-  // v5: the circle cycles Aggressive -> Standard -> Relaxed -> Aggressive
+  // Preview only: controlsd writes LongitudinalPersonality. Skip after a Traffic Mode hold or while in Traffic Mode.
+  if (traffic_mode_active || (press_timer.isValid() && press_timer.elapsed() >= 2500)) {
+    return;
+  }
   const int selected = bogpilot::personalityAt(pillRect(), event->pos(), personality - 1);
   if (selected >= 0) {
-    params.putNonBlocking("LongitudinalPersonality", std::to_string(selected));
     personality = selected + 1;  // show the new selection immediately; updateState confirms it from controlsState
     pending_personality = selected;
     pending_timer.start();

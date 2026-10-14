@@ -25,6 +25,7 @@ private:
   bool redesign = false;
   int pending_personality = -1;
   QElapsedTimer pending_timer;
+  QElapsedTimer press_timer;   // hold length of the current press (Traffic Mode hold = 2.5 s)
   Params params;
   void showEvent(QShowEvent *event) override;
   void updateTheme();

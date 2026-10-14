@@ -68,6 +68,9 @@ ACTIVE_STATES = (State.enabled, State.softDisabling, State.overriding)
 ENABLED_STATES = (State.preEnabled, *ACTIVE_STATES)
 
 
+ONROAD_TRAFFIC_HOLD = 2.5  # s, on-screen personality button hold that toggles Traffic Mode
+
+
 class Controls:
   def __init__(self, CI=None):
     self.params = Params()
@@ -197,6 +200,7 @@ class Controls:
     self.steerTempUnavailableSilent_shown = False
 
     self.display_timer = 0
+    self.onroad_press_start = None
 
     self.frogpilot_events_prev = []
 
@@ -758,7 +762,17 @@ class Controls:
 
     # decrement personality on distance button press
     if self.CP.openpilotLongitudinalControl:
-      distance_pressed = params_memory.get_bool("OnroadDistanceButtonPressed")
+      onroad_pressed = params_memory.get_bool("OnroadDistanceButtonPressed")
+      # BogPilot: holding the on-screen button ONROAD_TRAFFIC_HOLD s toggles Traffic Mode (frogpilot_card), so that
+      # release must not also step the personality. While Traffic Mode is on, taps don't cycle personalities.
+      # No Experimental Mode on this button.
+      now = time.monotonic()
+      if onroad_pressed and self.onroad_press_start is None:
+        self.onroad_press_start = now
+      held_long = self.onroad_press_start is not None and now - self.onroad_press_start >= ONROAD_TRAFFIC_HOLD
+      distance_pressed = onroad_pressed and not held_long and not self.sm['frogpilotCarState'].trafficModeEnabled
+      if not onroad_pressed:
+        self.onroad_press_start = None
 
       if self.frogpilot_toggles.personality_profile_via_distance:
         distance_pressed |= any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents)

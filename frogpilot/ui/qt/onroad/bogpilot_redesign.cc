@@ -21,8 +21,8 @@ namespace {
 constexpr qreal CAP_RADIUS = 44;
 constexpr qreal COL_MAX = 140, COL_SPEED = 370, COL_LIMIT = 612;   // screen 170 / 400 / 642
 constexpr qreal DIV_1 = 250, DIV_2 = 490;                          // screen 280 / 520
-constexpr qreal BASELINE = SPEED_ROW_TOP + 114;  // shared numeral baseline (screen y 168)
-constexpr qreal LABEL_BASELINE = BASELINE + 36;  // screen y 204
+#define BASELINE (qreal(speedRowTop()) + 114)   // shared numeral baseline (screen y 168; follows SwapSpeedGraph)
+#define LABEL_BASELINE (BASELINE + 36)          // screen y 204
 constexpr int SIDE_PX = 66, BIG_PX = 100, LABEL_PX = 22;
 constexpr int TILE_LABEL_PX = 16;
 
@@ -67,7 +67,7 @@ QString spaced(const QString &s) {
 
 SpeedRowGeometry speedRowGeometry(const SpeedRowInputs &in) {
   SpeedRowGeometry g;
-  const qreal y0 = SPEED_ROW_TOP, y1 = SPEED_ROW_TOP + SPEED_ROW_HEIGHT;
+  const qreal y0 = speedRowTop(), y1 = speedRowTop() + SPEED_ROW_HEIGHT;
   qreal x1 = DIV_2 + 14;
   if (in.show_limit) {
     qreal tx0, tx1, ty0, ty1;
@@ -96,7 +96,7 @@ SpeedRowGeometry speedRowGeometry(const SpeedRowInputs &in) {
 }
 
 QRectF maxSlotRect() {
-  return QRectF(QPointF(EDGE + 6, SPEED_ROW_TOP + 6), QPointF(DIV_1 - 6, SPEED_ROW_TOP + SPEED_ROW_HEIGHT - 6));
+  return QRectF(QPointF(EDGE + 6, speedRowTop() + 6), QPointF(DIV_1 - 6, speedRowTop() + SPEED_ROW_HEIGHT - 6));
 }
 
 void paintCurveGlyph(QPainter &p, const QPointF &c, qreal size, const QColor &color, bool left, qreal stroke) {
@@ -277,7 +277,8 @@ void paintPersonalityPill(QPainter &p, const QRectF &pill, int personality, bool
 
 int personalityAt(const QRectF &pill, const QPointF &pos, int current) {
   if (!pill.adjusted(-6, -PILL_LABEL_SPACE, 6, 10).contains(pos)) return -1;
-  return (std::clamp(current, 0, 2) + 1) % 3;
+  // enum aggressive=0, standard=1, relaxed=2: step down like the stalk / controlsd (Relaxed -> Standard -> Aggressive)
+  return (std::clamp(current, 0, 2) + 2) % 3;
 }
 
 QColor leadDistanceColor(float d_rel, bool adjacent, float v_ego) {
@@ -455,7 +456,7 @@ QRect alertBannerRect(const QSize &widget, bool mid) {
   if (widget.width() >= 1800) {
     const int left = REC_CX + REC_HIT / 2 + ALERT_GAP;                    // 36 px right of the record button
     const int right = widget.width() - ALERT_RIGHT_MARGIN;                // right margin = record button width
-    const int top = GRAPH_TOP + GRAPH_HEIGHT + ALERT_GAP;                 // 36 px below the accel graph
+    const int top = STACK_BOTTOM + ALERT_GAP;                             // 36 px below the speed row / graph stack
     const int bottom = CLUSTER_CY - CLUSTER_D / 2 - PILL_LABEL_SPACE - ALERT_GAP;   // 36 px above the button row + label
     const int h = mid ? bottom - top : std::min(bottom - top, 170);
     const int y = top + (bottom - top - h) / 2;

@@ -1,3 +1,4 @@
+import time
 #!/usr/bin/env python3
 from cereal import car, custom
 from openpilot.selfdrive.controls.lib.drive_helpers import CRUISE_LONG_PRESS
@@ -39,6 +40,8 @@ class FrogPilotCard:
     self._ap1_stalk_personality = None
 
     self.gap_counter = 0
+    self.onroad_press_start = None
+    self.onroad_traffic_fired = False
 
     self.error_log = ERROR_LOGS_PATH / "error.txt"
 
@@ -189,7 +192,20 @@ class FrogPilotCard:
 
     self.force_coast &= not (carState.brakePressed or carState.gasPressed)
 
-    frogpilotCarState.distancePressed |= params_memory.get_bool("OnroadDistanceButtonPressed")
+    # BogPilot: the on-screen personality button no longer feeds the distance-button counter (that would run the
+    # user's Long Distance Button Control, e.g. Experimental Mode). A 2.5 s hold only toggles Traffic Mode; taps
+    # are handled in controlsd. Another 2.5 s hold exits Traffic Mode.
+    onroad_pressed = params_memory.get_bool("OnroadDistanceButtonPressed")
+    if onroad_pressed:
+      if self.onroad_press_start is None:
+        self.onroad_press_start = time.monotonic()
+      if not self.onroad_traffic_fired and time.monotonic() - self.onroad_press_start >= 2.5:
+        self.onroad_traffic_fired = True
+        if sm["carControl"].longActive or self.traffic_mode_enabled:
+          self.traffic_mode_enabled = not self.traffic_mode_enabled
+    else:
+      self.onroad_press_start = None
+      self.onroad_traffic_fired = False
 
     if frogpilotCarState.distancePressed:
       self.gap_counter += 1
