@@ -163,6 +163,7 @@ void FrogPilotAnnotatedCameraWidget::updateState(const FrogPilotUIState &fs, con
   // BogPilot developer HUD: file-backed toggle, re-read every 2 s
   if (developerHudCheckFrame-- <= 0) {
     developerHudEnabled = developerHudFileEnabled();
+    bogpilot::swapSpeedGraph() = developerHudFileEnabled(bogpilot::SWAP_SPEED_GRAPH_PATH);  // same "1"/"true"/"on" parser
     developerHudCheckFrame = UI_FREQ * 2;
   }
 
@@ -792,7 +793,7 @@ void FrogPilotAnnotatedCameraWidget::paintPedalIcons(QPainter &p, const cereal::
   if (redesign) {
     // no wheel button to hang off: under the accel graph instead, scaled to 0.625 (60x120 each)
     startX = rightHandDM ? width() - bogpilot::EDGE - 2 * bogpilot::PEDAL_W : bogpilot::EDGE;
-    startY = bogpilot::GRAPH_TOP + bogpilot::GRAPH_HEIGHT + bogpilot::PEDAL_GAP;
+    startY = bogpilot::STACK_BOTTOM + bogpilot::PEDAL_GAP;
     p.setRenderHint(QPainter::SmoothPixmapTransform);
     p.setOpacity(brakeOpacity);
     p.drawPixmap(QRect(startX, startY, bogpilot::PEDAL_W, bogpilot::PEDAL_H), brakePedalImg);

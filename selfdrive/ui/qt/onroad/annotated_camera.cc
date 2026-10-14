@@ -475,7 +475,7 @@ void AnnotatedCameraWidget::drawRedesignHud(QPainter &p, const cereal::FrogPilot
   frogpilot_nvg->speed = speed;
   frogpilot_nvg->speedLimitRect = g.tile.isEmpty() ? g.capsule.toRect() : g.tile.toRect();
   frogpilot_nvg->pendingLimitTopLeft = QPoint(cap_right + UI_BORDER_SIZE, qRound(g.capsule.top()));
-  frogpilot_nvg->speedLimitSourcesTopLeft = QPoint(qRound(bogpilot::accelGraphRect().right()) + UI_BORDER_SIZE, bogpilot::GRAPH_TOP);
+  frogpilot_nvg->speedLimitSourcesTopLeft = QPoint(qRound(bogpilot::accelGraphRect().right()) + UI_BORDER_SIZE, bogpilot::graphTop());
   frogpilot_nvg->speedUnit = speedUnit;
   frogpilot_nvg->viennaSpeedLimit = has_eu_speed_limit;
 }

@@ -47,7 +47,7 @@ constexpr int SPEED_ROW_HEIGHT = 176;
 constexpr int SPEED_ROW_MIN_RIGHT = 740;  // capsule reaches at least x 740 (screen 770) when a limit is shown
 constexpr int CLUSTER_LEFT_FOR_REC = 20;   // = CLUSTER_LEFT (static_assert below)
 constexpr int REC_DIAMETER = 124;       // record button disc
-constexpr int REC_HIT = 174;            // record button widget (touch target): 25 px beyond the disc's outer ring
+constexpr int REC_HIT = 150;            // record button widget (touch target): 150 = the disc footprint, centred on the record button (REC_CX, REC_CY); no overlap with the personality circle
 constexpr int REC_CX = CLUSTER_LEFT_FOR_REC + 75, REC_CY = 696;   // v5: centred over the personality circle    // record centre (screen 105, 738): above the personality pill, hit box
                                             // left-aligned with the pill (x 0..150)
 constexpr int GRAPH_TOP = 228;          // accel graph 30..590 x 228..468 (screen 60..620 x 258..498)
@@ -69,7 +69,17 @@ constexpr int PILL_LABEL_SPACE = 40;    // title row above the pill
 constexpr int HUD_W = 400;              // developer HUD 1670..2070 x 560..990 (screen 1700..2100 x 590..1020)
 constexpr int HUD_H = 430;
 
-inline QRectF accelGraphRect() { return QRectF(EDGE, GRAPH_TOP, GRAPH_WIDTH, GRAPH_HEIGHT); }
+// SwapSpeedGraph (file-backed /data/params_bogpilot/SwapSpeedGraph): accel graph on top (y 24..264), speed row below it
+// (y 292..468). The stack keeps the same 24..468 footprint, so everything hung below it stays put.
+constexpr int STACK_BOTTOM = GRAPH_TOP + GRAPH_HEIGHT;                // 468 in both orders
+constexpr int SWAP_GRAPH_TOP = SPEED_ROW_TOP;                          // 24
+constexpr int SWAP_SPEED_ROW_TOP = STACK_BOTTOM - SPEED_ROW_HEIGHT;    // 292
+const char SWAP_SPEED_GRAPH_PATH[] = "/data/params_bogpilot/SwapSpeedGraph";
+inline bool &swapSpeedGraph() { static bool on = false; return on; }   // refreshed by the onroad widget every 2 s
+inline int speedRowTop() { return swapSpeedGraph() ? SWAP_SPEED_ROW_TOP : SPEED_ROW_TOP; }
+inline int graphTop() { return swapSpeedGraph() ? SWAP_GRAPH_TOP : GRAPH_TOP; }
+
+inline QRectF accelGraphRect() { return QRectF(EDGE, graphTop(), GRAPH_WIDTH, GRAPH_HEIGHT); }
 
 // ---- speed row: MAX | current speed | LIMIT tile (+offset badge); the record button now sits in the lower-left ----
 struct SpeedRowInputs {

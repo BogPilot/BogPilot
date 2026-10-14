@@ -1,5 +1,6 @@
 #include "frogpilot/ui/qt/offroad/visual_settings.h"
 #include "frogpilot/ui/qt/onroad/developer_hud.h"
+#include "frogpilot/ui/qt/onroad/bogpilot_redesign.h"
 
 FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : FrogPilotListWidget(parent), parent(parent) {
   QJsonObject shownDescriptions = QJsonDocument::fromJson(QString::fromStdString(params.get("ShownToggleDescriptions")).toUtf8()).object();
@@ -68,6 +69,7 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
     {"BorderMetrics", tr("Border Metrics"), tr("<b>Show statuses along the border of the driving screen.</b><br><br><b>Blind Spot</b>: The border turns red when a vehicle is in a blind spot<br><b>Steering Torque</b>: The border goes from green to red according to how much steering torque is being used<br><b>Turn Signal</b>: The border flashes yellow when a turn signal is on"), ""},
     {"LeadInfo", tr("Lead Info"), tr("<b>Show each tracked vehicle's distance and speed</b> below its marker."), ""},
     {"DeveloperHUD", tr("Developer HUD"), tr("<b>Show a live data panel on the right side of the driving screen</b>: acceleration, lead distance and speed, actual and desired steering angle, lateral acceleration, altitude, and memory use. Values turn green while openpilot is steering, grey while you are overriding, and orange or red when a lead is close or closing fast.<br><br>Display only. It doesn't change how openpilot drives. Based on sunnypilot's Developer UI (MIT)."), ""},
+    {"SwapSpeedGraph", tr("Accel Graph on Top"), tr("<b>Swap the top-left stack</b>: the acceleration request graph sits on top and the speed row (MAX, speed, limit) sits below it.<br><br>Display only. Takes effect on the driving screen within 2 seconds."), ""},
     {"FPSCounter", tr("FPS Display"), tr("<b>Show the frames per second (FPS)</b> at the bottom of the driving screen."), ""},
     {"NumericalTemp", tr("Numerical Temperature Gauge"), tr("<b>Show a numerical temperature in the sidebar</b> instead of the status labels."), ""},
     {"SidebarMetrics", tr("Sidebar Metrics"), tr("<b>Display system information</b> (CPU, GPU, RAM usage, IP address, device storage) in the sidebar."), ""},
@@ -170,6 +172,13 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
         setDeveloperHudFileEnabled(state);
       });
       visualToggle = developerHudToggle;
+    } else if (param == "SwapSpeedGraph") {
+      // File-backed (/data/params_bogpilot/SwapSpeedGraph), same reader/writer as DeveloperHUD. Absent file = off.
+      ToggleControl *swapToggle = new ToggleControl(title, desc, icon, developerHudFileEnabled(bogpilot::SWAP_SPEED_GRAPH_PATH));
+      QObject::connect(swapToggle, &ToggleControl::toggleFlipped, [](bool state) {
+        setDeveloperHudFileEnabled(state, bogpilot::SWAP_SPEED_GRAPH_PATH);
+      });
+      visualToggle = swapToggle;
     } else if (param == "NumericalTemp") {
       std::vector<QString> temperatureToggles{"Fahrenheit"};
       std::vector<QString> temperatureToggleNames{tr("Fahrenheit")};

@@ -52,7 +52,7 @@ BOGPILOT_THEME = "BogPilot"
 
 # BogPilot file-backed toggles (not Params keys). Absent file = that toggle's built-in default.
 FILE_TOGGLE_KEYS = ("ConfidenceBall", "ConfidenceBallSide", "DeveloperHUD", "RemoteUIStream",
-                    "EnableICIntegration", "RegenComfortBrake")
+                    "EnableICIntegration", "RegenComfortBrake", "SwapSpeedGraph")
 
 # Written as a pair, and only while the tuning level was never confirmed. Without
 # TuningLevelConfirmed=1 the settings panel's first-open popup would drop a new
