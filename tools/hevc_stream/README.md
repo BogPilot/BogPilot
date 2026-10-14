@@ -1,7 +1,7 @@
 # BogPilot HEVC stream → Mac (experimental)
 
 The comma's `hevc_streamd` forwards the HEVC that encoderd already produces
-(no re-encode) plus carState / liveCalibration / radarState to a Mac on the
+(no re-encode) plus (opt-in) carState / liveCalibration / radarState to a Mac on the
 same Wi-Fi (in-car travel router). Transport: ZMQ PUB, multipart
 `[topic, raw cereal Event bytes]`, port 8765, bound only to wlan0's private IP.
 
@@ -9,7 +9,7 @@ same Wi-Fi (in-car travel router). Transport: ZMQ PUB, multipart
 | file | default | meaning |
 |---|---|---|
 | HevcStream | 1 | 0 disables |
-| HevcStreamServices | wideRoadEncodeData,roadEncodeData,carState,liveCalibration,radarState | add `modelV2` if wanted |
+| HevcStreamServices | wideRoadEncodeData,roadEncodeData | state topics (carState, liveCalibration, radarState, modelV2) are opt-in; adding them adds msgq readers that can evict driving readers (route 5b commIssue) |
 | HevcStreamIface | wlan0 | interface whose private IPv4 is bound (never 0.0.0.0/public) |
 | HevcStreamPort | 8765 | |
 | HevcStreamAllow | (none) | comma list of client IPs allowed (e.g. the Mac's reserved IP) |

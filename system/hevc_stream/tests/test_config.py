@@ -77,3 +77,9 @@ def test_process_registered():
   src = Path(__file__).resolve().parents[3] / "system/manager/process_config.py"
   s = src.read_text()
   assert '"hevc_streamd", "system.hevc_stream.hevc_streamd", hevc_stream' in s
+
+
+def test_default_has_no_state_readers():
+  # Route 5b: extra msgq readers on state topics evicted driving readers (commIssue).
+  assert c.DEFAULT_SERVICES == ("wideRoadEncodeData", "roadEncodeData")
+  assert not set(c.DEFAULT_SERVICES) & set(c.STATE_SERVICES)

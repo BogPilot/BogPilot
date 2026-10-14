@@ -25,7 +25,13 @@ PARAMS_DIR = Path("/data/params_bogpilot")
 ENCODE_SERVICES = ("wideRoadEncodeData", "roadEncodeData", "driverEncodeData")
 STATE_SERVICES = ("carState", "liveCalibration", "radarState", "modelV2")
 ALLOWED_SERVICES = ENCODE_SERVICES + STATE_SERVICES
-DEFAULT_SERVICES = ("wideRoadEncodeData", "roadEncodeData", "carState", "liveCalibration", "radarState")
+# Encode streams only by default. Route 5b (bundle-1013, 41a156b1): hevc_streamd's
+# extra msgq readers on carState / liveCalibration / radarState pushed those queues
+# past msgq NUM_READERS (15); every re-subscribe evicts ALL readers of the queue, so
+# calibrationd / dmonitoringd / paramsd / torqued / lagd / plannerd kept missing
+# messages and published valid=False -> commIssue on every engage. State topics are
+# opt-in only (HevcStreamServices) until they are sourced without new msgq readers.
+DEFAULT_SERVICES = ("wideRoadEncodeData", "roadEncodeData")
 DEFAULT_IFACE = "wlan0"
 DEFAULT_PORT = 8765
 # Max forward rate for state topics (latest-only/conflated). carState is 100 Hz on device.
