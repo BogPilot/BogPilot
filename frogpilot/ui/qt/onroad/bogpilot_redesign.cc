@@ -276,7 +276,8 @@ void paintPersonalityPill(QPainter &p, const QRectF &pill, int personality, bool
 }
 
 int personalityAt(const QRectF &pill, const QPointF &pos, int current) {
-  if (!pill.adjusted(-6, -PILL_LABEL_SPACE, 6, 10).contains(pos)) return -1;
+  const QPointF d = pos - pill.center();   // circle only (label excluded)
+  if (d.x() * d.x() + d.y() * d.y() > (pill.width() / 2) * (pill.width() / 2)) return -1;
   // enum aggressive=0, standard=1, relaxed=2: step down like the stalk / controlsd (Relaxed -> Standard -> Aggressive)
   return (std::clamp(current, 0, 2) + 2) % 3;
 }

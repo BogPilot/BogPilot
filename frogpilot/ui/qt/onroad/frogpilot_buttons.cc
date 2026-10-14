@@ -31,9 +31,21 @@ QRectF DistanceButton::pillRect() const {
   return QRectF(0, bogpilot::PILL_LABEL_SPACE, bogpilot::PILL_W, bogpilot::PILL_H);
 }
 
-void DistanceButton::mouseReleaseEvent(QMouseEvent *event) {
-  QPushButton::mouseReleaseEvent(event);
+bool DistanceButton::hitButton(const QPoint &pos) const {
   if (!redesign) {
+    return QPushButton::hitButton(pos);
+  }
+  // Taps and holds count only inside the personality circle; the text label above it is not part of the button
+  const QRectF c = pillRect();
+  const QPointF d = QPointF(pos) - c.center();
+  const qreal r = c.width() / 2.0;
+  return d.x() * d.x() + d.y() * d.y() <= r * r;
+}
+
+void DistanceButton::mouseReleaseEvent(QMouseEvent *event) {
+  const bool was_down = isDown();
+  QPushButton::mouseReleaseEvent(event);
+  if (!redesign || !was_down || !hitButton(event->pos())) {
     return;
   }
   // Preview only: controlsd writes LongitudinalPersonality. Skip after a Traffic Mode hold or while in Traffic Mode.

@@ -19,6 +19,7 @@ public:
 
 private:
   void mouseReleaseEvent(QMouseEvent *event) override;
+  bool hitButton(const QPoint &pos) const override;   // redesign: only the circle, not the label above it
   void paintEvent(QPaintEvent *event) override;
   QRectF pillRect() const;
 

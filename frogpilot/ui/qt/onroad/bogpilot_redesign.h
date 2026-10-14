@@ -47,7 +47,7 @@ constexpr int SPEED_ROW_HEIGHT = 176;
 constexpr int SPEED_ROW_MIN_RIGHT = 740;  // capsule reaches at least x 740 (screen 770) when a limit is shown
 constexpr int CLUSTER_LEFT_FOR_REC = 20;   // = CLUSTER_LEFT (static_assert below)
 constexpr int REC_DIAMETER = 124;       // record button disc
-constexpr int REC_HIT = 150;            // record button widget (touch target): 150 = the disc footprint, centred on the record button (REC_CX, REC_CY); no overlap with the personality circle
+constexpr int REC_HIT = 174;            // record button widget (touch target): 25 px beyond the disc's outer ring
 constexpr int REC_CX = CLUSTER_LEFT_FOR_REC + 75, REC_CY = 696;   // v5: centred over the personality circle    // record centre (screen 105, 738): above the personality pill, hit box
                                             // left-aligned with the pill (x 0..150)
 constexpr int GRAPH_TOP = 228;          // accel graph 30..590 x 228..468 (screen 60..620 x 258..498)
