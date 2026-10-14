@@ -36,8 +36,9 @@ void DistanceButton::mouseReleaseEvent(QMouseEvent *event) {
     return;
   }
   // Same param the Driving Personality setting and controlsd's distance-button handling write; controlsd re-reads it every 0.1 s
-  const int selected = bogpilot::personalityAt(pillRect(), event->pos());
-  if (selected >= 0 && (selected != personality - 1 || traffic_mode_active)) {
+  // v5: the circle cycles Aggressive -> Standard -> Relaxed -> Aggressive
+  const int selected = bogpilot::personalityAt(pillRect(), event->pos(), personality - 1);
+  if (selected >= 0) {
     params.putNonBlocking("LongitudinalPersonality", std::to_string(selected));
     personality = selected + 1;  // show the new selection immediately; updateState confirms it from controlsState
     pending_personality = selected;

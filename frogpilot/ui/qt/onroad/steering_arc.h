@@ -68,6 +68,7 @@ public:
     bool active = false;          // openpilot engaged in any form (track at full strength)
     bool engaged_colors = false;  // white / purple OP fill; otherwise faded white like upstream
     bool experimental = false;
+    float steering_angle_deg = 0.0f;  // carState.steeringAngleDeg, colours the driver arc (v5)
   };
 
   void update(const Inputs &in);
@@ -85,6 +86,11 @@ public:
   // (curvature*v^2 - roll*g*interp(v,[5,15],[0,1]) + (desired - actual lateral accel)) / maxLateralAccel.
   // controlsState.curvature is -VM.calc_curvature(steeringAngle), so positive curvature is a RIGHT turn and a
   // left turn comes out negative, which fills to the left (same as upstream torque_bar.py, no extra negation).
+  // v5 driver-arc colour by steering-wheel angle (mockup 2c, AP1 lock ~430 deg: logs -426.5 / +383.5):
+  // blue to 120, blend to orange by 180, orange deepening to 360, blend to hot pink at LOCK_DEG.
+  static constexpr float LOCK_DEG = 430.0f;
+  static QColor humanAngleColor(float abs_angle_deg);
+
   static float angleUtilization(float curvature, float desired_curvature, float v_ego, float roll, float max_lat_accel);
   // Driver steering: angleUtilization(curvature, curvature, ...) (actual lateral acceleration, no OP target) blended
   // with -steeringAngleDeg / HUMAN_FULL_ANGLE_DEG at low speed (steeringAngleDeg is positive to the left).
@@ -100,6 +106,7 @@ private:
   float op_target_ = 0.0f;    // filtered OP value, drawn as a tick during an override
   float alpha_ = 0.0f;
   float human_orange_ = 1.0f;
+  float angle_ = 0.0f;        // filtered |steering angle| for the driver-arc colour
   bool human_ = false;        // displaying the driver's steering
   int human_frames_ = 0;      // frames the requested source has differed from the shown one
   bool show_tick_ = false;

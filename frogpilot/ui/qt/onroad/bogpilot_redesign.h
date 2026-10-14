@@ -45,9 +45,10 @@ constexpr int EDGE = 30;                // left/right inset from the camera-view
 constexpr int SPEED_ROW_TOP = 24;       // capsule y 24..200 (screen 54..230)
 constexpr int SPEED_ROW_HEIGHT = 176;
 constexpr int SPEED_ROW_MIN_RIGHT = 740;  // capsule reaches at least x 740 (screen 770) when a limit is shown
+constexpr int CLUSTER_LEFT_FOR_REC = 20;   // = CLUSTER_LEFT (static_assert below)
 constexpr int REC_DIAMETER = 124;       // record button disc
-constexpr int REC_HIT = 150;            // record button widget (touch target)
-constexpr int REC_CX = 75, REC_CY = 708;    // record centre (screen 105, 738): above the personality pill, hit box
+constexpr int REC_HIT = 174;            // record button widget (touch target): 25 px beyond the disc's outer ring
+constexpr int REC_CX = CLUSTER_LEFT_FOR_REC + 75, REC_CY = 696;   // v5: centred over the personality circle    // record centre (screen 105, 738): above the personality pill, hit box
                                             // left-aligned with the pill (x 0..150)
 constexpr int GRAPH_TOP = 228;          // accel graph 30..590 x 228..468 (screen 60..620 x 258..498)
 constexpr int GRAPH_WIDTH = 560;
@@ -55,13 +56,14 @@ constexpr int GRAPH_HEIGHT = 240;
 constexpr int PEDAL_W = 60, PEDAL_H = 120;  // pedal icons (0.625 of the 96x192 pixmaps), under the graph
 constexpr int PEDAL_GAP = 18;
 constexpr int STATUS_ICON = 132;        // CEM / paused icons, row beside the record button
-constexpr int STATUS_X = 168, STATUS_Y = 642, STATUS_STEP = 150;   // screen x 198 / 348 / 498, y 672..804
+constexpr int STATUS_X = 196, STATUS_Y = 642, STATUS_STEP = 150;   // screen x 198 / 348 / 498, y 672..804
 constexpr int CLUSTER_CY = 900;         // lower-left cluster centre line (screen y 930)
 constexpr int CLUSTER_D = 150;          // DM / map button diameter
-constexpr int CLUSTER_LEFT = 0;        // pill left edge, flush with the border (the confidence ball may overlap it)
+constexpr int CLUSTER_LEFT = 20;       // v5: 20 px buffer between the personality circle and the engage border
 constexpr int CLUSTER_GAP = 6;
-constexpr int PILL_W = 411;             // original 252x92 aspect (2.74:1); map disc then ends x 723 (screen 753), which
-                                        // the arc (incl. its shadow) clears at full lock with SteeringArc::SPAN_DEG = 17
+static_assert(CLUSTER_LEFT_FOR_REC == CLUSTER_LEFT, "record button must stay centred over the personality circle");
+constexpr int PILL_W = 150;             // v5: personality is a single CLUSTER_D circle (was a 411 px pill); DM and map
+                                        // slide left, so the map disc now ends x 462 (screen 492)
 constexpr int PILL_H = 150;             // = CLUSTER_D
 constexpr int PILL_LABEL_SPACE = 40;    // title row above the pill
 constexpr int HUD_W = 400;              // developer HUD 1670..2070 x 560..990 (screen 1700..2100 x 590..1020)
@@ -110,11 +112,20 @@ QRectF maxSlotRect();
 void paintCurveGlyph(QPainter &p, const QPointF &c, qreal size, const QColor &color, bool left, qreal stroke);
 SpeedRowGeometry paintSpeedRow(QPainter &p, const SpeedRowInputs &in);
 
-// ---- personality: segmented pill Aggressive | Standard | Relaxed (cereal LongitudinalPersonality 0, 1, 2) ----
-// pill = the pill body; its label is drawn PILL_LABEL_SPACE above it.
+// ---- personality: single circle button showing one / two / three bars (Aggressive / Standard / Relaxed,
+// cereal LongitudinalPersonality 0, 1, 2); each tap cycles to the next. pill = the circle's square; its label is drawn
+// PILL_LABEL_SPACE above it.
 void paintPersonalityPill(QPainter &p, const QRectF &pill, int personality, bool traffic_mode, const QString &label);
-// Personality (0..2) under pos, or -1.
-int personalityAt(const QRectF &pill, const QPointF &pos);
+// Personality to switch to when pos (inside the button) is tapped while `current` is shown: (current + 1) % 3, or -1.
+int personalityAt(const QRectF &pill, const QPointF &pos, int current);
+
+// ---- lead box colour by distance (v5) ----
+// Time-gap thresholds scaled by the car's speed (v_ego, m/s), each with a distance floor so crawling / stop-and-go
+// does not read red: white at >= max(2.0 s * v, 10 m), orange at max(1.0 s * v, 5 m), red at <= max(0.5 s * v, 2 m),
+// blended between. Adjacent / non-primary leads use the same thresholds with muted grey / orange / red.
+// Below WHITE_BELOW_V (8 mph) the box is always white (muted grey for non-primary).
+constexpr float WHITE_BELOW_V = 3.58f;   // m/s, 8 mph
+QColor leadDistanceColor(float d_rel, bool adjacent, float v_ego);
 
 // ---- lead lock-on box v3 ----
 // box = inner edge of the square. Thin side segments are centred on the 8 px bracket centreline, so the thick corner
@@ -144,8 +155,12 @@ void paintRecordButton(QPainter &p, const QRectF &hit, bool recording, qreal pul
 void paintIconButton(QPainter &p, const QRectF &r, const QPixmap &icon, qreal opacity);
 
 // ---- alert banner ----
-// Banner for small / mid alerts in a widget of size `widget` (widget space = screen minus the 30 px border):
-// screen x 720-1660, bottom y 864 on the 2160 px screen; full width minus 40 px margins when narrower.
+// v5 (mockup 5d): banner for small / mid alerts in a widget of size `widget` (widget space = screen minus the 30 px
+// border). Horizontal space runs from ALERT_GAP right of the record button to a right margin of one record-button width;
+// vertically it sits ALERT_GAP below the accel graph and ALERT_GAP above the personality / DM / map row. Mid alerts fill
+// that space; small alerts are a shorter banner centred in it. Full width minus 40 px margins when narrower.
+constexpr int ALERT_GAP = 36;
+constexpr int ALERT_RIGHT_MARGIN = 150;   // record button width rule (kept at the pre-v5 150 px)
 QRect alertBannerRect(const QSize &widget, bool mid);
 void paintAlertBanner(QPainter &p, const QRect &r, bool mid, const QString &text1, const QString &text2, const QColor &fill);
 

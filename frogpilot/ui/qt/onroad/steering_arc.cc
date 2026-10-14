@@ -111,6 +111,15 @@ float SteeringArc::humanUtilization(float curvature, float steering_angle_deg, f
   return std::clamp(w * lat + (1.0f - w) * angle, -1.0f, 1.0f);
 }
 
+QColor SteeringArc::humanAngleColor(float a) {
+  static const QColor BLUE(90, 205, 255), ORANGE_A(255, 140, 0), ORANGE_DEEP(255, 80, 0), HOT_PINK(255, 20, 147);
+  static const float PINK_START = 360.0f;
+  if (a <= 120.0f) return BLUE;
+  if (a <= 180.0f) return blend(BLUE, ORANGE_A, (a - 120.0f) / 60.0f);
+  if (a <= PINK_START) return blend(ORANGE_A, ORANGE_DEEP, (a - 180.0f) / (PINK_START - 180.0f));
+  return blend(ORANGE_DEEP, HOT_PINK, std::min(1.0f, (a - PINK_START) / (LOCK_DEG - PINK_START)));
+}
+
 void SteeringArc::update(const Inputs &in) {
   // Driver source while lateral is off or the driver is overriding; switch only after the request has held 0.3 s
   const bool want_human = !in.lat_active || in.override_;
@@ -129,6 +138,7 @@ void SteeringArc::update(const Inputs &in) {
   op_target_ = (1.0f - FILTER_K) * op_target_ + FILTER_K * op;
   alpha_ = (1.0f - FILTER_K) * alpha_ + FILTER_K * (in.active ? 1.0f : 0.55f);
   human_orange_ = std::clamp(in.human_lat_weight, 0.0f, 1.0f);
+  angle_ = (1.0f - FILTER_K) * angle_ + FILTER_K * std::fabs(in.steering_angle_deg);
   show_tick_ = human_ && in.lat_active && in.override_;
   engaged_colors_ = in.engaged_colors;
   experimental_ = in.experimental;
@@ -179,10 +189,8 @@ void SteeringArc::paint(QPainter &p, const QRect &view) const {
     const QPolygonF fill = arcBarPolygon(mid_r, thickness, top, top + SPAN_DEG / 2 * torque_, 7 * s);
     QColor c0, c1;
     if (human_) {
-      // driver steering: soft cyan at full strength even when the track is dim; orange only for the lat-accel share
-      const float k = std::max(0.0f, at - 0.75f) * 4.0f * human_orange_;
-      c0 = withAlpha(HUMAN_CYAN, 0.95f);
-      c1 = blend(withAlpha(HUMAN_CYAN, 0.95f), withAlpha(ORANGE, 1.0f), k);
+      // v5: driver steering coloured by wheel angle (blue -> orange -> deep orange -> hot pink at full lock)
+      c0 = c1 = withAlpha(humanAngleColor(angle_), 0.95f);
     } else {
       const float k = std::max(0.0f, at - 0.75f) * 4.0f;
       c0 = blend(withAlpha(base, 0.9f * alpha), withAlpha(experimental_ ? PURPLE : YELLOW, alpha), k);
