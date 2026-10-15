@@ -9,6 +9,9 @@ from openpilot.selfdrive.car.tesla.stalk_follow import ap1_stalk_commands
 from openpilot.selfdrive.car.tesla.values import CAR
 
 ButtonType = car.CarState.ButtonEvent.Type
+
+AP1_PERSONALITY_RETRY_FRAMES = 10  # card runs at 100 Hz: re-check the stalk personality write every 0.1 s
+AP1_PERSONALITY_MAX_FRAMES = 300   # stop retrying after 3 s
 FrogPilotButtonType = custom.FrogPilotCarState.ButtonEvent.Type
 
 def handle_experimental_mode(conditional_experimental_mode):
@@ -38,6 +41,9 @@ class FrogPilotCard:
     self.prev_distance_button = False
     self.traffic_mode_enabled = False
     self._ap1_stalk_personality = None
+    self._ap1_stalk_detent = None
+    self._ap1_personality_target = None
+    self._ap1_personality_frames = 0
 
     self.gap_counter = 0
     self.onroad_press_start = None
@@ -125,14 +131,46 @@ class FrogPilotCard:
     if self.car.CP.carFingerprint != CAR.TESLA_AP1_MODELS:
       return
     cs = getattr(getattr(self.car, "CI", None), "CS", None)
-    traffic, personality = ap1_stalk_commands(getattr(cs, "stalk_follow", None))
+    decision = getattr(cs, "stalk_follow", None)
+    traffic, personality = ap1_stalk_commands(decision)
     if traffic is None:
       return
     self.traffic_mode_enabled = traffic
-    if personality is None or personality == self._ap1_stalk_personality:
+    # A move onto a named detent sets the target, even if it matches the cached personality: the cache goes
+    # stale after a screen tap or Settings change, and a quick flick (e.g. via an in-between detent) would be skipped.
+    detent = getattr(decision, "detent", None)
+    if personality is not None and (personality != self._ap1_stalk_personality or detent != self._ap1_stalk_detent):
+      self._ap1_personality_target = personality
+      self._ap1_personality_frames = 0
+    self._ap1_stalk_detent = detent
+    self._sync_ap1_personality()
+
+  def _sync_ap1_personality(self):
+    """Write the stalk's LongitudinalPersonality and re-check the stored value until it matches.
+
+    A put_nonblocking can be lost (Params async writer race) or overtaken, so the param is read back every
+    AP1_PERSONALITY_RETRY_FRAMES and rewritten while it differs. Gives up after AP1_PERSONALITY_MAX_FRAMES so a
+    later screen tap is never fought. Only the personality param is touched; follow time comes from the stalk.
+    """
+    target = self._ap1_personality_target
+    if target is None:
       return
-    params.put_nonblocking("LongitudinalPersonality", str(personality))
-    self._ap1_stalk_personality = personality
+    frames = self._ap1_personality_frames
+    self._ap1_personality_frames += 1
+    if frames == 0:
+      params.put_nonblocking("LongitudinalPersonality", str(target))
+      self._ap1_stalk_personality = target
+      return
+    if frames % AP1_PERSONALITY_RETRY_FRAMES:
+      return
+    try:
+      stored = int(params.get("LongitudinalPersonality"))
+    except (TypeError, ValueError):
+      stored = None
+    if stored == target or frames >= AP1_PERSONALITY_MAX_FRAMES:
+      self._ap1_personality_target = None
+      return
+    params.put_nonblocking("LongitudinalPersonality", str(target))
 
   def _apply_ap1_pull_hold(self):
     """AP1 long RWD stalk pull (~2 s) toggles Experimental Mode once.
