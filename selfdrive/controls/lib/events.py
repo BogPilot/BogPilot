@@ -10,6 +10,7 @@ from cereal import log, car, custom
 import cereal.messaging as messaging
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.git import get_short_branch
+from openpilot.selfdrive.car.tesla.stalk_follow import live_follow_seconds
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER
@@ -382,13 +383,14 @@ def holiday_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, 
 
 def ap1_follow_distance_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   # AP1 stalk dial (tesla/stalk_follow.py): follow seconds ride on cruiseState.speedOffset.
-  follow_s = CS.cruiseState.speedOffset
+  # Show the live Settings value the planner uses for this detent (no weather add-on).
+  follow_s = live_follow_seconds(CS.cruiseState.speedOffset, frogpilot_toggles)
   label = " (traffic)" if 0 < follow_s <= 1.0 + 1e-6 else ""
   return Alert(
     f"Follow distance: {follow_s:.2f} s{label}",
     "",
     FrogPilotAlertStatus.frogpilot, AlertSize.small,
-    Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.)
+    Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.)
 
 
 def no_lane_available_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:

@@ -67,6 +67,7 @@ class FrogPilotFollowing:
       self.t_follow,
       sm["carState"].cruiseState.speedOffset,
       sm["controlsState"].enabled and sm["carParams"].carFingerprint == "TESLA_AP1_MODELS",
+      frogpilot_toggles,
     )
 
     self.following_lead = self.frogpilot_planner.tracking_lead and self.frogpilot_planner.lead_one.dRel < (self.t_follow * 2) * v_ego

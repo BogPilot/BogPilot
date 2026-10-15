@@ -6,7 +6,8 @@ DTR_Dist_Rq on STW_ACTN_RQ (opendbc tesla_can.dbc and tesla_powertrain.dbc,
 and Tinkla carstate): 0, 33, 66, 100, 133, 166, 200 are ACC_DIST_1..7.
 255 is SNA. Those two sources agree, so this module does not invent a third scale.
 
-Follow seconds are the stock FrogPilot defaults, not live params:
+Detent keys are the stock FrogPilot default seconds; live_follow_seconds maps
+them to the user's AggressiveFollow / StandardFollow / RelaxedFollow at use:
   traffic cruising gap is TRAFFIC_FOLLOW at v_ego >= CRUISING_SPEED (5 m/s): 1.00s
     (the same curve is 0.50s at 0 m/s; this module has no v_ego and does not apply it)
   aggressive / standard / relaxed are get_T_FOLLOW with custom_personalities false:
@@ -205,12 +206,41 @@ def ap1_stalk_commands(decision):
   return False, _PERSONALITY.get(decision.profile)
 
 
-def apply_stalk_t_follow(t_follow, speed_offset, enabled):
+def live_follow_seconds(follow_s, toggles=None):
+  """Map the stalk's default seconds back to its detent and return the live
+  Settings value (AggressiveFollow / StandardFollow / RelaxedFollow) for it.
+
+  Intermediate detents use the midpoint of the live neighbors. Traffic stays
+  _TRAFFIC_S: there is no Traffic follow toggle in Settings. Unknown values and
+  toggles=None pass follow_s through unchanged. Weather add-on is not included.
+  """
+  if toggles is None or follow_s <= 0.0:
+    return float(follow_s)
+  a = float(getattr(toggles, "aggressive_follow", _AGGRESSIVE_S))
+  s = float(getattr(toggles, "standard_follow", _STANDARD_S))
+  r = float(getattr(toggles, "relaxed_follow", _RELAXED_S))
+  t = _TRAFFIC_S
+  table = (
+    (_TRAFFIC_S, t),
+    ((_TRAFFIC_S + _AGGRESSIVE_S) / 2, (t + a) / 2),
+    (_AGGRESSIVE_S, a),
+    ((_AGGRESSIVE_S + _STANDARD_S) / 2, (a + s) / 2),
+    (_STANDARD_S, s),
+    ((_STANDARD_S + _RELAXED_S) / 2, (s + r) / 2),
+    (_RELAXED_S, r),
+  )
+  for default_s, live_s in table:
+    if abs(default_s - follow_s) < 1e-3:
+      return live_s
+  return float(follow_s)
+
+
+def apply_stalk_t_follow(t_follow, speed_offset, enabled, toggles=None):
   """Replace the personality follow time with the stalk seconds when set.
 
   enabled is true only for AP1 while controls are on. speed_offset 0 means
   no ready detent. Does not invent a second follow controller.
   """
   if enabled and speed_offset > 0.0:
-    return float(speed_offset)
+    return live_follow_seconds(speed_offset, toggles)
   return t_follow

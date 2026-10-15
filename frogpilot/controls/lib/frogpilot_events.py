@@ -72,7 +72,7 @@ class FrogPilotEvents:
       # cruiseState.speedOffset carries the debounced AP1 stalk follow seconds (0 = not ready).
       follow_s = sm["carState"].cruiseState.speedOffset
       if follow_s > 0 and self.ap1_follow_s > 0 and abs(follow_s - self.ap1_follow_s) > 1e-3:
-        self.ap1_follow_alert_frames = int(2. / DT_MDL)
+        self.ap1_follow_alert_frames = int(1. / DT_MDL)  # ~1 s on screen with the 1 s alert duration
       if follow_s > 0:
         self.ap1_follow_s = follow_s
       if self.ap1_follow_alert_frames > 0:
