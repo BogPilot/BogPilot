@@ -83,7 +83,7 @@ void AnnotatedCameraWidget::mousePressEvent(QMouseEvent *e) {
     arc_tap = arc_tap.united(QRectF(frogpilot_nvg->roadNameRect));   // the street name pill under the arc counts too
   }
   if (redesign && !frogpilot_nvg->bigMapOpen && arc_tap.contains(e->pos())) {
-    experimental_btn->toggleFromArc();
+    experimental_btn->changeMode();
     e->accept();
     return;
   }

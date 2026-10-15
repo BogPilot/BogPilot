@@ -57,16 +57,6 @@ void ExperimentalButton::changeMode() {
   }
 }
 
-// BogPilot redesign: the steering arc tap. Needs openpilot longitudinal, but not the one-time Settings confirmation,
-// and writes ExperimentalMode directly even with Conditional Experimental on (a CEStatus override is reset by the
-// planner unless an "experimental mode via press" option is enabled).
-void ExperimentalButton::toggleFromArc() {
-  const auto cp = (*uiState()->sm)["carParams"].getCarParams();
-  if (hasLongitudinalControl(cp)) {
-    params.putBool("ExperimentalMode", !params.getBool("ExperimentalMode"));
-  }
-}
-
 void ExperimentalButton::updateState(const UIState &s, const FrogPilotUIState &fs, const QJsonObject &frogpilot_toggles) {
   const auto cs = (*s.sm)["controlsState"].getControlsState();
   bool eng = cs.getEngageable() || cs.getEnabled() || fs.frogpilot_scene.always_on_lateral_active;

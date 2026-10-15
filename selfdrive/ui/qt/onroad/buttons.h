@@ -13,8 +13,7 @@ class ExperimentalButton : public QPushButton {
 public:
   explicit ExperimentalButton(QWidget *parent = 0);
   void updateState(const UIState &s, const FrogPilotUIState &fs, const QJsonObject &frogpilot_toggles);
-  void changeMode();
-  void toggleFromArc();  // BogPilot: steering arc tap only (no ExperimentalModeConfirmed gate, bypasses CEM override)  // BogPilot: public so the redesign's steering arc tap can toggle Experimental Mode
+  void changeMode();  // BogPilot: public so the redesign's steering arc tap can toggle Experimental Mode
 
 private:
   void paintEvent(QPaintEvent *event) override;
