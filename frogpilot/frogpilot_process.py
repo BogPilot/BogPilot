@@ -16,6 +16,7 @@ from openpilot.frogpilot.controls.frogpilot_planner import FrogPilotPlanner
 from openpilot.frogpilot.system.frogpilot_stats import send_stats
 from openpilot.frogpilot.system.frogpilot_tracking import FrogPilotTracking
 from openpilot.selfdrive.car.tesla.ap1_defaults import apply_ap1_defaults_once
+from openpilot.system.state_stream.streamer import StateStreamer
 
 ASSET_CHECK_RATE = (1 / DT_MDL)
 
@@ -78,6 +79,9 @@ def frogpilot_thread():
                             "frogpilotModelV2", "frogpilotNavigation", "frogpilotOnroadEvents"],
                             poll="modelV2", ignore_avg_freq=["frogpilotRadarState"])
 
+  # BogPilot StateStream: reads only this SubMaster (no new msgq readers); default off.
+  state_streamer = StateStreamer()
+
   run_update_checks = False
   started_previously = False
   time_validated = False
@@ -122,6 +126,8 @@ def frogpilot_thread():
       frogpilot_plan_send.frogpilotPlan.themeUpdated = theme_manager.theme_updated or params_memory.get_bool("UseActiveTheme")
       frogpilot_plan_send.frogpilotPlan.togglesUpdated = toggles_updated
       pm.send("frogpilotPlan", frogpilot_plan_send)
+
+    state_streamer.tick(sm, started)
 
     started_previously = started
 
