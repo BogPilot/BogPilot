@@ -1,3 +1,6 @@
+#include <cmath>
+
+#include <QDateTime>
 #include <QMovie>
 
 #include "frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h"
@@ -188,6 +191,8 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
 
   hudShown = developerHudShown(frogpilot_scene);
 
+  paintNoGps(p, sm);
+
   if (!hideBottomIcons && frogpilot_toggles.value("cem_status").toBool()) {
     paintCEMStatus(p, frogpilotPlan, frogpilot_scene, sm);
   } else {
@@ -242,6 +247,7 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
     paintRadarTracks(p, model, s, frogpilot_scene, sm, fpsm);
   }
 
+  roadNameRect = QRect();
   if (frogpilot_toggles.value("road_name_ui").toBool()) {
     paintRoadName(p);
   }
@@ -605,6 +611,7 @@ int FrogPilotAnnotatedCameraWidget::mapButtonShift() {
 
 // BogPilot redesign: CEM status / paused icons sit in a row beside the record button, above the lower-left cluster
 QPoint FrogPilotAnnotatedCameraWidget::redesignStatusSlot(int index) {
+  if (noGpsShown) index += 1;   // the no-GPS indicator takes the first slot's space
   // round 3: 132 px icons in a row beside the record button, above the personality pill
   const int x = rightHandDM ? width() - bogpilot::STATUS_X - bogpilot::STATUS_ICON - index * bogpilot::STATUS_STEP
                             : bogpilot::STATUS_X + index * bogpilot::STATUS_STEP;
@@ -894,6 +901,22 @@ void FrogPilotAnnotatedCameraWidget::paintRainbowPath(QPainter &p, QLinearGradie
   p.restore();
 }
 
+// BogPilot: replaces the suppressed noGps banner. Shown while liveLocationKalman.gpsOK has been false for 5 s;
+// centred over the DM circle in the record button's row. The red slash blinks 1 s on / 1 s off (record pulse period).
+void FrogPilotAnnotatedCameraWidget::paintNoGps(QPainter &p, SubMaster &sm) {
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  if (lastGpsOkMs == 0 || sm["liveLocationKalman"].getLiveLocationKalman().getGpsOK()) {
+    lastGpsOkMs = now;
+  }
+  noGpsShown = redesign && !bigMapOpen && !hideBottomIcons && now - lastGpsOkMs >= bogpilot::NOGPS_DEBOUNCE_MS;
+  if (!noGpsShown) {
+    return;
+  }
+  const bool slash_on = std::sin((now % 2000) / 2000.0 * 2 * M_PI) > 0;
+  const qreal cx = rightHandDM ? width() - bogpilot::NOGPS_CX : bogpilot::NOGPS_CX;
+  bogpilot::paintNoGpsIndicator(p, QPointF(cx, bogpilot::NOGPS_CY), slash_on);
+}
+
 void FrogPilotAnnotatedCameraWidget::paintRoadName(QPainter &p) {
   QString roadName = QString::fromStdString(params_memory.get("RoadName"));
   if (roadName.isEmpty()) {
@@ -908,7 +931,7 @@ void FrogPilotAnnotatedCameraWidget::paintRoadName(QPainter &p) {
 
   int textWidth = QFontMetrics(font).horizontalAdvance(roadName);
 
-  QRect roadNameRect((width() - (textWidth + 100)) / 2, rect().bottom() - 55 + 1, textWidth + 100, 50);
+  roadNameRect = QRect((width() - (textWidth + 100)) / 2, rect().bottom() - 55 + 1, textWidth + 100, 50);
 
   p.setBrush(blackColor(166));
   p.setOpacity(1.0);

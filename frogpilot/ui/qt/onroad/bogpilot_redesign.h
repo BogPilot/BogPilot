@@ -24,6 +24,7 @@ namespace bogpilot {
 // ---- shared style ----
 const QColor PANEL(14, 17, 22, 168);
 const QColor PANEL_DARK(14, 17, 22, 200);
+const QColor SPEED_PANEL(14, 17, 22, 130);   // speed row capsule only: ~23% less opaque than PANEL
 const QColor STROKE(255, 255, 255, 30);
 const QColor MUTED(255, 255, 255, 150);
 const QColor TEXT(255, 255, 255, 240);
@@ -163,6 +164,12 @@ QRectF leadLockBox(const QPointF &contact, float d_rel, qreal max_x, qreal max_y
 void paintRecordButton(QPainter &p, const QRectF &hit, bool recording, qreal pulse);
 // Dark disc with a centred icon (map / directions button).
 void paintIconButton(QPainter &p, const QRectF &r, const QPixmap &icon, qreal opacity);
+// No-GPS indicator (replaces the suppressed noGps banner): record-button style disc, white satellite always lit,
+// red circle-slash drawn only while slash_on. Display only.
+constexpr int NOGPS_CX = CLUSTER_LEFT + PILL_W + CLUSTER_GAP + CLUSTER_D / 2;   // 251: centred over the DM circle
+constexpr int NOGPS_CY = REC_CY;                                                 // 696: record button row
+constexpr qint64 NOGPS_DEBOUNCE_MS = 5000;
+void paintNoGpsIndicator(QPainter &p, const QPointF &c, bool slash_on);
 
 // ---- alert banner ----
 // v5 (mockup 5d): banner for small / mid alerts in a widget of size `widget` (widget space = screen minus the 30 px

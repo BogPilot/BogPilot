@@ -34,6 +34,9 @@ public:
   bool mutcdSpeedLimit;
   bool rightHandDM;
   bool viennaSpeedLimit;
+  bool noGpsShown = false;            // BogPilot: no-GPS indicator drawn this frame (status icons shift one slot)
+  qint64 lastGpsOkMs = 0;             // BogPilot: last time liveLocationKalman.gpsOK was true (5 s debounce)
+  QRect roadNameRect;                 // BogPilot: last drawn road name pill (part of the steering-arc tap area); null if none
 
   int alertHeight;
   int frogHopCount;
@@ -88,6 +91,7 @@ private:
   void paintPendingSpeedLimit(QPainter &p, const cereal::FrogPilotPlan::Reader &frogpilotPlan);
   void paintRadarTracks(QPainter &p, const cereal::ModelDataV2::Reader &model, UIState &s, FrogPilotUIScene &frogpilot_scene, SubMaster &sm, SubMaster &fpsm);
   void paintRoadName(QPainter &p);
+  void paintNoGps(QPainter &p, SubMaster &sm);
   void paintSmartControllerTraining(QPainter &p, const cereal::FrogPilotPlan::Reader &frogpilotPlan);
   void paintSpeedLimitSources(QPainter &p, const cereal::FrogPilotCarState::Reader &frogpilotCarState, const cereal::FrogPilotNavigation::Reader &frogpilotNavigation, const cereal::FrogPilotPlan::Reader &frogpilotPlan);
   void paintStandstillTimer(QPainter &p);

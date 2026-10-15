@@ -78,8 +78,12 @@ void AnnotatedCameraWidget::placeScreenRecorder() {
 // BogPilot redesign: tapping the steering arc toggles Experimental Mode (it replaces the removed top-right wheel button).
 // Anything else falls through to OnroadWindow (map toggle etc.).
 void AnnotatedCameraWidget::mousePressEvent(QMouseEvent *e) {
-  if (redesign && !frogpilot_nvg->bigMapOpen && steering_arc.tapRect(rect()).contains(e->pos())) {
-    experimental_btn->changeMode();
+  QRectF arc_tap = steering_arc.tapRect(rect());
+  if (!frogpilot_nvg->roadNameRect.isNull()) {
+    arc_tap = arc_tap.united(QRectF(frogpilot_nvg->roadNameRect));   // the street name pill under the arc counts too
+  }
+  if (redesign && !frogpilot_nvg->bigMapOpen && arc_tap.contains(e->pos())) {
+    experimental_btn->toggleFromArc();
     e->accept();
     return;
   }

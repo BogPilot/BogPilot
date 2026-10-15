@@ -145,11 +145,12 @@ void SteeringArc::update(const Inputs &in) {
 }
 
 QRectF SteeringArc::tapRect(const QRect &view) const {
-  const float r_mid = RADIUS + THICKNESS_HI / 2;
-  const float hw = r_mid * std::sin(rad(SPAN_DEG / 2)) + 30;
-  const float h = OFFSET_HI + THICKNESS_HI + 40;   // top of the bar at full lock plus margin, down to the view bottom
+  // From 30 px above the bar's top at full lock (y 846 on the 2100x1020 view) to the view bottom, and ~6 px past
+  // the arc's outer ends (x 776..1324): QRectF(770, 816, 560, 204) on the device. The caller adds the road name pill.
+  const float hw = 280.0f;
+  const float h = OFFSET_HI + THICKNESS_HI + 30;   // 204.4 -> top at y 816
   const float cx = view.left() + view.width() / 2.0f;
-  return QRectF(cx - hw, view.bottom() + 1 - h, 2 * hw, h);
+  return QRectF(cx - hw, std::round(view.bottom() + 1 - h), 2 * hw, view.bottom() + 1 - std::round(view.bottom() + 1 - h));
 }
 
 void SteeringArc::paint(QPainter &p, const QRect &view) const {

@@ -136,9 +136,9 @@ SpeedRowGeometry paintSpeedRow(QPainter &p, const SpeedRowInputs &in) {
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
 
   if (in.traffic_mode) {
-    paintPanel(p, g.capsule, CAP_RADIUS, PANEL, QColor(201, 34, 49), 5);
+    paintPanel(p, g.capsule, CAP_RADIUS, SPEED_PANEL, QColor(201, 34, 49), 5);
   } else {
-    paintPanel(p, g.capsule, CAP_RADIUS);
+    paintPanel(p, g.capsule, CAP_RADIUS, SPEED_PANEL);
   }
 
   // MAX (cluster set speed), or the Curve Speed Controller slot while it is lowering the speed
@@ -448,6 +448,45 @@ void paintIconButton(QPainter &p, const QRectF &r, const QPixmap &icon, qreal op
   p.drawEllipse(r);
   p.setOpacity(opacity);
   p.drawPixmap(QPointF(r.center().x() - icon.width() / 2.0, r.center().y() - icon.height() / 2.0), icon);
+  p.restore();
+}
+
+void paintNoGpsIndicator(QPainter &p, const QPointF &c, bool slash_on) {
+  const qreal d = REC_DIAMETER;
+  const QRectF r(c.x() - d / 2, c.y() - d / 2, d, d);
+  const qreal u = d / 124.0 * 1.18;   // satellite drawing unit (mockup scale)
+  p.save();
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setBrush(QColor(14, 17, 22, 190));
+  p.setPen(QPen(QColor(255, 255, 255, 60), 3));
+  p.drawEllipse(r.adjusted(2, 2, -2, -2));
+
+  // satellite: body, two solar panels on struts, dish below
+  const QColor white(255, 255, 255);
+  const qreal sx = c.x(), sy = c.y() - 4 * u;
+  p.setPen(Qt::NoPen);
+  p.setBrush(white);
+  p.drawRect(QRectF(sx - 12 * u, sy - 12 * u, 24 * u, 24 * u));
+  p.setBrush(Qt::NoBrush);
+  for (int g : {-1, 1}) {
+    const qreal a = std::min(sx + g * 18 * u, sx + g * 44 * u), b = std::max(sx + g * 18 * u, sx + g * 44 * u);
+    p.setPen(QPen(white, 4 * u, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
+    p.drawRect(QRectF(a, sy - 9 * u, b - a, 18 * u));
+    p.drawLine(QPointF(sx + g * 12 * u, sy), QPointF(sx + g * 18 * u, sy));
+    p.setPen(QPen(white, 3 * u));
+    p.drawLine(QPointF((a + b) / 2, sy - 9 * u), QPointF((a + b) / 2, sy + 9 * u));
+  }
+  p.setPen(QPen(white, 4 * u, Qt::SolidLine, Qt::FlatCap));
+  p.drawLine(QPointF(sx, sy + 12 * u), QPointF(sx, sy + 22 * u));
+  p.drawArc(QRectF(sx - 14 * u, sy + 16 * u, 28 * u, 20 * u), -200 * 16, 140 * 16);
+
+  if (slash_on) {
+    const qreal rr = d * 48.0 / 124.0, w = d * 9.0 / 124.0;
+    p.setPen(QPen(QColor(225, 60, 60), w, Qt::SolidLine, Qt::FlatCap));
+    p.drawEllipse(c, rr, rr);
+    const qreal q = (rr - w / 2) * 0.7071;
+    p.drawLine(QPointF(c.x() - q, c.y() - q), QPointF(c.x() + q, c.y() + q));
+  }
   p.restore();
 }
 
