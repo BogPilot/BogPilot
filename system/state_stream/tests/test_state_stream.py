@@ -27,7 +27,8 @@ def fake_sm():
   m = lambda v: NS(value=v, std=[1.0, 1.0, 1.0], valid=True)
   lkf = NS(positionGeodetic=m([1.0, 2.0, 3.0]), velocityNED=m([3.0, 4.0, 0.0]), calibratedOrientationNED=m([0.0, 0.0, -1.5708]),
            positionECEF=m([0, 0, 0]), angularVelocityCalibrated=m([0, 0, 0.02]), gpsOK=True, status="valid", unixTimestampMillis=123)
-  data = {"carState": cs, "radarState": rs, "modelV2": md, "liveLocationKalman": lkf}
+  fpcs = NS(ap1HeadlightsOn=True, ap1HighBeamLever=True, ap1HighBeamOn=False)
+  data = {"carState": cs, "radarState": rs, "modelV2": md, "liveLocationKalman": lkf, "frogpilotCarState": fpcs}
   return NS(seen={k: True for k in data}, logMonoTime={k: 1000 + i for i, k in enumerate(data)}, __getitem__=None, d=data)
 
 
@@ -52,7 +53,8 @@ def test_config_default_off(tmp_path):
 def test_payload_shape():
   out = payload.build(SM(fake_sm()), 7, include_model=True)
   assert out["v"] == 1 and out["frame"] == 7
-  assert set(out["mono"]) == {"carState", "radarState", "modelV2", "liveLocationKalman"}
+  assert set(out["mono"]) == {"carState", "radarState", "modelV2", "liveLocationKalman", "frogpilotCarState"}
+  assert out["lights"] == {"low": True, "highArmed": True, "high": False}
   c = out["car"]
   assert c["hazard"] and c["rightBlindspot"] and c["brakeLight"] and c["yawRateLkf"] == 0.02
   assert out["gps"]["speed"] == 5.0 and abs(out["gps"]["headingDeg"] - 270.0) < 0.01 and out["gps"]["valid"]

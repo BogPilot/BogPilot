@@ -81,16 +81,21 @@ ZMQ multipart `[b"state", <utf-8 JSON>]`, one object per frame, ~1-3 kB.
 Missing sections = source not yet seen. `null` = non-finite value.
 
 ### Lights / body signals
-| field | source | status |
+`"lights": {"low": bool, "highArmed": bool, "high": bool}` from frogpilotCarState (AP1 only):
+
+| field | source | notes |
 |---|---|---|
-| leftBlinker / rightBlinker / hazard | GTW_carState BC_indicator{L,R}Status -> carState | parsed today; hazard = both on |
-| reverse / gear | DI_torque2 DI_gear -> carState.gearShifter | parsed today |
-| doorOpen | GTW_carState doors + frunk + boot (any) | parsed today, aggregate only |
-| brakeLight | `brakePressed or (aEgo <= -1.0 and not gas)` | **heuristic**; carState.brakeLightsDEPRECATED is not set on Tesla |
-| headlights (low) | GTW_carState BC_headLight{L,R}Status (0x318) | in DBC, not exposed in carState (needs carstate change) |
-| high beam (auto decision) | DAS_bodyControls DAS_highLowBeamDecision (0x3E9, bus 2) | in DBC, not parsed |
-| regen light | DI_state DI_regenLight | in DBC, not exposed |
-| ESP brake lamp | ESP_brakeLamp | in DBC, not parsed |
+| lights.low | 0x318 GTW_carState BC_headLight{L,R}Status == 1 (bus 0) | low beams on |
+| lights.highArmed | 0x45 STW_ACTN_RQ HiBmLvr_Stat == 1 (bus 0) | lever held in high-beam detent = Auto High Beams armed |
+| lights.high | 0x3E9 DAS_bodyControls DAS_highLowBeamDecision == 2 (bus 2) | high beams actually lit (camera decision) |
+| car.leftBlinker / rightBlinker / hazard | GTW_carState indicators -> carState | hazard = both on |
+| car.reverse / gear | DI_torque2 DI_gear -> carState.gearShifter | |
+| car.doorOpen | GTW_carState doors + frunk + boot (any) | aggregate only |
+| car.brakeLight | `brakePressed or (aEgo <= -1.0 and not gas)` | heuristic; carState.brakeLightsDEPRECATED is unset on Tesla |
+| (not streamed) | DI_regenLight, ESP_brakeLamp | in DBC, not parsed |
+
+East drive (route 6d) check: low on 99.9 % (off only at shutdown), highArmed on 100 %,
+high on 6.4 % with 26 on/off switches.
 
 ## Security / privacy
 Binds only a private/loopback IPv4 (`safe_bind_ip`), optional allowlist + token.

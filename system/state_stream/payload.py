@@ -98,6 +98,10 @@ def build(sm, frame: int, include_model: bool) -> dict:
   if seen.get("carState"):
     out["car"] = car_section(sm["carState"], lkf_yaw)
     out["mono"]["carState"] = mono["carState"]
+  if seen.get("frogpilotCarState"):
+    f = sm["frogpilotCarState"]
+    out["lights"] = {"low": bool(f.ap1HeadlightsOn), "highArmed": bool(f.ap1HighBeamLever), "high": bool(f.ap1HighBeamOn)}
+    out["mono"]["frogpilotCarState"] = mono["frogpilotCarState"]
   if seen.get("radarState"):
     rs = sm["radarState"]
     out["leads"] = {"leadOne": _lead(rs.leadOne), "leadTwo": _lead(rs.leadTwo)}

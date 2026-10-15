@@ -35,9 +35,7 @@ class ReplaySM:
 
 
 def _frames(seg):
-  import capnp
-  capnp.remove_import_hook()
-  log = capnp.load(str(ROOT / "cereal/log.capnp"), imports=[str(ROOT / "cereal")])
+  from cereal import log  # shared schema; a second capnp.load aborts on duplicate IDs
   sm = ReplaySM()
   with open(seg, "rb") as fh:
     raw = fh.read()

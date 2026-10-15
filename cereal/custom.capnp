@@ -142,6 +142,13 @@ struct FrogPilotCarState @0xda96579883444c35 {
   ap1AmbientTempC @18 :Float32;
   ap1MotorTorqueNm @19 :Float32;
   ap1MotorRpm @20 :Float32;
+  # AP1 exterior lights (display/stream only; not read by any control code).
+  # 0x318 GTW_carState BC_headLight{L,R}Status == 1, 0x45 STW_ACTN_RQ HiBmLvr_Stat == 1
+  # (lever held in high-beam detent = Auto High Beams armed), 0x3E9 DAS_bodyControls
+  # DAS_highLowBeamDecision == 2 (bus 2: high beams actually lit by the camera).
+  ap1HeadlightsOn @21 :Bool;
+  ap1HighBeamLever @22 :Bool;
+  ap1HighBeamOn @23 :Bool;
 
   struct ButtonEvent {
     enum Type {

@@ -3,6 +3,7 @@ from collections import deque
 from cereal import car, custom
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.realtime import DT_CTRL
+from openpilot.selfdrive.car.tesla.ap1_lights import ap1_lights
 from openpilot.selfdrive.car.tesla.blindspot import Ap1Blindspot, frames_from_vl_all
 from openpilot.selfdrive.car.tesla.cluster import CLUSTER_ADDRS, COUNTER_SIGNALS, MSG_NAMES
 from openpilot.selfdrive.car.tesla.hso import ap1_driver_input
@@ -230,6 +231,8 @@ class CarState(CarStateBase):
       fp_ret.ap1MotorRpm = float(cp.vl["DI_torque1"]["DI_motorRPM"])
       amb = cp.vl.get("GTW_ESP1", {})
       fp_ret.ap1AmbientTempC = float(amb["GTW_ambientTemperature"]) if getattr(cp, "ts_nanos", {}).get("GTW_ESP1", {}).get("GTW_ambientTemperature", 0) else float("nan")
+      # Exterior lights for the state stream only (ap1_lights.py); no control code reads these.
+      fp_ret.ap1HeadlightsOn, fp_ret.ap1HighBeamLever, fp_ret.ap1HighBeamOn = ap1_lights(cp.vl, cp_cam.vl)
 
     return ret, fp_ret
 
@@ -298,5 +301,8 @@ class CarState(CarStateBase):
       # Stock 0x488 counter for handover continuity (steer_counter.py).
       # Frequency 0: missing stock frames fall back to the old cadence.
       messages.append(("DAS_steeringControl", 0))
+      # 0x3E9 auto high-beam decision (state stream only). Frequency 0: never missing /
+      # timed out, and Tesla DBC counters are not COUNTER-typed, so it cannot change canValid.
+      messages.append(("DAS_bodyControls", 0))
 
     return CANParser(DBC[CP.carFingerprint]['chassis'], messages, CANBUS.autopilot_chassis)
