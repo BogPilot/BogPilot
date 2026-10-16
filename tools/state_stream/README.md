@@ -101,3 +101,20 @@ high on 6.4 % with 26 on/off switches.
 Binds only a private/loopback IPv4 (`safe_bind_ip`), optional allowlist + token.
 Position is only ever in the live stream; StateStream never logs payloads.
 Never touches panda safety, controlsd, card or planner outputs.
+
+## Route section (topic `route`)
+
+When navd publishes `navRoute` (destination set in The Pond, or a reroute), StateStream thins it
+to ~1 point per 9 m and sends it as numbered chunks on ZMQ topic `route` (same socket/port as
+`state`; a client subscribed only to `state` never sees them). Each message is one JSON object
+of at most 1000 bytes:
+
+    {"v":1,"route":{"h":"3fa9c021","i":0,"n":7,"pts":[[lat,lon],...]}}
+    {"v":1,"route":{"cleared":true}}
+
+- `h`: 8-hex route id; changes on every new route/reroute. Drop chunks of any other `h`.
+- `i` / `n`: chunk index (0-based) / chunk total. Route = concat of `pts` for i = 0..n-1.
+- `pts`: [latitude, longitude] in degrees, 6 decimals, in driving order; first = start, last = destination.
+- Full set is sent immediately on a new route and resent every 10 s while active.
+- `cleared` is sent immediately and repeated at +10 s and +20 s; then nothing until a new route.
+- Never log coordinates.

@@ -76,10 +76,10 @@ def frogpilot_thread():
   sm = messaging.SubMaster(["carControl", "carParams", "carState", "controlsState", "deviceState", "driverMonitoringState",
                             "liveLocationKalman", "liveParameters", "managerState", "modelV2", "onroadEvents",
                             "pandaStates", "radarState", "frogpilotCarState", "frogpilotControlsState",
-                            "frogpilotModelV2", "frogpilotNavigation", "frogpilotOnroadEvents"],
+                            "frogpilotModelV2", "frogpilotNavigation", "frogpilotOnroadEvents", "navRoute"],
                             poll="modelV2", ignore_avg_freq=["frogpilotRadarState"])
 
-  # BogPilot StateStream: reads only this SubMaster (no new msgq readers); default off.
+  # BogPilot StateStream: reads only this SubMaster; navRoute (rare, navd-only publisher) feeds the route section. Default off.
   state_streamer = StateStreamer()
 
   run_update_checks = False
