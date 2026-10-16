@@ -27,7 +27,7 @@ def fake_sm():
   m = lambda v: NS(value=v, std=[1.0, 1.0, 1.0], valid=True)
   lkf = NS(positionGeodetic=m([1.0, 2.0, 3.0]), velocityNED=m([3.0, 4.0, 0.0]), calibratedOrientationNED=m([0.0, 0.0, -1.5708]),
            positionECEF=m([0, 0, 0]), angularVelocityCalibrated=m([0, 0, 0.02]), gpsOK=True, status="valid", unixTimestampMillis=123)
-  fpcs = NS(ap1HeadlightsOn=True, ap1HighBeamLever=True, ap1HighBeamOn=False)
+  fpcs = NS(ap1HeadlightsOn=True, ap1HighBeamLever=True, ap1HighBeamOn=False, ap1RideLevel=4, ap1RideMoving=False)
   data = {"carState": cs, "radarState": rs, "modelV2": md, "liveLocationKalman": lkf, "frogpilotCarState": fpcs}
   return NS(seen={k: True for k in data}, logMonoTime={k: 1000 + i for i, k in enumerate(data)}, __getitem__=None, d=data)
 

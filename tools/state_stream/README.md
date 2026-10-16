@@ -67,7 +67,8 @@ ZMQ multipart `[b"state", <utf-8 JSON>]`, one object per frame, ~1-3 kB.
  "car": {"vEgo": m/s, "aEgo": m/s2, "standstill": bool, "steeringAngleDeg": deg,
          "yawRate": rad/s (carState; 0 on Tesla), "yawRateLkf": rad/s (locationd, use this),
          "leftBlinker", "rightBlinker", "hazard" (both blinkers), "leftBlindspot", "rightBlindspot",
-         "brakePressed", "brakeLight", "gasPressed", "gear": "drive|reverse|park|neutral", "reverse", "doorOpen"},
+         "brakePressed", "brakeLight", "gasPressed", "gear": "drive|reverse|park|neutral", "reverse", "doorOpen",
+         "rideLevel": 0|3|4|5|6 (air suspension; 0 = not seen), "rideMoving": bool},
  "leads": {"leadOne": [status, dRel m, yRel m, vRel m/s, aRel, vLead m/s, modelProb, radar],
            "leadTwo": [...]},
  "model": {                          // only every 1/StateStreamModelHz s (default 10 Hz)
@@ -93,6 +94,21 @@ Missing sections = source not yet seen. `null` = non-finite value.
 | car.doorOpen | GTW_carState doors + frunk + boot (any) | aggregate only |
 | car.brakeLight | `brakePressed or (aEgo <= -1.0 and not gas)` | heuristic; carState.brakeLightsDEPRECATED is unset on Tesla |
 | (not streamed) | DI_regenLight, ESP_brakeLamp | in DBC, not parsed |
+
+### Ride level (air suspension)
+`car.rideLevel` / `car.rideMoving`, from frogpilotCarState `ap1RideLevel` / `ap1RideMoving`
+(AP1 only; `selfdrive/car/tesla/ap1_ride.py`). Raw frame: bus 0, **0x11B**, 5 bytes, ~10 Hz;
+added to `opendbc/tesla_can.dbc` as `BP_airSuspension` (BogPilot-decoded, not stock opendbc),
+parsed at frequency 0 so it can never affect canValid. +0 msgq readers (carState parser path, like lights).
+
+| field | source | values |
+|---|---|---|
+| car.rideLevel | byte 1 high nibble (`BP_rideLevel`, bits 12-15) | 3 Low, 4 Standard, 5 High, 6 Very High; **0 = not seen yet** (or out-of-range) |
+| car.rideMoving | byte 0 bit 4, 0x10 (`BP_rideMoving`) | true while the suspension moves between levels (also short self-levelling blips with no level change) |
+
+One level for the whole car, not per corner and not a measured height: map each level to a height on the client.
+Auto (speed) changes post the new level about 5 s before rideMoving sets; manual changes move immediately,
+so animate on rideMoving, or on the level change if you want to lead it.
 
 East drive (route 6d) check: low on 99.9 % (off only at shutdown), highArmed on 100 %,
 high on 6.4 % with 26 on/off switches.

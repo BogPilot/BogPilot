@@ -38,7 +38,7 @@ def _lead(ld):
           _f(ld.vLead, 2), _f(ld.modelProb, 2), bool(ld.radar)]
 
 
-def car_section(cs, lkf_yaw=None):
+def car_section(cs, lkf_yaw=None, fpcs=None):
   brake_light = bool(cs.brakePressed) or (float(cs.aEgo) <= BRAKE_DECEL and not cs.gasPressed)
   return {
     "vEgo": _f(cs.vEgo), "aEgo": _f(cs.aEgo), "standstill": bool(cs.standstill),
@@ -50,6 +50,9 @@ def car_section(cs, lkf_yaw=None):
     "brakePressed": bool(cs.brakePressed), "brakeLight": brake_light,
     "gasPressed": bool(cs.gasPressed), "gear": str(cs.gearShifter),
     "reverse": str(cs.gearShifter) == "reverse", "doorOpen": bool(cs.doorOpen),
+    # 0x11B ride level 3..6 (0 = not seen) and moving-between-levels bit, via frogpilotCarState.
+    "rideLevel": int(fpcs.ap1RideLevel) if fpcs is not None else 0,
+    "rideMoving": bool(fpcs.ap1RideMoving) if fpcs is not None else False,
   }
 
 
@@ -96,7 +99,7 @@ def build(sm, frame: int, include_model: bool) -> dict:
     out["gps"] = gps_section(lkf)
     out["mono"]["liveLocationKalman"] = mono["liveLocationKalman"]
   if seen.get("carState"):
-    out["car"] = car_section(sm["carState"], lkf_yaw)
+    out["car"] = car_section(sm["carState"], lkf_yaw, sm["frogpilotCarState"] if seen.get("frogpilotCarState") else None)
     out["mono"]["carState"] = mono["carState"]
   if seen.get("frogpilotCarState"):
     f = sm["frogpilotCarState"]

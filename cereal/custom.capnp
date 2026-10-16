@@ -149,6 +149,11 @@ struct FrogPilotCarState @0xda96579883444c35 {
   ap1HeadlightsOn @21 :Bool;
   ap1HighBeamLever @22 :Bool;
   ap1HighBeamOn @23 :Bool;
+  # AP1 air-suspension ride level (display/stream only; not read by any control code).
+  # 0x11B bus 0 (BP_airSuspension, BogPilot-decoded, not stock opendbc): byte 1 high nibble
+  # 3 Low / 4 Standard / 5 High / 6 Very High (0 = not seen); byte 0 bit 4 = moving between levels.
+  ap1RideLevel @24 :UInt8;
+  ap1RideMoving @25 :Bool;
 
   struct ButtonEvent {
     enum Type {

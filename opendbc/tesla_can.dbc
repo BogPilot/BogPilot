@@ -172,6 +172,10 @@ BO_ 264 DI_torque1: 8 DI
 BO_ 520 GTW_ESP1: 8 GTW
  SG_ GTW_ambientTemperature : 8|8@1+ (0.5,-40) [-40|87.5] "C"  NEO
 
+BO_ 283 BP_airSuspension: 5 XXX
+ SG_ BP_rideMoving : 4|1@1+ (1,0) [0|1] "" NEO
+ SG_ BP_rideLevel : 12|4@1+ (1,0) [0|15] "" NEO
+
 BO_ 280 DI_torque2: 6 DI
  SG_ DI_torqueEstimate : 0|12@1- (0.5,0) [-750|750] "Nm" NEO
  SG_ DI_gear : 12|3@1+ (1,0) [0|0] "" NEO
