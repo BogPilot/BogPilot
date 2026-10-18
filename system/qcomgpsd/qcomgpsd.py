@@ -132,7 +132,12 @@ def downloader_loop(event):
 @retry(attempts=5, delay=0.2, ignore_failure=True)
 def inject_assistance():
   cmd = f"mmcli -m any --timeout 30 --location-inject-assistance-data={ASSIST_DATA_FILE}"
-  subprocess.check_output(cmd, stderr=subprocess.PIPE, shell=True)
+  try:
+    subprocess.check_output(cmd, stderr=subprocess.PIPE, shell=True)
+  except subprocess.CalledProcessError as e:
+    # BogPilot: record why mmcli refused the XTRA file (every boot since Oct 4 failed here silently)
+    cloudlog.error(f"inject_assistance mmcli rc={e.returncode} stderr={(e.stderr or b'').decode(errors='replace').strip()[:300]}")
+    raise
   cloudlog.info("successfully loaded assistance data")
 
 @retry(attempts=5, delay=1.0)
@@ -172,7 +177,9 @@ def setup_quectel(diag: ModemDiag) -> bool:
     inject_assistance()
     os.remove(ASSIST_DATA_FILE)
   #at_cmd("AT+QGPSXTRADATA?")
-  if system_time_valid():
+  # BogPilot: only hand the modem a UTC time when NTP actually synced it. A clock restored from
+  # LastKnownTime (no network) can be minutes off, and the modem is told it is accurate to 1 s.
+  if system_time_valid() and clock_synced():
     time_str = datetime.datetime.utcnow().strftime("%Y/%m/%d,%H:%M:%S")
     at_cmd(f"AT+QGPSXTRATIME=0,\"{time_str}\",1,1,1000")
 
@@ -205,6 +212,30 @@ def teardown_quectel(diag):
   if gps_enabled():
     at_cmd("AT+QGPSEND")
   try_setup_logs(diag, [])
+
+
+def clock_synced() -> bool:
+  try:
+    out = subprocess.check_output("timedatectl show -p NTPSynchronized --value", shell=True, encoding='utf8', timeout=5)
+    return out.strip() == "yes"
+  except Exception:
+    return False
+
+
+def setup_quectel_until_ok(diag: ModemDiag) -> bool:
+  # BogPilot: hardwared restarts ModemManager ~30-60 s after boot when it can't read the modem version.
+  # If that lands inside setup_quectel, every mmcli call fails for ~20 s, setup_quectel's 5 retries run
+  # out and qcomgpsd used to exit(1); manager never restarts a crashed process, so GPS stayed dead
+  # for the whole drive (routes 0x51,0x52,0x69,0x6c,0x83,0x84). Keep waiting for the modem instead.
+  attempt = 0
+  while True:
+    try:
+      return setup_quectel(diag)
+    except Exception:
+      attempt += 1
+      cloudlog.exception(f"quectel setup failed (attempt {attempt}), waiting for modem and retrying")
+      wait_for_modem()
+      time.sleep(min(10.0, 2.0 * attempt))
 
 
 def wait_for_modem(cmd="AT+QGPS?"):
@@ -256,7 +287,7 @@ def main() -> NoReturn:
 
   # connect to modem
   diag = ModemDiag()
-  r = setup_quectel(diag)
+  r = setup_quectel_until_ok(diag)
   want_assistance = not r
   cloudlog.warning("quectel setup done")
   gpio_init(GPIO.GNSS_PWR_EN, True)
@@ -266,8 +297,14 @@ def main() -> NoReturn:
 
   while 1:
     if os.path.exists(ASSIST_DATA_FILE) and want_assistance:
-      setup_quectel(diag)
       want_assistance = False
+      try:
+        setup_quectel(diag)
+      except Exception:
+        # late assistance is optional; never let it kill the daemon
+        cloudlog.exception("late assistance setup failed, re-running base setup")
+        wait_for_modem()
+        setup_quectel_until_ok(diag)
 
     opcode, payload = diag.recv()
     if opcode != DIAG_LOG_F:
