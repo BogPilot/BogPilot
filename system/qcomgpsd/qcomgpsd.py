@@ -20,6 +20,7 @@ from openpilot.common.retry import retry
 from openpilot.common.time import system_time_valid
 from openpilot.system.hardware.tici.pins import GPIO
 from openpilot.common.swaglog import cloudlog
+from openpilot.system.qcomgpsd.xtra_inject import inject_xtra
 from openpilot.system.qcomgpsd.modemdiag import ModemDiag, DIAG_LOG_F, setup_logs, send_recv
 from openpilot.system.qcomgpsd.structs import (dict_unpacker, position_report, relist,
                                               gps_measurement_report, gps_measurement_report_sv,
@@ -129,17 +130,6 @@ def downloader_loop(event):
   except KeyboardInterrupt:
     pass
 
-@retry(attempts=5, delay=0.2, ignore_failure=True)
-def inject_assistance():
-  cmd = f"mmcli -m any --timeout 30 --location-inject-assistance-data={ASSIST_DATA_FILE}"
-  try:
-    subprocess.check_output(cmd, stderr=subprocess.PIPE, shell=True)
-  except subprocess.CalledProcessError as e:
-    # BogPilot: record why mmcli refused the XTRA file (every boot since Oct 4 failed here silently)
-    cloudlog.error(f"inject_assistance mmcli rc={e.returncode} stderr={(e.stderr or b'').decode(errors='replace').strip()[:300]}")
-    raise
-  cloudlog.info("successfully loaded assistance data")
-
 @retry(attempts=5, delay=1.0)
 def setup_quectel(diag: ModemDiag) -> bool:
   ret = False
@@ -174,8 +164,19 @@ def setup_quectel(diag: ModemDiag) -> bool:
   at_cmd("AT+QGPSSUPLURL=\"NULL\"")
   if os.path.exists(ASSIST_DATA_FILE):
     ret = True
-    inject_assistance()
-    os.remove(ASSIST_DATA_FILE)
+    # BogPilot: mmcli inject only works when ModemManager has the modem enabled (never, without a SIM).
+    # inject_xtra falls back to uploading the file to the modem's UFS over a free AT tty. Never raises.
+    try:
+      r = inject_xtra(ASSIST_DATA_FILE, time_trusted=system_time_valid() and clock_synced())
+      if r.get("reprobe_needed"):
+        wait_for_modem(timeout=20.0)   # ModemManager re-probes after the inhibit is released
+    except Exception:
+      cloudlog.exception("xtra inject crashed (ignored)")
+    finally:
+      try:
+        os.remove(ASSIST_DATA_FILE)
+      except OSError:
+        pass
   #at_cmd("AT+QGPSXTRADATA?")
   # BogPilot: only hand the modem a UTC time when NTP actually synced it. A clock restored from
   # LastKnownTime (no network) can be minutes off, and the modem is told it is accurate to 1 s.
@@ -238,12 +239,16 @@ def setup_quectel_until_ok(diag: ModemDiag) -> bool:
       time.sleep(min(10.0, 2.0 * attempt))
 
 
-def wait_for_modem(cmd="AT+QGPS?"):
+def wait_for_modem(cmd="AT+QGPS?", timeout: float | None = None) -> bool:
   cloudlog.warning("waiting for modem to come up")
+  t0 = time.monotonic()
   while True:
     ret = subprocess.call(f"mmcli -m any --timeout 10 --command=\"{cmd}\"", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
     if ret == 0:
-      return
+      return True
+    if timeout is not None and time.monotonic() - t0 > timeout:
+      cloudlog.warning("modem not back within timeout")
+      return False
     time.sleep(0.1)
 
 
