@@ -4,7 +4,7 @@
 Run on the comma over SSH with the car OFF (offroad, qcomgpsd not running):
   cd /data/openpilot && PYTHONPATH=/data/openpilot python3 tools/xtra_bench_inject.py --dry-run
   cd /data/openpilot && PYTHONPATH=/data/openpilot python3 tools/xtra_bench_inject.py            # auto mode
-Options: --mode auto|port|inhibit, --port /dev/ttyUSB3, --file /path/xtra3grc.bin, --no-time, --budget 15
+Options: --mode auto|port|inhibit, --force-upload (ignore the >1 day skip), --port /dev/ttyUSB3, --file /path/xtra3grc.bin, --no-time, --budget 15
 Prints only modem state, port ownership and the XTRA status line (+QGPSXTRADATA: <valid min>,"<xtra time>").
 It never queries or prints a position.
 """
@@ -37,6 +37,7 @@ def main():
   ap.add_argument("--budget", type=float, default=15.0)
   ap.add_argument("--dry-run", action="store_true", help="only print state, ports and XTRA status")
   ap.add_argument("--force", action="store_true", help="run even if qcomgpsd is running")
+  ap.add_argument("--force-upload", action="store_true", help="upload even if XTRA still has > 1 day left")
   a = ap.parse_args()
 
   if subprocess.run("pgrep -f system.qcomgpsd.qcomgpsd", shell=True, capture_output=True).returncode == 0 and not a.force:
@@ -79,10 +80,17 @@ def main():
   if a.mode == "port":
     allow_inhibit = False
 
+  if a.force_upload:
+    xi.SKIP_IF_REMAINING_MIN = 10**9
   time_ok = (not a.no_time) and ntp_synced()
   res = xi.inject_direct(path, time_trusted=time_ok, budget_s=a.budget, allow_inhibit=allow_inhibit,
                          port=port, log=lambda s: print("  " + s))
-  print(f"\nmode={res['mode']} port={res['port']} elapsed={res.get('elapsed_s')}s ok={res['ok']}")
+  print(f"\nmode={res['mode']} port={res['port']} elapsed={res.get('elapsed_s')}s ok={res['ok']} "
+        f"skipped={res.get('skipped', False)} inject_ok={res.get('inject_ok')} verify_tries={res.get('verify_tries')} "
+        f"pending={res.get('verify_pending', False)}")
+  rem = xi.xtra_remaining_min(res.get("after"), time_ok)
+  if rem is not None:
+    print(f"XTRA validity left: ~{rem} min (~{rem / 1440:.1f} days)")
   print(f"XTRA before: {res.get('before')}   after: {res.get('after')}   (valid minutes, XTRA epoch)")
   if res.get("error"):
     print(f"error: {res['error']}")
@@ -100,10 +108,13 @@ def main():
         time.sleep(1)
     else:
       print("  modem not back after 40s (check `mmcli -L`)")
-  try:
-    print(f"mmcli AT+QGPSXTRADATA? now -> {xi.mm_at('AT+QGPSXTRADATA?')}")
-  except Exception as e:
-    print(f"mmcli AT+QGPSXTRADATA? now -> error {str(e)[:160]}")
+  for i in range(8):   # the modem can take a few seconds before it answers the query again
+    try:
+      print(f"mmcli AT+QGPSXTRADATA? now -> {xi.mm_at('AT+QGPSXTRADATA?')}")
+      break
+    except Exception as e:
+      print(f"mmcli AT+QGPSXTRADATA? try {i + 1} -> error {str(e).strip()[:120]}")
+      time.sleep(1)
 
 
 if __name__ == "__main__":

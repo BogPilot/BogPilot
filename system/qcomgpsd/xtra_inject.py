@@ -38,6 +38,8 @@ DEFAULT_AT_PORTS = ["/dev/ttyUSB3", "/dev/ttyUSB2"]   # prefer USB3: ModemManage
 NEVER_PORTS = {"/dev/ttyUSB0", "/dev/ttyUSB1"}        # diag (qcomgpsd) and NMEA
 MAX_XTRA_BYTES = 200_000
 DEFAULT_BUDGET_S = 15.0
+VERIFY_WINDOW_S = 8.0
+SKIP_IF_REMAINING_MIN = 1440   # don't rewrite flash every boot while > 1 day of XTRA validity is left
 
 _FINAL = re.compile(r"^(OK|ERROR|\+CME ERROR:.*|\+CMS ERROR:.*)$")
 
@@ -101,6 +103,10 @@ def port_open_by_others(port: str) -> bool | None:
       pass
     return None
   return False
+
+
+class _Done(Exception):
+  pass
 
 
 class RawAt:
@@ -207,6 +213,22 @@ def parse_xtradata(lines_or_text) -> tuple[int, str] | None:
   return (int(m.group(1)), m.group(2)) if m else None
 
 
+def xtra_remaining_min(parsed: tuple[int, str] | None, time_trusted: bool) -> int | None:
+  """Minutes of XTRA validity left. <valid min> counts from the XTRA epoch (UTC). If the clock isn't
+  trusted, fall back to the raw validity field. Conservative if the modem already counts it down."""
+  if not parsed or parsed[0] <= 0:
+    return None
+  valid, epoch = parsed
+  if not time_trusted:
+    return valid
+  try:
+    t = datetime.datetime.strptime(epoch, "%Y/%m/%d,%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+  except ValueError:
+    return valid
+  age = (datetime.datetime.now(datetime.timezone.utc) - t).total_seconds() / 60
+  return int(valid - max(0.0, age))
+
+
 def _pick_port(status: dict) -> str | None:
   ports = [p for p, kind in status.get("ports", {}).items() if kind == "at"] or list(DEFAULT_AT_PORTS)
   ports.sort(key=lambda p: (p != "/dev/ttyUSB3", p))
@@ -241,6 +263,15 @@ def inject_direct(path: str, time_trusted: bool, budget_s: float = DEFAULT_BUDGE
     status = mm_status(timeout=min(4.0, deadline - time.monotonic()))
     res["mm_state"], res["mm_failed_reason"] = status.get("state"), status.get("failed_reason")
     failed_nosim = status.get("state") == "failed"
+    try:
+      pre = parse_xtradata(mm_at("AT+QGPSXTRADATA?", timeout=min(3.0, max(1.0, deadline - time.monotonic()))))
+    except Exception:
+      pre = None
+    rem = xtra_remaining_min(pre, time_trusted)
+    if rem is not None and rem > SKIP_IF_REMAINING_MIN:
+      res.update(ok=True, skipped=True, mode="skip", before=pre, after=pre)
+      say(f"XTRA already valid (~{rem} min left); not re-uploading")
+      raise _Done()
 
     inhibit = None
     p = port or _pick_port(status)
@@ -283,32 +314,66 @@ def inject_direct(path: str, time_trusted: bool, budget_s: float = DEFAULT_BUDGE
         say("XTRA was disabled; enabled now, it takes effect after the next modem restart")
       before = at.cmd("AT+QGPSXTRADATA?", timeout=min(2, left()))
       res["before"] = parse_xtradata(before[1])
-      if time_trusted:
-        ok, lines = at.cmd(f'AT+QGPSXTRATIME=0,"{_now_utc_str()}",1,1,3500', timeout=min(2, left()))
-        step("QGPSXTRATIME", ok, lines)
+      rem = xtra_remaining_min(res["before"], time_trusted)
+      if rem is not None and rem > SKIP_IF_REMAINING_MIN:
+        res.update(ok=True, skipped=True, after=res["before"])
+        say(f"XTRA already valid (~{rem} min left); not re-uploading")
+        return_early = True
       else:
-        say("system clock not NTP-synced; skipping XTRATIME (data inject may be rejected)")
-      ok, lines = at.cmd(f'AT+QFDEL="{UFS_NAME}"', timeout=min(2, left()))   # error = no old file, fine
-      step("QFDEL (error just means no old file)", ok, lines)
-      ok, lines = at.upload(UFS_NAME, data, timeout=min(8, left()))
-      step(f"QFUPL {len(data)}B", ok, lines)
-      if ok:
-        ok, lines = at.cmd(f'AT+QGPSXTRADATA="{UFS_NAME}"', timeout=min(3, left()))
-        step("QGPSXTRADATA=", ok, lines)
-      after = at.cmd("AT+QGPSXTRADATA?", timeout=min(2, left()))
-      res["after"] = parse_xtradata(after[1])
-      res["ok"] = bool(res["after"] and res["after"][0] > 0)
-      at.cmd(f'AT+QFDEL="{UFS_NAME}"', timeout=min(2, left()))
+        return_early = False
+      if not return_early:
+        if time_trusted:
+          ok, lines = at.cmd(f'AT+QGPSXTRATIME=0,"{_now_utc_str()}",1,1,3500', timeout=min(2, left()))
+          step("QGPSXTRATIME", ok, lines)
+        else:
+          say("system clock not NTP-synced; skipping XTRATIME (data inject may be rejected)")
+        ok, lines = at.cmd(f'AT+QFDEL="{UFS_NAME}"', timeout=min(2, left()))
+        step("QFDEL (error just means no old file)", ok, lines)
+        ok, lines = at.upload(UFS_NAME, data, timeout=min(8, left()))
+        step(f"QFUPL {len(data)}B", ok, lines)
+        inject_ok = False
+        if ok:
+          inject_ok, lines = at.cmd(f'AT+QGPSXTRADATA="{UFS_NAME}"', timeout=min(3, left()))
+          step("QGPSXTRADATA=", inject_ok, lines)
+        res["inject_ok"] = inject_ok
+        if inject_ok:
+          # The modem applies the file asynchronously: the first query right after the inject can
+          # error or still show the old value. Poll ~1 Hz for up to 8 s (inside the overall budget).
+          verify_end = min(deadline, time.monotonic() + VERIFY_WINDOW_S)
+          tries = 0
+          while True:
+            tries += 1
+            okq, lq = at.cmd("AT+QGPSXTRADATA?", timeout=max(0.5, min(2, verify_end - time.monotonic())))
+            after = parse_xtradata(lq) if okq else None
+            if after and after[0] > 0 and after != res["before"]:
+              res["after"] = after
+              break
+            if time.monotonic() + 1.0 >= verify_end:
+              res["after"] = after
+              break
+            time.sleep(1.0)
+          res["verify_tries"] = tries
+          res["ok"] = bool(res["after"] and res["after"][0] > 0)
+          res["verify_pending"] = not res["ok"]
+          say(f"verify after {tries} tries: {res['after']}" + ("" if res["ok"] else " (still pending; modem may apply it later)"))
+          if res["ok"]:
+            at.cmd(f'AT+QFDEL="{UFS_NAME}"', timeout=max(0.5, min(2, deadline - time.monotonic())))
+          # if still pending, leave the UFS file: deleting it could race the modem's read. The next
+          # run's QFDEL-before-upload removes it.
     finally:
       at.close()
       if inhibit is not None:
         inhibit.__exit__(None, None, None)
         res["reprobe_needed"] = True
+  except _Done:
+    pass
   except Exception as e:
     res["error"] = f"{type(e).__name__}: {e}"[:300]
     say(f"direct inject failed: {res['error']}")
   res["elapsed_s"] = round(time.monotonic() - t0, 2)
   cloudlog.event("xtra direct inject", ok=res["ok"], mode=res["mode"], port=res["port"],
+                 skipped=res.get("skipped", False), inject_ok=res.get("inject_ok"),
+                 verify_tries=res.get("verify_tries"), verify_pending=res.get("verify_pending", False),
                  before=res.get("before"), after=res.get("after"), elapsed_s=res["elapsed_s"],
                  mm_state=res.get("mm_state"), mm_failed_reason=res.get("mm_failed_reason"),
                  error=res.get("error"))
@@ -330,6 +395,14 @@ def inject_xtra(path: str, time_trusted: bool, budget_s: float = DEFAULT_BUDGET_
   """mmcli first (works when ModemManager has the modem enabled), else the direct UFS path."""
   t0 = time.monotonic()
   status = mm_status(timeout=3.0)
+  try:
+    pre = parse_xtradata(mm_at("AT+QGPSXTRADATA?", timeout=3.0))
+  except Exception:
+    pre = None
+  rem = xtra_remaining_min(pre, time_trusted)
+  if rem is not None and rem > SKIP_IF_REMAINING_MIN:
+    cloudlog.event("xtra direct inject", ok=True, mode="skip", skipped=True, before=pre, after=pre)
+    return {"ok": True, "mode": "skip", "skipped": True, "before": pre, "after": pre}
   if status.get("state") != "failed":
     ok, err = inject_mmcli(path, timeout=5.0)
     if ok:
