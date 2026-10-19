@@ -43,6 +43,10 @@ _MAX_YEAR = 2099
 _last_save_mono: float | None = None
 
 
+def _utc_naive(epoch: float) -> datetime.datetime:
+  return datetime.datetime.fromtimestamp(epoch, tz=datetime.timezone.utc).replace(tzinfo=None)
+
+
 def read_last_known_epoch(path: Path | None = None) -> float | None:
   """Return saved unix epoch seconds (UTC), or None if missing/invalid."""
   target = path if path is not None else _last_known_path
@@ -77,7 +81,7 @@ def read_last_known_time(path: Path | None = None) -> datetime.datetime | None:
   if epoch is None:
     return None
   try:
-    return datetime.datetime.utcfromtimestamp(epoch)
+    return _utc_naive(epoch)
   except (ValueError, OverflowError, OSError):
     return None
 
@@ -113,7 +117,7 @@ def write_last_known_time(
 def saved_epoch_plausible(epoch: float) -> bool:
   """True if saved stamp is after min_date and not absurdly far ahead."""
   try:
-    saved = datetime.datetime.utcfromtimestamp(epoch)
+    saved = _utc_naive(epoch)
   except (ValueError, OverflowError, OSError):
     return False
   # min_date() is local-naive from systemd mtime; compare via local fromtimestamp
@@ -163,11 +167,11 @@ def maybe_restore_last_known_time(
     if not should_restore(current_epoch, saved_epoch, time_valid=time_valid):
       return False
     assert saved_epoch is not None
-    saved_dt = datetime.datetime.utcfromtimestamp(saved_epoch)
+    # Aware UTC: timed.set_time compares and sets in UTC, never local time.
+    saved_dt = datetime.datetime.fromtimestamp(saved_epoch, tz=datetime.timezone.utc)
     if set_time_fn is None:
       from openpilot.system.timed import set_time
       set_time_fn = set_time
-    # TZ=UTC date -s interprets this naive datetime as UTC.
     set_time_fn(saved_dt)
     return True
   except Exception:
