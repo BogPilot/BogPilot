@@ -164,13 +164,15 @@ class FrogPilotCard:
     handle_experimental_mode(self.car.frogpilot_toggles.conditional_experimental_mode)
 
   def update(self, carState, frogpilotCarState, sm):
+    # Upstream FrogPilot-Staging d83b149b: &= (was |=). With |=, AOL turned on whenever cruise was
+    # engaged even with the Always On Lateral toggle off, and ignored the LKAS/main condition when on.
     self.always_on_lateral_enabled = self.car.frogpilot_toggles.always_on_lateral_set
 
     if self.car.frogpilot_toggles.use_lkas_for_aol:
-      self.always_on_lateral_enabled |= self.car.frogpilot_toggles.always_on_lateral_lkas or carState.cruiseState.enabled
+      self.always_on_lateral_enabled &= self.car.frogpilot_toggles.always_on_lateral_lkas or carState.cruiseState.enabled
       self.always_on_lateral_enabled &= frogpilotCarState.alwaysOnLateralAllowed
     else:
-      self.always_on_lateral_enabled |= self.car.frogpilot_toggles.always_on_lateral_main or carState.cruiseState.enabled
+      self.always_on_lateral_enabled &= self.car.frogpilot_toggles.always_on_lateral_main or carState.cruiseState.enabled
       self.always_on_lateral_enabled &= carState.cruiseState.available
 
     self.always_on_lateral_enabled &= carState.gearShifter not in NON_DRIVING_GEARS
