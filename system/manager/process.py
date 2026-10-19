@@ -273,6 +273,9 @@ class DaemonProcess(ManagerProcess):
     pass
 
 
+RESTART_IF_CRASH = {"qcomgpsd"}
+
+
 def ensure_running(procs: ValuesView[ManagerProcess], started: bool, params=None, CP: car.CarParams=None,
                    not_run: list[str] | None=None, classic_model=False, tinygrad_model=False, frogpilot_toggles=None) -> list[ManagerProcess]:
   if not_run is None:
@@ -288,6 +291,14 @@ def ensure_running(procs: ValuesView[ManagerProcess], started: bool, params=None
     p.check_watchdog(started)
 
   for p in running:
+    # BogPilot: a crashed qcomgpsd used to stay dead for the rest of the drive (start() is a no-op
+    # while self.proc is set). Reap and relaunch it, at most once every 10 s.
+    if p.name in RESTART_IF_CRASH and p.proc is not None and p.proc.exitcode not in (None, 0):
+      now = time.monotonic()
+      if now - getattr(p, "_last_crash_restart", 0.0) > 10.0:
+        cloudlog.error(f"{p.name} exited with {p.proc.exitcode} while it should run, restarting")
+        p._last_crash_restart = now
+        p.stop(block=True)
     p.start()
 
   return running

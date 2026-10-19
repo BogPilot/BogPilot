@@ -155,6 +155,12 @@ struct LeadLabels {
 };
 // Returns true when the stacked (both above) fallback was used.
 bool paintLeadLabels(QPainter &p, const QRectF &box, const LeadLabels &l, const QRectF &view, qreal keepout_top);
+// Adjacent-lane lead speed (approved option A, number only): the absolute speed centred inside the muted box on a
+// small dark translucent pill, in the box colour lightened for legibility. The number scales with the box height and
+// shrinks so the pill always stays inside the brackets of small / distant boxes. The caller hides it below
+// ADJ_SPEED_MIN (displayed units).
+constexpr int ADJ_SPEED_MIN = 5;
+void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color);
 // Box for a lead whose road contact point is (x, y), sized from the distance like the old chevron.
 QRectF leadLockBox(const QPointF &contact, float d_rel, qreal max_x, qreal max_y);
 

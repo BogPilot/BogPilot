@@ -410,6 +410,37 @@ void paintLeadLock(QPainter &p, const QRectF &box, const QString &dist, const QC
   p.restore();
 }
 
+void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color) {
+  if (speed.isEmpty()) return;
+  constexpr qreal BRACKET = 8 + 6;                  // corner bracket thickness + breathing room, each side
+  const qreal avail_w = box.width() - 2 * BRACKET, avail_h = box.height() - 2 * BRACKET;
+  if (avail_w <= 0 || avail_h <= 0) return;
+  // 0.42 x box height: 41 px on the smallest box (97 px), 55 px at ~20 m, 64 px cap on the largest
+  int px = std::clamp(qRound(box.height() * 0.42), 24, 64);
+  qreal pad = 0, w = 0, h = 0;
+  for (int i = 0; i < 8; ++i) {                     // shrink until the pill fits inside the brackets
+    pad = px * 0.32;
+    w = QFontMetricsF(font(px, QFont::Bold)).horizontalAdvance(speed) + 2 * pad;
+    h = px * 1.28;
+    const qreal k = std::min(avail_w / w, avail_h / h);
+    if (k >= 1.0 || px <= 18) break;
+    px = std::max(18, int(std::floor(px * k)));
+  }
+  const QPointF c = box.center();
+  const QRectF pill(c.x() - w / 2, c.y() - h / 2, w, h);
+  const QColor ink(std::min(255, box_color.red() + 70), std::min(255, box_color.green() + 70),
+                   std::min(255, box_color.blue() + 70), 240);
+  p.save();
+  p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+  p.setPen(Qt::NoPen);
+  p.setBrush(QColor(20, 22, 26, 165));
+  p.drawRoundedRect(pill, h / 2, h / 2);
+  p.setFont(font(px, QFont::Bold));
+  p.setPen(ink);
+  p.drawText(pill, Qt::AlignCenter, speed);
+  p.restore();
+}
+
 // ---------------- round buttons ----------------
 
 void paintRecordButton(QPainter &p, const QRectF &hit, bool recording, qreal pulse) {
