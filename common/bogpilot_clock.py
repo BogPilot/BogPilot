@@ -8,6 +8,10 @@ This module:
 - Saves the current UTC unix time to /data/params_bogpilot/LastKnownTime about
   every 5 minutes once the system clock is valid (same durable dir as other
   BogPilot file-backed prefs; July params_pyx.so cannot store new Params keys).
+- Also saves once on each onroad->offroad transition and when manager exits
+  (clean shutdown / reboot / SIGTERM), so the restored time is close to when
+  the device actually went down. The periodic save stays as a backup for a
+  sudden power loss with no clean exit.
 - At manager boot, if the clock is still on the bogus epoch (or far behind the
   saved stamp), restores from that file so logs start near the last drive.
 
@@ -95,7 +99,11 @@ def write_last_known_time(
   try:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(f"{int(epoch)}\n", encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as f:
+      f.write(f"{int(epoch)}\n")
+      f.flush()
+      # Durable before a poweroff that may follow right after this save.
+      os.fsync(f.fileno())
     os.replace(tmp, target)
     return True
   except OSError:
@@ -194,6 +202,34 @@ def maybe_save_last_known_time(
       return False
     _last_save_mono = t_mono
     return True
+  except Exception:
+    return False
+
+
+def save_last_known_time_now(
+  *,
+  path: Path | None = None,
+  now_epoch: float | None = None,
+  time_valid: bool | None = None,
+) -> bool:
+  """Event save (going offroad / manager exit): write now, ignoring the interval.
+
+  Same sanity gates as the periodic save (clock valid, past the min_date
+  floor, not absurdly far ahead). Additionally never replaces a plausible
+  saved stamp with an older one, so a clock that went backwards cannot drag
+  the fallback back. Returns True if a write happened. Never raises.
+  """
+  try:
+    valid = system_time_valid() if time_valid is None else time_valid
+    if not valid:
+      return False
+    epoch = time.time() if now_epoch is None else now_epoch
+    if not saved_epoch_plausible(epoch):
+      return False
+    saved = read_last_known_epoch(path)
+    if saved is not None and saved_epoch_plausible(saved) and epoch < saved:
+      return False
+    return write_last_known_time(epoch, path=path)
   except Exception:
     return False
 

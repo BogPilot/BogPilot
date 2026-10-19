@@ -153,3 +153,60 @@ def test_manager_restores_before_bootlog():
   src = open("system/manager/manager.py", encoding="utf-8").read()
   assert "maybe_restore_last_known_time" in src
   assert src.index("maybe_restore_last_known_time") < src.index("save_bootlog()")
+
+
+def test_event_save_writes_without_interval(tmp_path):
+  path = tmp_path / "LastKnownTime"
+  # Periodic save just ran; an event save right after must still write.
+  assert bc.maybe_save_last_known_time(
+    path=path, now_epoch=_REAL_EPOCH, mono=1.0, time_valid=True,
+  ) is True
+  assert bc.save_last_known_time_now(
+    path=path, now_epoch=_REAL_EPOCH + 30, time_valid=True,
+  ) is True
+  assert int(path.read_text().strip()) == int(_REAL_EPOCH + 30)
+
+
+def test_event_save_noop_when_clock_invalid(tmp_path):
+  path = tmp_path / "LastKnownTime"
+  assert bc.write_last_known_time(_REAL_EPOCH, path=path)
+  assert bc.save_last_known_time_now(
+    path=path, now_epoch=_BOGUS_EPOCH, time_valid=False,
+  ) is False
+  assert int(path.read_text().strip()) == int(_REAL_EPOCH)
+
+
+def test_event_save_rejects_bogus_epoch_even_if_marked_valid(tmp_path):
+  path = tmp_path / "LastKnownTime"
+  assert bc.write_last_known_time(_REAL_EPOCH, path=path)
+  assert bc.save_last_known_time_now(
+    path=path, now_epoch=datetime.datetime(2020, 1, 1).timestamp(), time_valid=True,
+  ) is False
+  assert int(path.read_text().strip()) == int(_REAL_EPOCH)
+
+
+def test_event_save_never_goes_backwards(tmp_path):
+  path = tmp_path / "LastKnownTime"
+  assert bc.write_last_known_time(_REAL_EPOCH, path=path)
+  assert bc.save_last_known_time_now(
+    path=path, now_epoch=_REAL_EPOCH - 3600, time_valid=True,
+  ) is False
+  assert int(path.read_text().strip()) == int(_REAL_EPOCH)
+
+
+def test_event_save_replaces_corrupt_file(tmp_path):
+  path = tmp_path / "LastKnownTime"
+  path.write_text("garbage\n")
+  assert bc.save_last_known_time_now(
+    path=path, now_epoch=_REAL_EPOCH, time_valid=True,
+  ) is True
+  assert int(path.read_text().strip()) == int(_REAL_EPOCH)
+
+
+def test_manager_saves_on_offroad_and_exit():
+  src = open("system/manager/manager.py", encoding="utf-8").read()
+  assert "save_last_known_time_now" in src
+  offroad = src.index("elif not started and started_prev:")
+  assert src.index("save_last_known_clock()", offroad) < src.index("write_onroad_params(started, params)", offroad)
+  cleanup = src.index("    manager_cleanup()\n    # BogPilot")
+  assert src.index("save_last_known_clock()", cleanup) < src.index("    HARDWARE.shutdown()\n", cleanup)

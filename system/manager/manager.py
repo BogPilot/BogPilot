@@ -22,6 +22,15 @@ from openpilot.frogpilot.common.frogpilot_functions import convert_params, frogp
 from openpilot.frogpilot.common.frogpilot_variables import EXCLUDED_KEYS, frogpilot_default_params, get_frogpilot_toggles, migrate_startup_messages, migrate_theme_params, params_cache, params_memory
 
 
+def save_last_known_clock() -> None:
+  """BogPilot: event save of the last-known wall clock. Never raises."""
+  try:
+    from openpilot.common.bogpilot_clock import save_last_known_time_now
+    save_last_known_time_now()
+  except Exception:
+    pass
+
+
 def manager_init() -> None:
   # BogPilot: restore wall clock from last drive before bootlog/loggerd so
   # route names and rlog stamps are near real time instead of the AGNOS epoch.
@@ -205,6 +214,9 @@ def manager_thread() -> None:
       params.clear_all(ParamKeyType.CLEAR_ON_OFFROAD_TRANSITION)
       params_memory.clear_all(ParamKeyType.CLEAR_ON_OFFROAD_TRANSITION)
 
+      # BogPilot: save wall clock when going offroad (best-effort).
+      save_last_known_clock()
+
     # update onroad params, which drives pandad's safety setter thread
     if started != started_prev:
       write_onroad_params(started, params)
@@ -253,6 +265,9 @@ def main() -> None:
     sentry.capture_exception()
   finally:
     manager_cleanup()
+    # BogPilot: save wall clock on exit (shutdown / reboot / SIGTERM / crash),
+    # just before HARDWARE.shutdown()/reboot() below. Best-effort.
+    save_last_known_clock()
 
   params = Params()
   if params.get_bool("DoUninstall"):
