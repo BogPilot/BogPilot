@@ -7,8 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.params import Params
 
-from openpilot.frogpilot.common.frogpilot_utilities import calculate_distance_to_point, get_frogpilot_api_info
-from openpilot.frogpilot.common.frogpilot_variables import FROGPILOT_API
+from openpilot.frogpilot.common.frogpilot_utilities import calculate_distance_to_point
+
+# BogPilot: weather used to be proxied through the FrogPilot API (with device identifiers and
+# position). Now only the owner's own OpenWeatherMap key (WeatherToken) is used, directly.
+OPENWEATHERMAP_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 CACHE_DISTANCE = 25
 MAX_RETRIES = 3
@@ -64,10 +67,8 @@ class WeatherChecker:
     else:
       self.check_interval = 15 * 60
 
-    self.api_info = get_frogpilot_api_info()
-
     self.session = requests.Session()
-    self.session.headers.update({"Accept-Language": "en", "User-Agent": "frogpilot-api/1.0"})
+    self.session.headers.update({"Accept-Language": "en", "User-Agent": "bogpilot/1.0"})
 
     self.executor = ThreadPoolExecutor(max_workers=1)
 
@@ -138,27 +139,22 @@ class WeatherChecker:
       self.update_offsets(frogpilot_toggles)
 
     def make_request():
-      payload = {
-        "api_key": self.user_api_key,
-        "api_token": self.api_info.api_token,
-        "build_metadata": self.api_info.build_metadata,
-        "device": self.api_info.device_type,
-        "frogpilot_dongle_id": self.api_info.dongle_id,
+      if not self.user_api_key:
+        return None
+
+      query = {
+        "appid": self.user_api_key,
         "lat": gps_position["latitude"],
         "lon": gps_position["longitude"],
       }
 
       for attempt in range(1, MAX_RETRIES + 1):
         try:
-          response = self.session.post(f"{FROGPILOT_API}/weather", json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+          response = self.session.get(OPENWEATHERMAP_URL, params=query, timeout=10)
           response.raise_for_status()
 
-          data = response.json()
-          if data.get("api_version") == "2.5":
-            self.api_25_calls += 1
-          else:
-            self.api_3_calls += 1
-          return data
+          self.api_25_calls += 1
+          return response.json()
         except Exception:
           if attempt < MAX_RETRIES:
             time.sleep(RETRY_DELAY)

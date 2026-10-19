@@ -179,10 +179,8 @@ AP1_PARAM_PROFILE: dict[str, str] = {
 
   # --- System ---
   "PreferredSchedule": "1",              # OSM map update schedule: Weekly (default Monthly)
-  # Forced telemetry opt-out: FrogPilot telemetry and stats uploads off (default 1 = on). This is the one
-  # data-sharing key the profile sets, and only toward sharing less. Same once-only rule as the rest, so an
-  # owner who later opts in keeps that choice.
-  "FrogPilotTelemetry": "0",
+  # FrogPilot telemetry, stats uploads and device registration are removed from BogPilot entirely, so
+  # FrogPilotTelemetry is no longer part of the profile (its table default is now 0 and the toggle is hidden).
   "TuningLevel": "3",                    # Developer tuning level (needed for the level-3 toggles above)
   "TuningLevelConfirmed": "1",           # mark the level chosen so the first-open popup keeps Developer
 }
