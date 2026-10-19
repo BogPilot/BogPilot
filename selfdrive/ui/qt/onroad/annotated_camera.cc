@@ -705,8 +705,9 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
   fillAlpha = std::clamp(fillAlpha, 0.f, 255.f);
 
   if (redesign) {
-    // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: lead speed pill above
-    // the box and a distance tag below (option A2); adjacent leads get the box plus their speed inside it (option A).
+    // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: speed number inside
+    // the box and a distance tag below it, flipped above for close leads (option B, v6); adjacent leads get the box plus
+    // their speed inside it (option A).
     const QRectF box = bogpilot::leadLockBox(vd, d_rel, width(), height());
     // v5: colour by time gap at the car's speed (primary white -> orange -> red, adjacent muted grey -> orange -> red)
     const QColor color = bogpilot::leadDistanceColor(lead_data.getDRel(), adjacent, (*uiState()->sm)["carState"].getCarState().getVEgo());
@@ -723,7 +724,6 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
       labels.vision_only = !lead_data.getRadar();
       const int lead_speed = qRound(std::max(0.0f, lead_data.getVLead()) * frogpilot_nvg->speedConversion);
       labels.speed = (labels.vision_only ? "~" : "") + QString::number(lead_speed);
-      labels.speed_unit = speedUnit;
       labels.dist = QString::number(qRound(d_rel * frogpilot_nvg->distanceConversion));
       labels.dist_unit = frogpilot_nvg->distanceConversion == 1.0f ? "m" : "ft";
       if (v_rel < -4.4704f) {
