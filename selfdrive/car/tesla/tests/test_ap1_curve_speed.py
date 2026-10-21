@@ -1,0 +1,134 @@
+import numpy as np
+import pytest
+
+from openpilot.selfdrive.car.tesla.curve_speed import (A_MIN, DEADBAND, ONSET_JERK, RELEASE_JERK, TESLA_CSC_MAX_LAT_ACCEL,
+                                                       TESLA_CURVE_LEAD_S, TeslaCurveBrake, curve_brake_request,
+                                                       tesla_csc_lateral_accel, tesla_curve_brake_for)
+from openpilot.selfdrive.modeld.constants import ModelConstants
+
+T = np.array(ModelConstants.T_IDXS)
+DT = 0.05
+
+
+def path(v_ego, curvature_at, v_model=None):
+  """Constant-speed model path; curvature_at(x) -> 1/m along the path."""
+  v = np.full(len(T), v_ego if v_model is None else v_model, dtype=float)
+  x = v * T
+  k = np.array([curvature_at(xi) for xi in x])
+  return T, x, v, k * v
+
+
+def curve_ahead(start_m, k):
+  return lambda x: k if x >= start_m else 0.0
+
+
+# --- CSC cap ---
+
+def test_cap_lowers_learned_limit():
+  assert tesla_csc_lateral_accel(2.3) == pytest.approx(TESLA_CSC_MAX_LAT_ACCEL)
+
+
+def test_lower_learned_value_wins():
+  assert tesla_csc_lateral_accel(1.7) == pytest.approx(1.7)
+
+
+def test_cap_value_and_lead_time():
+  assert TESLA_CSC_MAX_LAT_ACCEL == 2.0 and TESLA_CURVE_LEAD_S == 0.5
+
+
+def test_factory_tesla_only():
+  assert isinstance(tesla_curve_brake_for("tesla"), TeslaCurveBrake)
+  for make in ("toyota", "hyundai", "gm", ""):
+    assert tesla_curve_brake_for(make) is None
+
+
+# --- request math ---
+
+def test_straight_road_no_request():
+  assert curve_brake_request(13.4, *path(13.4, lambda x: 0.0)) == 0.0
+
+
+def test_gentle_highway_bend_no_request():
+  # 1/1500 m at 29 m/s is ~0.56 m/s^2, well under the limit.
+  assert curve_brake_request(29.0, *path(29.0, lambda x: 1 / 1500)) == 0.0
+
+
+def test_request_matches_kinematics():
+  v_ego, start, k = 13.4, 60.0, 0.0161
+  a = curve_brake_request(v_ego, *path(v_ego, curve_ahead(start, k)))
+  v_curve = (TESLA_CSC_MAX_LAT_ACCEL / k) ** 0.5
+  # Strongest node is the curve entry (first node at or past start).
+  x_entry = min(xi for xi in v_ego * T if xi >= start)
+  expected = -(v_ego ** 2 - v_curve ** 2) / (2 * (x_entry - v_ego * TESLA_CURVE_LEAD_S))
+  assert a == pytest.approx(expected, rel=1e-6)
+  assert a < -DEADBAND
+
+
+def test_reaching_curve_speed_by_the_curve():
+  v_ego, start, k = 13.4, 60.0, 0.0161
+  a = curve_brake_request(v_ego, *path(v_ego, curve_ahead(start, k)))
+  v_curve = (TESLA_CSC_MAX_LAT_ACCEL / k) ** 0.5
+  x_entry = min(xi for xi in v_ego * T if xi >= start)
+  d = x_entry - v_ego * TESLA_CURVE_LEAD_S
+  v_at_entry = (v_ego ** 2 + 2 * a * d) ** 0.5
+  assert v_at_entry == pytest.approx(v_curve, abs=0.05)  # reaches it, does not over-slow
+
+
+def test_already_slow_enough_no_request():
+  k = 0.0161
+  v_curve = (TESLA_CSC_MAX_LAT_ACCEL / k) ** 0.5
+  assert curve_brake_request(v_curve - 0.5, *path(v_curve - 0.5, curve_ahead(40.0, k))) == 0.0
+
+
+def test_model_planned_stop_ignored():
+  # Model plans to be nearly stopped: yaw rate / speed looks like a sharp curve, must be skipped.
+  t, x, v, _ = path(13.4, lambda x: 0.0, v_model=3.0)
+  yaw = np.full(len(t), 0.3)
+  assert curve_brake_request(13.4, t, x, v, yaw) == 0.0
+
+
+# --- TeslaCurveBrake filter ---
+
+def run_brake(v_ego, p, steps, active=True):
+  b = TeslaCurveBrake(DT)
+  return b, [b.update(active, v_ego, *p) for _ in range(steps)]
+
+
+def test_deadband_ignores_weak_request():
+  # A weak raw request (between 0 and -DEADBAND) is dropped.
+  v_ego = 13.4
+  k = TESLA_CSC_MAX_LAT_ACCEL / (v_ego - 0.15) ** 2
+  p = path(v_ego, curve_ahead(100.0, k))
+  raw = curve_brake_request(v_ego, *p)
+  assert -DEADBAND < raw < 0.0
+  _, out = run_brake(v_ego, p, 20)
+  assert all(a == 0.0 for a in out)
+
+
+def test_request_clipped_to_regen_range():
+  _, out = run_brake(20.0, path(20.0, curve_ahead(25.0, 0.05)), 100)
+  assert min(out) == pytest.approx(A_MIN)
+  assert all(a >= A_MIN - 1e-9 for a in out)
+
+
+def test_onset_jerk_limited():
+  _, out = run_brake(20.0, path(20.0, curve_ahead(25.0, 0.05)), 40)
+  steps = np.diff([0.0] + out)
+  assert np.min(steps) >= -ONSET_JERK * DT - 1e-9
+  assert out[0] == pytest.approx(-ONSET_JERK * DT)
+
+
+def test_release_jerk_limited_when_csc_stops():
+  b, _ = run_brake(20.0, path(20.0, curve_ahead(25.0, 0.05)), 40)
+  out = [b.update(False, 20.0, *path(20.0, lambda x: 0.0)) for _ in range(30)]
+  steps = np.diff([A_MIN] + out)
+  assert np.max(steps) <= RELEASE_JERK * DT + 1e-9
+  assert out[-1] == 0.0
+
+
+def test_inactive_never_requests_and_reset_clears():
+  _, out = run_brake(20.0, path(20.0, curve_ahead(25.0, 0.05)), 20, active=False)
+  assert all(a == 0.0 for a in out)
+  b, _ = run_brake(20.0, path(20.0, curve_ahead(25.0, 0.05)), 20)
+  b.reset()
+  assert b.a_request == 0.0 and b.a_raw == 0.0
