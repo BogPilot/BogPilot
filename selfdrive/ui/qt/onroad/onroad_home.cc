@@ -10,6 +10,8 @@
 
 #include "selfdrive/ui/qt/util.h"
 
+#include "frogpilot/ui/qt/onroad/bogpilot_redesign.h"
+
 OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
   QVBoxLayout *main_layout  = new QVBoxLayout(this);
   main_layout->setMargin(UI_BORDER_SIZE);
@@ -79,7 +81,9 @@ void OnroadWindow::updateState(const UIState &s, const FrogPilotUIState &fs) {
   alerts->redesign = nvg->redesign;
   alerts->updateState(s, fs);
 
-  QColor bgColor = bg_colors[s.status];
+  // BogPilot: while the LKAS Fault alert is on screen the border alternates red / orange (2.5 Hz), overriding the status
+  // colour. updateState runs at UI_FREQ (20 Hz), so each 200 ms phase gets four frames.
+  QColor bgColor = alerts->lkasFaultShowing() ? bogpilot::lkasFaultBorderColor(millis_since_boot()) : bg_colors[s.status];
   if (bg != bgColor) {
     // repaint border
     bg = bgColor;
