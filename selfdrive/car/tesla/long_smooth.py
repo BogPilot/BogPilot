@@ -66,6 +66,17 @@ brake pedal "thunk" was reverted at the driver's request (he does not think
 the hold pressure caused it). Ap1JerkLimit still sends jerkMax
 AP1_LAUNCH_JERK_MAX (stock-like) below AP1_SLEW_MIN_SPEED; jerkMin stays at
 the full 8 so braking is never limited.
+
+Standstill engage (route 000000a5 20:44:44.2 ET, brake pedal thunk right
+after engagement). Disengaged at standstill the standby DAS_control
+(actuator_plan, AP1StandstillEngage) asks for accelMin -1.4 and the DI holds
+the car. On engage LongControl restarts its stopping ramp from 0 (-0.01,
+-0.10 ... reaching -2.0 after 2.6 s), the DI drops its hold (hold state 3 -> 0)
+and the brakes let off, then re-apply as the ramp deepens. So on the first
+active frame at standstill in the LongControl stopping state the request is
+held at AP1_STANDSTILL_ENGAGE_ACCEL until the ramp passes it, LongControl
+leaves stopping or the request rises (launch), the car moves, or an FCW.
+Engaging at a green light (not stopping) is unchanged.
 """
 
 import math
@@ -142,6 +153,13 @@ AP1_GAS_HANDOFF_MAX = 2.0
 # m/s^3. DAS_jerkMax below AP1_SLEW_MIN_SPEED (stock DAS sends about 1.2 at
 # standstill). DAS_jerkMin stays at AP1_FULL_JERK_LIMIT there.
 AP1_LAUNCH_JERK_MAX = 1.5
+# m/s^2. Standstill engage hold: the standby DAS_control accelMin
+# (actuator_plan.AP1_STANDBY_ACCEL_MIN), so the request stays continuous.
+AP1_STANDSTILL_ENGAGE_ACCEL = -1.4
+# m/s. Below this the car counts as stopped for the engage hold.
+AP1_STANDSTILL_ENGAGE_V = 0.1
+# Frames after engage in which the LongControl stopping state arms the hold.
+AP1_STANDSTILL_ENGAGE_FRAMES = 10
 
 
 def ap1_brake_urgent(CC):
@@ -178,11 +196,21 @@ class Ap1AccelSmoother:
     self.last = None
     self.release_j = 0.0  # current drive-release jerk (m/s^3), 0 when not releasing
     self.gas_seed = None  # latched aEgo from the last gas-neutral frame
+    self.was_active = False
+    self.engage_hold = None   # standstill engage hold level, or None
+    self.engage_used = False
+    self.active_frames = 0
+    self.prev_target = None
 
   def reset(self):
     self.last = None
     self.release_j = 0.0
     self.gas_seed = None
+    self.was_active = False
+    self.engage_hold = None
+    self.engage_used = False
+    self.active_frames = 0
+    self.prev_target = None
 
   def update(self, target, active, v_ego, gas_neutral=False, urgent=False, dt=DT_CTRL, fcw=False,
              a_ego=None):
@@ -192,6 +220,34 @@ class Ap1AccelSmoother:
     unchanged, so the standstill hold sends StopAccel as planned.
     """
     target = float(target)
+    out = self._update(target, active, v_ego, gas_neutral, urgent, dt, fcw, a_ego)
+    now_active = active and not gas_neutral
+    self.active_frames = self.active_frames + 1 if (now_active and self.was_active) else (1 if now_active else 0)
+    # The first engaged carControl still carries the previous longControlState
+    # ("off"), so frame 1 arms the hold on standstill alone (it equals the
+    # standby accelMin the DI already sees) and the stopping state is checked
+    # from frame 2 on.
+    first = self.active_frames == 1
+    stopping = urgent and not fcw  # LongControl stopping state
+    arm = 0 < self.active_frames <= AP1_STANDSTILL_ENGAGE_FRAMES and (stopping or (first and not fcw))
+    if arm and self.engage_hold is None and v_ego < AP1_STANDSTILL_ENGAGE_V and target <= 0.0 and not self.engage_used:
+      self.engage_used = True
+      self.engage_hold = AP1_STANDSTILL_ENGAGE_ACCEL
+    elif self.engage_hold is not None and (not active or gas_neutral or fcw or (not stopping and not first) or
+                                           v_ego >= AP1_STANDSTILL_ENGAGE_V or
+                                           target <= self.engage_hold or
+                                           (self.prev_target is not None and target > self.prev_target + 1e-3)):
+      self.engage_hold = None
+    if self.engage_hold is not None:
+      out = min(out, self.engage_hold)
+      self.last = out
+    if not now_active:
+      self.engage_used = False
+    self.was_active = now_active
+    self.prev_target = target if active else None
+    return out
+
+  def _update(self, target, active, v_ego, gas_neutral, urgent, dt, fcw, a_ego):
     if gas_neutral:
       self.last = 0.0
       self.release_j = 0.0
