@@ -34,6 +34,7 @@ def _load_card(monkeypatch, tmp_path):
   dh.CRUISE_LONG_PRESS = 50
   sf = types.ModuleType("openpilot.selfdrive.car.tesla.stalk_follow")
   sf.ap1_stalk_commands = MagicMock(return_value=[])
+  sf.crossed_personality = MagicMock(return_value=None)
   tv = types.ModuleType("openpilot.selfdrive.car.tesla.values")
   tv.CAR = N(TESLA_AP1_MODELS="TESLA_AP1_MODELS")
   for name, mod in ((fv.__name__, fv), (ev.__name__, ev), (dh.__name__, dh), (sf.__name__, sf), (tv.__name__, tv)):

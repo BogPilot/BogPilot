@@ -5,7 +5,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CRUISE_LONG_PRESS
 from openpilot.selfdrive.controls.lib.events import ET
 
 from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, GearShifter, NON_DRIVING_GEARS, params, params_memory
-from openpilot.selfdrive.car.tesla.stalk_follow import ap1_stalk_commands
+from openpilot.selfdrive.car.tesla.stalk_follow import ap1_stalk_commands, crossed_personality
 from openpilot.selfdrive.car.tesla.values import CAR
 
 ButtonType = car.CarState.ButtonEvent.Type
@@ -139,6 +139,10 @@ class FrogPilotCard:
     # A move onto a named detent sets the target, even if it matches the cached personality: the cache goes
     # stale after a screen tap or Settings change, and a quick flick (e.g. via an in-between detent) would be skipped.
     detent = getattr(decision, "detent", None)
+    if personality is None:
+      # Landing on 1, 2, 4 or 6 after a quick twist that skipped a named detent on CAN (e.g. 7 -> 2 reported as
+      # 200, 166, 100, 33): apply the last named detent passed over, same as a slow twist through it.
+      personality = crossed_personality(self._ap1_stalk_detent, detent)
     if personality is not None and (personality != self._ap1_stalk_personality or detent != self._ap1_stalk_detent):
       self._ap1_personality_target = personality
       self._ap1_personality_frames = 0

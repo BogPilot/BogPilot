@@ -72,3 +72,66 @@ def test_gives_up_so_taps_are_not_fought(monkeypatch):
   _run(card, 133, 1000)
   assert len(fake.writes) <= fc.AP1_PERSONALITY_MAX_FRAMES // fc.AP1_PERSONALITY_RETRY_FRAMES + 1
   assert card._ap1_personality_target is None
+
+
+# Quick twists skip detents on CAN (2026-10-20 route 000000a5 seg 5, 20:44:04 ET: DTR 200 -> 166 -> 100 -> 33 never
+# reported 66, so LongitudinalPersonality stayed relaxed and the icon stayed on three bars).
+def _settled(monkeypatch, raw=200, value=2):
+  fake = FakeParams(value)
+  card = _card(monkeypatch, fake)
+  _run(card, raw, 400)
+  return fake, card
+
+
+def test_quick_7_to_3_sets_aggressive(monkeypatch):
+  for seq in ([66], [166, 100, 66], [133, 66]):
+    fake, card = _settled(monkeypatch)
+    for raw in seq:
+      _run(card, raw, 1)
+    _run(card, seq[-1], 50)
+    assert fake.value == b"0", seq
+
+
+def test_quick_7_to_2_sets_aggressive(monkeypatch):
+  for seq in ([33], [166, 100, 33], [166, 33], [133, 33]):
+    fake, card = _settled(monkeypatch)
+    for raw in seq:
+      _run(card, raw, 1)
+    _run(card, 33, 50)
+    assert fake.value == b"0", seq
+
+
+def test_slow_7_to_2_unchanged(monkeypatch):
+  fake, card = _settled(monkeypatch)
+  for raw in (166, 133, 100, 66, 33):
+    _run(card, raw, 30)
+  assert fake.value == b"0"
+
+
+def test_skip_lands_on_last_named_crossed(monkeypatch):
+  fake, card = _settled(monkeypatch)
+  _run(card, 100, 50)            # 7 -> 4 skips 5: standard
+  assert fake.value == b"1"
+  fake, card = _settled(monkeypatch, raw=0, value=0)
+  _run(card, 166, 50)            # 1 -> 6 skips 3, 5: standard (last crossed)
+  assert fake.value == b"1"
+  fake, card = _settled(monkeypatch, raw=33, value=0)
+  _run(card, 166, 50)            # 2 -> 6 skips 3, 5: standard
+  assert fake.value == b"1"
+
+
+def test_quick_7_to_1_traffic_then_2_is_aggressive(monkeypatch):
+  fake, card = _settled(monkeypatch)
+  _run(card, 0, 50)              # 7 -> 1 (traffic) skips 5, 3
+  assert card.traffic_mode_enabled
+  _run(card, 33, 50)
+  assert not card.traffic_mode_enabled and fake.value == b"0"
+
+
+def test_neighbor_steps_and_tap_unchanged(monkeypatch):
+  fake, card = _settled(monkeypatch, raw=66, value=0)
+  fake.value = b"2"              # screen tap to relaxed
+  _run(card, 100, 50)            # 3 -> 4 skips nothing: tap is kept
+  assert fake.value == b"2"
+  _run(card, 133, 50)            # 4 -> 5 named
+  assert fake.value == b"1"
