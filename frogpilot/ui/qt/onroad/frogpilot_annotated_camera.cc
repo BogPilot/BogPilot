@@ -328,8 +328,9 @@ void FrogPilotAnnotatedCameraWidget::updateLeadLabelKeepout(bool pedalsShown) {
 }
 
 #if BOGPILOT_UPLOAD_RATE
-// TEMPORARY: rlog upload rate in the bottom corner opposite the DM cluster (bottom-right LHD, bottom-left RHD),
-// moved up to sit 18 px above a compass / weather box or the Developer HUD when one is in that corner.
+// TEMPORARY: rlog upload rate (+ PENDING backlog / ETA with rlogsync v3.2) in the bottom corner opposite the DM
+// cluster (bottom-right LHD, bottom-left RHD), moved up to sit 18 px above a compass / weather box or the
+// Developer HUD when one is in that corner; both blocks move together.
 void FrogPilotAnnotatedCameraWidget::paintUploadRate(QPainter &p) {
   if (!redesign || !uploadRateEnabled || bigMapOpen || fullAlertShowing || !uploadRate.valid) {
     return;
@@ -350,7 +351,7 @@ void FrogPilotAnnotatedCameraWidget::paintUploadRate(QPainter &p) {
   for (int pass = 0; pass < 4; ++pass) {   // boxes can only push it up, so this settles
     bool moved = false;
     for (const QRect &r : taken) {
-      if (bogpilot_uprate::boxRect(anchor, rightHandDM).intersects(r)) {
+      if (bogpilot_uprate::readoutRect(anchor, rightHandDM, uploadRate.has_pending).intersects(r)) {
         anchor.ry() = r.top() - bogpilot_uprate::STACK_GAP - 6;   // box bottom = anchor.y() + 5
         moved = true;
       }
