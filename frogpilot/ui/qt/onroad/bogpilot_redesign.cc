@@ -457,18 +457,82 @@ InBoxPill inBoxPill(const QRectF &box, const QString &text) {
 
 }  // namespace
 
-void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color) {
+QVector<QRectF> bottomCornerKeepout(qreal widget_w, bool rhd, bool map_button, bool pedals, const QVector<QRectF> &status_icons) {
+  auto mirrored = [&](const QRectF &r) { return rhd ? QRectF(widget_w - r.x() - r.width(), r.y(), r.width(), r.height()) : r; };
+  QVector<QRectF> k;
+  k.append(mirrored(QRectF(REC_CX - REC_HIT / 2, REC_CY - REC_HIT / 2, REC_HIT, REC_HIT)));
+  k.append(mirrored(QRectF(NOGPS_CX - REC_DIAMETER / 2, NOGPS_CY - REC_DIAMETER / 2, REC_DIAMETER, REC_DIAMETER)));
+  const qreal cluster_w = PILL_W + CLUSTER_GAP + CLUSTER_D + (map_button ? CLUSTER_GAP + CLUSTER_D : 0);
+  k.append(mirrored(QRectF(CLUSTER_LEFT, CLUSTER_CY - CLUSTER_D / 2 - PILL_LABEL_SPACE, cluster_w, CLUSTER_D + PILL_LABEL_SPACE)));
+  if (pedals) {
+    k.append(mirrored(QRectF(EDGE, STACK_BOTTOM + PEDAL_GAP, 2 * PEDAL_W, PEDAL_H)));
+  }
+  k += status_icons;
+  return k;
+}
+
+AdjacentSpeedPlacement placeAdjacentSpeed(const QRectF &box, const QString &speed, const QVector<QRectF> &keepout,
+                                          bool rhd, const QRectF &view) {
+  AdjacentSpeedPlacement out;
   const InBoxPill pill = inBoxPill(box, speed);
-  if (pill.px == 0) return;
-  const QRectF &r = pill.rect;
+  out.rect = pill.rect;
+  out.px = pill.px;
+  if (pill.px == 0 || keepout.isEmpty()) return out;
+
+  const qreal m = ADJ_LABEL_MARGIN;
+  auto hits = [&](const QRectF &r) {
+    QVector<QRectF> h;
+    const QRectF grown = r.adjusted(-m, -m, m, m);
+    for (const QRectF &k : keepout) {
+      if (grown.intersects(k)) h.append(k);
+    }
+    return h;
+  };
+  if (hits(pill.rect).isEmpty()) return out;   // clear of the icons: stays in the box
+
+  const qreal w = pill.rect.width(), h = pill.rect.height();
+  const qreal cy = box.center().y();
+  QRectF r(rhd ? box.left() - ADJ_LABEL_OUTSIDE - w : box.right() + ADJ_LABEL_OUTSIDE, cy - h / 2, w, h);
+  for (int pass = 0; pass < 8; ++pass) {
+    const QVector<QRectF> hs = hits(r);
+    if (hs.isEmpty()) break;
+    qreal edge = rhd ? hs.first().left() : hs.first().right();
+    for (const QRectF &k : hs) edge = rhd ? std::min(edge, k.left()) : std::max(edge, k.right());
+    r.moveLeft(rhd ? edge - m - ADJ_LABEL_SLIDE_GAP - w : edge + m + ADJ_LABEL_SLIDE_GAP);
+  }
+  if (view.isValid()) {
+    r.moveLeft(std::clamp(r.left(), view.left() + 8, std::max(view.left() + 8, view.right() - 8 - w)));
+  }
+  out.rect = r;
+  out.outside = true;
+  const qreal gap = rhd ? box.left() - r.right() : r.left() - box.right();
+  if (gap > ADJ_LABEL_LEADER_MIN) {
+    out.leader = true;
+    out.leader_line = rhd ? QLineF(box.left() - ADJ_LABEL_BRACKET, cy, r.right(), cy)
+                          : QLineF(box.right() + ADJ_LABEL_BRACKET, cy, r.left(), cy);
+  }
+  return out;
+}
+
+void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color,
+                        const QVector<QRectF> &keepout, bool rhd, const QRectF &view) {
+  const AdjacentSpeedPlacement place = placeAdjacentSpeed(box, speed, keepout, rhd, view);
+  if (place.px == 0) return;
+  const QRectF &r = place.rect;
   const QColor ink(std::min(255, box_color.red() + 70), std::min(255, box_color.green() + 70),
                    std::min(255, box_color.blue() + 70), 240);
   p.save();
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+  if (place.leader) {
+    QColor lc = box_color;
+    lc.setAlpha(150);
+    p.setPen(QPen(lc, 3, Qt::SolidLine, Qt::RoundCap));
+    p.drawLine(place.leader_line);
+  }
   p.setPen(Qt::NoPen);
   p.setBrush(QColor(20, 22, 26, 165));
   p.drawRoundedRect(r, r.height() / 2, r.height() / 2);
-  p.setFont(font(pill.px, QFont::Bold));
+  p.setFont(font(place.px, QFont::Bold));
   p.setPen(ink);
   p.drawText(r, Qt::AlignCenter, speed);
   p.restore();

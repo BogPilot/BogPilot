@@ -716,7 +716,10 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
       // Adjacent-lane lead: absolute speed (number only) inside the box; hidden below 5 so roadside returns stay unlabelled.
       const int adj_speed = qRound(std::max(0.0f, lead_data.getVLead()) * frogpilot_nvg->speedConversion);
       if (adj_speed >= bogpilot::ADJ_SPEED_MIN) {
-        bogpilot::paintAdjacentSpeed(painter, box, QString::number(adj_speed), color);
+        // moved outside the box when the lower-left icons would cover it (keepout from the last frame: the icons
+        // paint after the leads)
+        bogpilot::paintAdjacentSpeed(painter, box, QString::number(adj_speed), color, frogpilot_nvg->leadLabelKeepout,
+                                     rightHandDM, QRectF(rect()));
       }
     } else {
       frogpilot_nvg->leadTextRect = QRect();

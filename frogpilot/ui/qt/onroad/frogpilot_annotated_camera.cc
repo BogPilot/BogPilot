@@ -201,6 +201,7 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
   const cereal::ModelDataV2::Reader &model = sm["modelV2"].getModelV2();
 
   hudShown = developerHudShown(frogpilot_scene);
+  longitudinalPausedRect = QRect();
 #if BOGPILOT_UPLOAD_RATE
   weatherDrawnRect = QRect();
 #endif
@@ -247,7 +248,8 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
     paintLongitudinalPaused(p, frogpilot_scene);
   }
 
-  if (!bigMapOpen && frogpilot_toggles.value("pedals_on_ui").toBool()) {
+  const bool pedalsShown = !bigMapOpen && frogpilot_toggles.value("pedals_on_ui").toBool();
+  if (pedalsShown) {
     paintPedalIcons(p, carState, frogpilotCarState, frogpilot_scene, frogpilot_toggles);
   }
 
@@ -297,10 +299,32 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
     paintWeather(p, frogpilotPlan, frogpilot_scene);
   }
 
+  updateLeadLabelKeepout(pedalsShown);
+
 #if BOGPILOT_UPLOAD_RATE
   // last, so it sits on top of everything above, including the blind-spot lane fill (drawn in drawLaneLines)
   paintUploadRate(p);
 #endif
+}
+
+// BogPilot redesign: driver-side bottom-corner icon rects for the next frame's adjacent-lead speed pill
+// (bogpilot::placeAdjacentSpeed); the CEM / paused icons are taken where they were drawn this frame.
+void FrogPilotAnnotatedCameraWidget::updateLeadLabelKeepout(bool pedalsShown) {
+  leadLabelKeepout.clear();
+  if (!redesign) {
+    return;
+  }
+  QVector<QRectF> status;
+  if (cemStatusPosition != QPoint(0, 0)) {
+    status.append(QRectF(cemStatusPosition, QSizeF(statusIconSize(), statusIconSize())));
+  }
+  if (lateralPausedPosition != QPoint(0, 0)) {
+    status.append(QRectF(lateralPausedPosition, QSizeF(statusIconSize(), statusIconSize())));
+  }
+  if (!longitudinalPausedRect.isNull()) {
+    status.append(QRectF(longitudinalPausedRect));
+  }
+  leadLabelKeepout = bogpilot::bottomCornerKeepout(width(), rightHandDM, mapButtonVisible, pedalsShown, status);
 }
 
 #if BOGPILOT_UPLOAD_RATE
@@ -666,9 +690,7 @@ int FrogPilotAnnotatedCameraWidget::mapButtonShift() {
 
 // BogPilot redesign: CEM status / paused icons sit in a row beside the record button, above the lower-left cluster
 QPoint FrogPilotAnnotatedCameraWidget::redesignStatusSlot(int index) {
-  // The first slot (over the DM circle) is reserved for the no-GPS indicator whether it is shown or not, so the CEM
-  // status (couch) and the paused icons stay put when GPS drops or returns.
-  index += 1;
+  if (noGpsShown) index += 1;   // the no-GPS indicator takes the first slot's space
   // round 3: 132 px icons in a row beside the record button, above the personality pill
   const int x = rightHandDM ? width() - bogpilot::STATUS_X - bogpilot::STATUS_ICON - index * bogpilot::STATUS_STEP
                             : bogpilot::STATUS_X + index * bogpilot::STATUS_STEP;
@@ -788,6 +810,7 @@ void FrogPilotAnnotatedCameraWidget::paintLongitudinalPaused(QPainter &p, FrogPi
   }
 
   QRect longitudinalWidget(longitudinalIconPosition, QSize(statusIconSize(), statusIconSize()));
+  longitudinalPausedRect = longitudinalWidget;
 
   p.setBrush(blackColor(166));
   p.setPen(QPen(QColor(bg_colors[STATUS_TRAFFIC_MODE_ENABLED]), 10));
