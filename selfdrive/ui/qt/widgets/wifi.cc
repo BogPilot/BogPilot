@@ -205,15 +205,40 @@ QWidget *WiFiPromptWidget::buildRealdataPage() {
   layout->addWidget(rdStatus);
   layout->addSpacing(30);
 
+  QHBoxLayout *pend_head = new QHBoxLayout;
   rdPendLabel = new QLabel;
   rdPendLabel->setStyleSheet(small_style);
-  layout->addWidget(rdPendLabel);
+  pend_head->addWidget(rdPendLabel);
+  pend_head->addStretch();
+  rdEtaHead = new QLabel;   // "ETA" above the tier rows' right column (rev4b only)
+  rdEtaHead->setStyleSheet(small_style);
+  pend_head->addWidget(rdEtaHead);
+  layout->addLayout(pend_head);
   rdPendValue = new QLabel;
   rdPendValue->setStyleSheet("font-size: 96px; font-weight: bold;");
   layout->addWidget(rdPendValue);
-  rdPendSub = new QLabel;   // ETA / growing / seg count / all sent, coloured per state
+  rdPendSub = new QLabel;   // ETA / growing / seg count / all sent, coloured per state (rlogsync without tier tokens)
   rdPendSub->setStyleSheet("font-size: 42px; font-weight: 600;");
   layout->addWidget(rdPendSub);
+  // rev4b: one row per tier, "Logs  4 segs .... 2 min" / "HEVC  54 files · 1.7 GB .... 1 h 25 m"
+  for (int i = 0; i < 2; ++i) {
+    rdTierRow[i] = new QWidget;
+    QHBoxLayout *row = new QHBoxLayout(rdTierRow[i]);
+    row->setContentsMargins(0, i == 0 ? 0 : 6, 0, 0);
+    row->setSpacing(22);
+    rdTierTag[i] = new QLabel;
+    rdTierTag[i]->setStyleSheet("color: #AAAAAA; font-size: 40px; font-weight: 600;");
+    rdTierTag[i]->setFixedWidth(116);   // "HEVC" at Inter 40 px SemiBold = 111 px
+    row->addWidget(rdTierTag[i]);
+    rdTierValue[i] = new QLabel;
+    rdTierValue[i]->setStyleSheet("font-size: 40px; font-weight: 600;");
+    row->addWidget(rdTierValue[i]);
+    row->addStretch();
+    rdTierEta[i] = new QLabel;
+    rdTierEta[i]->setStyleSheet("font-size: 40px; font-weight: 600;");
+    row->addWidget(rdTierEta[i]);
+    layout->addWidget(rdTierRow[i]);
+  }
   layout->addSpacing(22);
 
   rdFooter = new QLabel;
@@ -242,14 +267,28 @@ void WiFiPromptWidget::showEvent(QShowEvent *event) {
     rdPendSub->setText("ETA 1 h 25 min");
     rdFooter->setText("comma uploads: off");
     rdStatus->setText("no update for 88 s");
-    for (QLabel *l : {rdPendLabel, rdPendValue, rdPendSub, rdFooter}) l->setVisible(true);
-    const int fresh_h = realdataPage->layout()->sizeHint().height();
+    rdEtaHead->setText(QString::fromUtf8("last known · checking…"));
+    for (int i = 0; i < 2; ++i) {
+      rdTierTag[i]->setText(i == 0 ? "Logs" : "HEVC");
+      rdTierValue[i]->setText(i == 0 ? "88 segs" : QString::fromUtf8("888 files · 88 GB"));
+      rdTierEta[i]->setText("8 h 88 m");
+    }
+    // tallest real state: both tier rows (rev4b), the single sub-line (older rlogsync) or the stale line
+    for (QLabel *l : {rdPendLabel, rdPendValue, rdFooter, rdEtaHead}) l->setVisible(true);
+    for (QWidget *w : rdTierRow) w->setVisible(true);
+    rdPendSub->setVisible(false);
+    rdStatus->setVisible(false);
+    const int tiers_h = realdataPage->layout()->sizeHint().height();
+    for (QWidget *w : rdTierRow) w->setVisible(false);
+    rdPendSub->setVisible(true);
+    const int single_h = realdataPage->layout()->sizeHint().height();
     rdPendSub->setVisible(false);
     rdStatus->setVisible(true);
     const int stale_h = realdataPage->layout()->sizeHint().height();
-    rdMinHeight = std::max(fresh_h, stale_h);
+    rdMinHeight = std::max({tiers_h, single_h, stale_h});
     realdataPage->setMinimumHeight(realdataShown ? rdMinHeight : 0);
-    for (QLabel *l : {rdTitle, rdUpLabel, rdUpValue, rdUpArrow, rdStatus, rdPendLabel, rdPendValue, rdPendSub, rdFooter}) l->clear();
+    for (QLabel *l : {rdTitle, rdUpLabel, rdUpValue, rdUpArrow, rdStatus, rdPendLabel, rdPendValue, rdPendSub, rdFooter, rdEtaHead}) l->clear();
+    for (int i = 0; i < 2; ++i) for (QLabel *l : {rdTierTag[i], rdTierValue[i], rdTierEta[i]}) l->clear();
   }
 
   readRealdata();
@@ -275,7 +314,9 @@ void WiFiPromptWidget::readRealdata() {
 void WiFiPromptWidget::refreshRealdata() {
   using namespace bogpilot_uprate;
   const qint64 age = QDateTime::currentSecsSinceEpoch() - rdSample.epoch;
-  const bool shown = rdEnabled && fresh(rdSample, age);
+  // right after boot rlogsync's rate writer may not have written yet: "checking…" instead of the stock page
+  const bool checking = bootChecking(rdSample, uptimeSeconds(), rdEnabled);
+  const bool shown = rdEnabled && (fresh(rdSample, age) || checking);
   if (shown != realdataShown) {
     realdataShown = shown;
     // the stack sizes to its largest page, so page 4 only takes part (size and minimum) while it is shown
@@ -284,6 +325,25 @@ void WiFiPromptWidget::refreshRealdata() {
     updateGeometry();
   }
   if (!shown) {
+    return;
+  }
+
+  if (checking) {
+    rdTitle->setText("Uploading");
+    rdIcon->setPixmap(rdUploadingIcon);
+    rdUpLabel->setText("REALDATA UPLOAD");
+    rdUpValue->setText(QString::fromUtf8("— Mbps"));
+    rdUpArrow->setText(QString::fromUtf8("↑"));
+    const QString grey_arrow = "font-size: 96px; font-weight: bold; color: #777777;";
+    if (grey_arrow != rdArrowStyle) {
+      rdArrowStyle = grey_arrow;
+      rdUpArrow->setStyleSheet(grey_arrow);
+    }
+    rdStatus->setText(QString::fromUtf8("checking…"));
+    rdStatus->setVisible(true);
+    for (QLabel *l : {rdPendLabel, rdPendValue, rdPendSub, rdEtaHead}) l->setVisible(false);
+    for (QWidget *w : rdTierRow) w->setVisible(false);
+    rdFooter->setText(rdCommaUploadsOff ? "comma uploads: off" : "");
     return;
   }
 
@@ -303,18 +363,38 @@ void WiFiPromptWidget::refreshRealdata() {
     rdUpArrow->setStyleSheet(arrow_style);
   }
 
+  const bool saved = rdSample.has_pending && rdSample.saved;   // boot: last scan from before the reboot
   rdStatus->setText(QString("no update for %1 s").arg(age));
   rdStatus->setVisible(stale);
 
-  // rlogsync v3.1 (5-field line): speed only
+  // rlogsync v3.1 (5-field line): speed only. rev4b (L=/V= tokens): Logs + HEVC rows instead of the single sub-line
+  const QList<TierLine> tiers = tierLines(rdSample);
+  const bool show_tiers = rdSample.has_pending && !stale && !tiers.isEmpty();
   rdPendLabel->setVisible(rdSample.has_pending);
   rdPendValue->setVisible(rdSample.has_pending);
-  rdPendSub->setVisible(rdSample.has_pending && !stale);
+  rdPendSub->setVisible(rdSample.has_pending && !stale && !show_tiers);
+  // saved scan: no ETAs yet, the column head says so (keeps the card at the mockup height)
+  rdEtaHead->setText(saved ? QString::fromUtf8("last known · checking…") : QString("ETA"));
+  rdEtaHead->setVisible(show_tiers);
+  for (int i = 0; i < 2; ++i) {
+    rdTierRow[i]->setVisible(show_tiers);
+    if (!show_tiers) continue;
+    const TierLine &t = tiers[i];
+    auto color_css = [](const QColor &c) { return QString("color: rgba(%1, %2, %3, %4);").arg(c.red()).arg(c.green()).arg(c.blue()).arg(c.alpha()); };
+    rdTierTag[i]->setText(t.tag);
+    rdTierValue[i]->setText(t.value);
+    rdTierEta[i]->setText(t.eta);
+    const QString vs = "font-size: 40px; font-weight: 600; " + color_css(t.value_color);
+    const QString es = "font-size: 40px; font-weight: 600; " + color_css(t.eta_color);
+    if (rdTierValue[i]->styleSheet() != vs) rdTierValue[i]->setStyleSheet(vs);
+    if (rdTierEta[i]->styleSheet() != es) rdTierEta[i]->setStyleSheet(es);
+  }
   if (rdSample.has_pending) {
     rdPendLabel->setText("PENDING");
     rdPendValue->setText(stale ? QString::fromUtf8("— GB") : (rdSample.pending_bytes == 0 ? QString("0 MB") : sizeText(rdSample.pending_bytes)));
     QColor color;
     rdPendSub->setText(pendingSubLine(rdSample, &color));
+    if (saved) rdPendSub->setText(QString::fromUtf8("%1 seg · last known").arg(rdSample.pending_segs));
     const QString sub_style = QString("font-size: 42px; font-weight: 600; color: rgba(%1, %2, %3, %4);").arg(color.red()).arg(color.green()).arg(color.blue()).arg(color.alpha());
     if (sub_style != rdSubStyle) {
       rdSubStyle = sub_style;
