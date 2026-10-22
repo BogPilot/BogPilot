@@ -61,13 +61,24 @@ STEP_S = 3.0
 SEND_EVERY_N_FRAMES = 3
 V_EGO_PARKED_MS = 0.1
 
+# DAS Dy sign: + is RIGHT. Stock AP1 0x309 on rlogs: LEFT mux (1) Dy < 0 in
+# 277 of 280 frames (median -3.50 m), RIGHT mux (2) Dy > 0 in 539 of 539
+# (median +3.85 m). openpilot / radar yRel is + LEFT, so Dy = -yRel. The first
+# parked test sent the LEFT slot at +Dy and the RIGHT slot at -Dy, and the IC
+# drew them on the swapped sides.
+DY_SIGN_FROM_YREL = -1.0
+
+
+def das_dy_from_yrel(y_rel_m: float) -> float:
+  """openpilot yRel (+ left) -> DAS Dy (+ right)."""
+  return DY_SIGN_FROM_YREL * float(y_rel_m)
+
+
 # (mux, type, dy_m). Lead types 0..6, then left and right 1..5.
-# Dy sign: Tinkla sends Dy = C0 - radarState.yRel, and openpilot yRel is
-# positive to the right, so +Dy is taken as left. Not yet seen on the IC.
 SEQUENCE = tuple(
   [(MUX_LEAD, t, 0.0) for t in range(7)] +
-  [(MUX_LEFT, t, SIDE_DY_M) for t in range(1, 6)] +
-  [(MUX_RIGHT, t, -SIDE_DY_M) for t in range(1, 6)]
+  [(MUX_LEFT, t, das_dy_from_yrel(SIDE_DY_M)) for t in range(1, 6)] +
+  [(MUX_RIGHT, t, das_dy_from_yrel(-SIDE_DY_M)) for t in range(1, 6)]
 )
 
 
