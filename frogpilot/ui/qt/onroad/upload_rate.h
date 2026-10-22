@@ -12,6 +12,8 @@
 // The same switch controls the PENDING block (left of the speed, right of it with a right-hand-drive DM).
 // Drawn last in paintFrogPilotWidgets with no background fill (outlined text only) so the blind-spot lane fill
 // stays visible underneath. Bottom-right corner, bottom-left with a right-hand-drive DM.
+// Speeds are shown in Mbps (decimal megabits/s, like an internet plan); backlog sizes stay MB/GB.
+// The offroad home card (selfdrive/ui/qt/widgets/wifi.cc, page 4) reads the same file through these helpers.
 
 #ifndef BOGPILOT_UPLOAD_RATE
 #define BOGPILOT_UPLOAD_RATE 1
@@ -37,7 +39,7 @@ constexpr const char *TOGGLE_PATH = "/data/params_bogpilot/ShowUploadRate";
 constexpr int STALE_S = 10;           // older: value shows '—'
 constexpr int HIDE_S = 60;            // older: not drawn
 constexpr int READ_INTERVAL_MS = 1000;
-constexpr int BOX_W = 230, BOX_H = 90;
+constexpr int BOX_W = 280, BOX_H = 90;   // fits "88.8 Mbps ↑" (281 px at Inter 44 Bold)
 constexpr int STACK_GAP = 18;         // gap above a compass / weather / developer HUD box in the same corner
 constexpr int PEND_W = 250, PEND_GAP = 44;   // PENDING block width, gap to the speed block
 constexpr double TREND_FLAT_BPM = 0.5 * 1048576.0;   // |trend| below this (B/min) = flat
@@ -138,7 +140,17 @@ inline Sample readFile(const QString &path = RATE_PATH) {
   return parse(f.readLine(256));
 }
 
-inline QString mbs(double kbs, int decimals = 1) { return QString::number(kbs / 1024.0, 'f', decimals); }
+// The rate file's KB/s is KiB/s (bytes / 1024). Shown as decimal megabits/s: x 1024 x 8 / 1e6.
+inline double toMbps(double kbs) { return kbs * 1024.0 * 8.0 / 1e6; }
+
+// 0.0 .. 99.9 with one decimal, 100 and up as whole numbers (so "888 Mbps" is no wider than "88.8 Mbps")
+inline QString mbps(double kbs) {
+  const double v = toMbps(kbs);
+  return v < 99.95 ? QString::number(v, 'f', 1) : QString::number(qRound(v));
+}
+
+// Drawn at all: valid sample no older (or newer, clock skew) than HIDE_S
+inline bool fresh(const Sample &s, qint64 age_s) { return s.valid && age_s <= HIDE_S && age_s >= -HIDE_S; }
 
 // Area the readout covers (worker-line baseline at anchor.y(); descenders stay inside the 30 px edge inset)
 inline QRect boxRect(const QPoint &anchor, bool rhd) {
@@ -160,14 +172,14 @@ inline QRect readoutRect(const QPoint &anchor, bool rhd, bool pending) {
 // age_s = now - sample epoch. Returns the box drawn (empty when nothing was drawn).
 // anchor = bottom-right corner of the box (LHD) or bottom-left (rhd).
 inline QRect paint(QPainter &p, const QPoint &anchor, bool rhd, const Sample &s, qint64 age_s, const QFont &small, const QFont &big) {
-  if (!s.valid || age_s > HIDE_S || age_s < -HIDE_S) return QRect();
+  if (!fresh(s, age_s)) return QRect();
   const bool stale = age_s > STALE_S;
 
-  const QString value = stale ? QStringLiteral("— MB/s") : mbs(s.total) + QStringLiteral(" MB/s");
+  const QString value = stale ? QStringLiteral("— Mbps") : mbps(s.total) + QStringLiteral(" Mbps");
   const QString arrow = QStringLiteral(" ↑");
   QString workers;
   if (!stale && (s.has_w1 || s.has_w2)) {
-    workers = QStringLiteral("w1 %1 · w2 %2").arg(s.has_w1 ? mbs(s.w1) : QStringLiteral("–"), s.has_w2 ? mbs(s.w2) : QStringLiteral("–"));
+    workers = QStringLiteral("w1 %1 · w2 %2").arg(s.has_w1 ? mbps(s.w1) : QStringLiteral("–"), s.has_w2 ? mbps(s.w2) : QStringLiteral("–"));
   }
 
   // baselines match the approved mockup: title 66 px, value 26 px above the bottom (worker line) baseline
@@ -182,6 +194,7 @@ inline QRect paint(QPainter &p, const QPoint &anchor, bool rhd, const Sample &s,
     const int w = QFontMetrics(font).horizontalAdvance(t);
     const int x = rhd ? x_edge : x_edge - w;
     QPainterPath path;
+    path.setFillRule(Qt::WindingFill);   // Inter's overlapping contours ("4", "8") punch holes with the default odd-even fill
     path.addText(x, y, font, t);
     p.strokePath(path, outline);
     p.fillPath(path, c);
