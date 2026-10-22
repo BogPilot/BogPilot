@@ -112,6 +112,9 @@ LONG_FCW_VEHICLE = 1
 
 # Tinkla HUD_module: IC_LANE_SCALE = 0.5, so path coefficients are scaled by
 # f = 2 (C_n * f^n). Fallback view range 50 m when modelV2 path is unusable.
+# AP1 rlogs: the cluster reads 0x239 in plain meters (stock Mobileye C0..C3
+# match stock 0x309 Dy unscaled), so this 2^n bends the drawn lane ~4x too
+# much. Kept as shipped; the ICLanes test toggle (ic_lanes.py) sends unscaled.
 # LineUsage 2 is FUSED. DBC DAS_virtualLaneViewRange is [0|160] m.
 IC_LANE_SCALE = 0.5
 LANE_VIEW_RANGE_M = 50
@@ -265,6 +268,9 @@ class HudInputs:
   # as dig 30 (route 21 dig=60 was 0.2 packing vs IC 0.4). Used so the dash
   # tracks an SLC raise without fake stalk on 0x45.
   cruise_set_mph: Optional[float] = None
+  # ICLanes test toggle (ic_lanes.py): DAS-unit C0..C3 sent as is (no 2^n
+  # scale, C0 / C1 kept). None keeps the shipped model_path mapping.
+  lane_poly: Optional[ModelPath] = None
 
 
 def hands_on_state(h):
@@ -306,7 +312,8 @@ def _clip(value, lo_hi):
 def lane_c2(curvature):
   """Tinkla scales the path x^2 coefficient by (1/IC_LANE_SCALE)^2.
 
-  For a path of curvature k, y = k/2 * x^2. Left positive, as in modelV2.
+  For a path of curvature k, y = k/2 * x^2. Same sign as modelV2 y (+ right
+  in the DAS frame, see ic_lanes.py).
   Clipped to DBC DAS_virtualLaneC2 range.
   """
   f = 1.0 / IC_LANE_SCALE
@@ -327,7 +334,9 @@ def path_from_model_v2(model_v2) -> Optional[ModelPath]:
   [0|160]. Returns None when the path is missing or too short so the caller
   can fall back to actuator curvature + 50 m.
 
-  Sign: y left-positive matches modelV2 and the actuator-curvature path
+  Sign: modelV2 y is + right (left near lane line ~ -1.5 m), the same frame
+  as stock DAS_virtualLaneC0..C3 and DAS_object Dy. This fit matches the
+  actuator-curvature path
   already shipped (route 0f stock Mobileye c2 agrees with this sign more
   often than the negated fit; stock c0 is a different reference and is not
   matched). Lead cars / DAS_object / DAS_telemetry are not read here.
@@ -378,6 +387,10 @@ def path_from_model_v2(model_v2) -> Optional[ModelPath]:
 
 def lanes_path_values(h: HudInputs):
   """C0..C3 and view range for DAS_lanes. Model path or curvature fallback."""
+  if h.lane_poly is not None:
+    p = h.lane_poly
+    return (_clip(p.c0, C0_RANGE), _clip(p.c1, C1_RANGE), _clip(p.c2, C2_RANGE), _clip(p.c3, C3_RANGE),
+            clamp_view_range_m(p.view_range_m))
   if h.model_path is not None:
     p = h.model_path
     # C0 and C1 stay 0 (see path_from_model_v2).

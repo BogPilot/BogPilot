@@ -17,6 +17,7 @@ from openpilot.selfdrive.car.tesla.cluster import (
 )
 from openpilot.selfdrive.car.tesla.ic_discovery import IC_DISCOVERY_BUS, IcDiscovery
 from openpilot.selfdrive.car.tesla.ic_onroad import IC_ONROAD_BUS, IcOnRoad
+from openpilot.selfdrive.car.tesla.ic_lanes import IcLanes, MODE_SNAP
 from openpilot.selfdrive.car.tesla.engage_ramp import Ap1EngageSteerRamp
 from openpilot.selfdrive.car.tesla.hso import AP1_HANDS_ON_LEVEL, Ap1DriverYield, ap1_lat_active, ap1_steering_pressed
 from openpilot.selfdrive.car.tesla.long_smooth import Ap1AccelSmoother, Ap1JerkLimit, ap1_brake_urgent, ap1_fcw
@@ -49,6 +50,11 @@ class CarController(CarControllerBase):
     # /data/params_bogpilot/ICOnRoad names a mode. liveTracks is read for icons
     # only; nothing from it reaches the actuator plan.
     self.ic_onroad = IcOnRoad(CP.carFingerprint) if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
+    # AP1 only, test branch. /data/params_bogpilot/ICLanes: engaged 0x239 path
+    # from lane lines in cluster units (ic_lanes.py). Off = shipped mapping.
+    self.ic_lanes = IcLanes(CP.carFingerprint) if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
+    # Lazy SubMaster for radarState, only in ICLanes snap mode (shadow log).
+    self._lanes_sm = None
     # Lazy SubMaster for liveTracks, only while ICOnRoad is on. False after an
     # init failure (tests without messaging).
     self._tracks_sm = None
@@ -308,6 +314,54 @@ class CarController(CarControllerBase):
         self._model_sm = False
       return None
 
+  def _latest_model_v2(self):
+    """Newest modelV2 from the lazy cluster SubMaster, or None."""
+    try:
+      if self._model_sm and self._model_sm.seen['modelV2']:
+        return self._model_sm['modelV2']
+    except Exception:
+      pass
+    return None
+
+  def _lead_one(self):
+    """radarState.leadOne for the ICLanes snap shadow log. Display/log only."""
+    if self._lanes_sm is False:
+      return None
+    try:
+      if self._lanes_sm is None:
+        import cereal.messaging as messaging
+        self._lanes_sm = messaging.SubMaster(['radarState'])
+      self._lanes_sm.update(0)
+      return self._lanes_sm['radarState'].leadOne if self._lanes_sm.seen['radarState'] else None
+    except Exception:
+      self._lanes_sm = False
+      return None
+
+  def _ic_lanes_poly(self, enabled, ic_on, curvature):
+    """(lane_poly, source) while engaged and ICLanes is on, else (None, None).
+
+    A failure turns ICLanes off for the drive; the shipped mapping goes on.
+    """
+    if self.ic_lanes is None:
+      return None, None
+    try:
+      self.ic_lanes.poll()
+      if not (ic_on and enabled and self.ic_lanes.on):
+        return None, None
+      return self.ic_lanes.poly(self._latest_model_v2(), curvature)
+    except Exception:
+      cloudlog.exception("tesla ap1 ic lanes disabled")
+      self.ic_lanes = None
+      return None, None
+
+  def _ic_lanes_log(self, now_nanos, lane_poly, lane_src):
+    try:
+      lead = self._lead_one() if self.ic_lanes.mode == MODE_SNAP else None
+      self.ic_lanes.maybe_log(now_nanos, lane_poly, lane_src, self.cluster.last_lanes, self._latest_model_v2(), lead)
+    except Exception:
+      cloudlog.exception("tesla ap1 ic lanes log disabled")
+      self.ic_lanes = None
+
   def cluster_frames(self, CC, CS, now_nanos):
     """Cluster frames for this step. A failure here turns them off for the
     rest of the drive (stock frames then flow through the panda). It must not
@@ -316,6 +370,7 @@ class CarController(CarControllerBase):
       ic_on = enable_ic_integration(self.CP.carFingerprint)
       enabled = bool(CC.enabled)
       model_path = self._model_path_for_cluster(enabled, ic_on)
+      lane_poly, lane_src = self._ic_lanes_poly(enabled, ic_on, float(CC.actuators.curvature))
       hud = CC.hudControl
       h = HudInputs(
         enabled=enabled,
@@ -330,12 +385,15 @@ class CarController(CarControllerBase):
         curvature=float(CC.actuators.curvature),
         ic_integration=ic_on,
         model_path=model_path,
+        lane_poly=lane_poly,
         # hudControl.setSpeed is the OP cruise target (m/s); may already include
         # the AP1 SLC raise via controlsd's cluster_display_kph lift. Packed
         # with DBC factor 0.4 so IC dig matches (not 2× from legacy 0.2).
         cruise_set_mph=cruise_set_mph(float(hud.setSpeed)) if enabled else None,
       )
       frames = self.cluster.update(h, CS.cluster_stock, now_nanos)
+      if lane_poly is not None and frames:
+        self._ic_lanes_log(now_nanos, lane_poly, lane_src)
       return [[addr, 0, dat, CLUSTER_BUS] for addr, dat in frames]
     except Exception:
       cloudlog.exception("tesla ap1 cluster frames disabled")
