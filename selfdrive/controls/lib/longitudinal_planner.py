@@ -16,8 +16,9 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.fcw_gate import planner_fcw
 from openpilot.selfdrive.car.tesla.regen_brake import ap1_comfort_brake
 from openpilot.selfdrive.car.tesla.regen_aware import (RegenPowerEstimator, RegenStopShaper, lead_stop_distance,
-                                                        model_stop_distance, regen_aware_enabled)
+                                                        model_stop_distance, regen_aware_enabled, P_MIN_KW, P_NOMINAL_KW)
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
+from openpilot.selfdrive.car.tesla.cold_regen import cold_regen_enabled
 from openpilot.selfdrive.car.tesla.throttle_gate import ap1_throttle_gate_for, apply_cut
 
 from openpilot.frogpilot.common.frogpilot_variables import MINIMUM_LATERAL_ACCELERATION
@@ -78,6 +79,9 @@ class LongitudinalPlanner:
     self.ap1_regen_aware = regen_aware_enabled(CP.carFingerprint)
     self.regen_est = RegenPowerEstimator()
     self.regen_shaper = RegenStopShaper()
+    # AP1: learned regen capacity fraction (tesla/cold_regen.py, from carcontroller) caps the
+    # stop shaper's regen power estimate. Off or warm (fraction 1.0): unchanged.
+    self.ap1_cold_regen = cold_regen_enabled(CP.carFingerprint)
     self.regen_a_early = 0.0
     self.regen_stop_dist = -1.0
 
@@ -255,7 +259,12 @@ class LongitudinalPlanner:
       if d_model is not None:
         d_stop = d_model if d_stop is None else min(d_stop, d_model)
     self.regen_stop_dist = -1.0 if d_stop is None else d_stop
-    a_out, self.regen_a_early = self.regen_shaper.update(v_ego, a_plan, d_stop, self.regen_est.p_kw, self.dt)
+    p_kw = self.regen_est.p_kw
+    if self.ap1_cold_regen:
+      frac = float(getattr(fcs, 'ap1RegenCapFrac', 1.0) or 1.0)
+      if 0.0 < frac < 1.0:
+        p_kw = min(p_kw, max(P_MIN_KW, P_NOMINAL_KW * frac))
+    a_out, self.regen_a_early = self.regen_shaper.update(v_ego, a_plan, d_stop, p_kw, self.dt)
     return a_out
 
   def publish(self, sm, pm):

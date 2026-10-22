@@ -1,5 +1,6 @@
 from cereal import car
 from opendbc.can.packer import CANPacker
+from openpilot.common.realtime import DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.interfaces import CarControllerBase
 from openpilot.selfdrive.car.tesla.actuator_plan import (
@@ -17,6 +18,7 @@ from openpilot.selfdrive.car.tesla.cluster import (
 )
 from openpilot.selfdrive.car.tesla.engage_ramp import Ap1EngageSteerRamp
 from openpilot.selfdrive.car.tesla.hso import AP1_HANDS_ON_LEVEL, Ap1DriverYield, ap1_lat_active, ap1_steering_pressed
+from openpilot.selfdrive.car.tesla.cold_regen import ColdRegenBlend, RegenCapacityLearner, cold_regen_enabled
 from openpilot.selfdrive.car.tesla.long_smooth import Ap1AccelSmoother, Ap1JerkLimit, ap1_brake_urgent, ap1_fcw
 from openpilot.selfdrive.car.tesla.steer_counter import Ap1SteerCounterSync
 from openpilot.selfdrive.car.tesla.teslacan import TeslaCAN
@@ -56,6 +58,11 @@ class CarController(CarControllerBase):
     # at 2.0 m/s^3 (faster for deeper requests). Requests at or below -2.0 m/s^2,
     # FCW and the stopping state pass through on the same step.
     self.ap1_accel_smoother = Ap1AccelSmoother() if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
+    # AP1 regen capacity learner (cold pack / high SoC) and the regen -> service-brake handoff ramp
+    # (cold_regen.py). The learner always runs; ColdRegenBlend toggles the ramp.
+    ap1_car = CP.carFingerprint == CAR.TESLA_AP1_MODELS
+    self.ap1_regen_learner = RegenCapacityLearner() if ap1_car else None
+    self.ap1_cold_blend = ColdRegenBlend() if ap1_car and cold_regen_enabled(CP.carFingerprint) else None
     # AP1 DAS_jerkMin/Max: +/-1.5 in the comfort band, full +/-8 once the request
     # sent is at or below -0.5 m/s^2, on urgent frames and below 1 m/s (long_smooth.Ap1JerkLimit).
     self.ap1_jerk_limit = Ap1JerkLimit() if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
@@ -117,6 +124,15 @@ class CarController(CarControllerBase):
       accel = self.ap1_accel_smoother.update(actuators.accel, long_allowed_now, CS.out.vEgo, gas_neutral=gas_neutral,
                                              urgent=urgent, fcw=fcw,
                                              a_ego=getattr(CS.out, "aEgo", None))
+      if self.ap1_regen_learner is not None:
+        frac = self.ap1_regen_learner.update(CS.out.vEgo, getattr(CS.out, "aEgo", None), gas_pressed,
+                                             bool(getattr(CS.out, "brakePressed", False)), long_allowed_now,
+                                             getattr(CS, "ap1_ambient_c", None), DT_CTRL)
+        CS.ap1_regen_cap_frac = frac
+        CS.ap1_regen_samples = self.ap1_regen_learner.events
+        if self.ap1_cold_blend is not None:
+          accel = self.ap1_cold_blend.update(accel, long_allowed_now and not gas_neutral, CS.out.vEgo, frac,
+                                             urgent=urgent or fcw)
       jerk_min, jerk_max = self.ap1_jerk_limit.update(accel, long_allowed_now, CS.out.vEgo, gas_neutral=gas_neutral,
                                                       urgent=urgent, fcw=fcw)
       jerk_limits = {"jerk_min": jerk_min, "jerk_max": jerk_max}

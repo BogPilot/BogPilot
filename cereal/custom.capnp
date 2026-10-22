@@ -142,6 +142,10 @@ struct FrogPilotCarState @0xda96579883444c35 {
   ap1AmbientTempC @18 :Float32;
   ap1MotorTorqueNm @19 :Float32;
   ap1MotorRpm @20 :Float32;
+  # AP1 learned regen capacity, fraction of warm full regen (tesla/cold_regen.py). 1.0 = full.
+  ap1RegenCapFrac @21 :Float32;
+  # Lift-off regen sample events this drive (cold_regen learner).
+  ap1RegenSamples @22 :UInt16;
 
   struct ButtonEvent {
     enum Type {

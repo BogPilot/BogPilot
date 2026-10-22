@@ -230,6 +230,11 @@ class CarState(CarStateBase):
       fp_ret.ap1MotorRpm = float(cp.vl["DI_torque1"]["DI_motorRPM"])
       amb = cp.vl.get("GTW_ESP1", {})
       fp_ret.ap1AmbientTempC = float(amb["GTW_ambientTemperature"]) if getattr(cp, "ts_nanos", {}).get("GTW_ESP1", {}).get("GTW_ambientTemperature", 0) else float("nan")
+      # Inputs for the regen capacity learner in carcontroller (cold_regen.py).
+      self.ap1_ambient_c = None if fp_ret.ap1AmbientTempC != fp_ret.ap1AmbientTempC else fp_ret.ap1AmbientTempC
+      # Regen capacity learner state (cold_regen.py), set by carcontroller on the previous step.
+      fp_ret.ap1RegenCapFrac = float(getattr(self, "ap1_regen_cap_frac", 1.0))
+      fp_ret.ap1RegenSamples = min(int(getattr(self, "ap1_regen_samples", 0)), 65535)
 
     return ret, fp_ret
 
