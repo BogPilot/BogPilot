@@ -45,6 +45,9 @@ struct FrogPilotCarControl {
       startup @20;
       thisIsFine @21;
       uwu @22;
+
+      # BogPilot: phone-use alert sound (device-local wav, see soundd.py).
+      phoneUse @23;
     }
   }
 }
@@ -98,6 +101,9 @@ struct FrogPilotCarEvent @0x81c2f05a394cf4af {
 
     # BogPilot AP1: stalk follow-distance dial applied a new setting.
     ap1FollowDistanceChanged @29;
+
+    # BogPilot: driver monitoring suggests phone use while moving (opt-in).
+    phoneUseDetected @30;
   }
 }
 
