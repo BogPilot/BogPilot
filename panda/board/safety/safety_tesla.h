@@ -72,6 +72,7 @@ const CanMsg TESLA_AP1_TX_MSGS[] = {
   {0x399, 0, 8},  // AutopilotStatus (cluster)
   {0x389, 0, 8},  // DAS_status2 (cluster)
   {0x239, 0, 8},  // DAS_lanes (cluster)
+  {0x309, 0, 8},  // DAS_object (cluster). IC discovery: parked only, see tx hook.
 };
 
 const CanMsg TESLA_PT_TX_MSGS[] = {
@@ -132,11 +133,13 @@ bool tesla_long_tx_seen = false;
 // sent that address within 1.5x its stock period (AutopilotStatus and
 // DAS_status2 2 Hz, DAS_lanes 10 Hz, from AP1 rlogs). With no recent OP TX,
 // or without TESLA_FLAG_AP1, stock frames are forwarded as before.
-#define TESLA_AP1_CLUSTER_LEN 3
-const int TESLA_AP1_CLUSTER_ADDRS[TESLA_AP1_CLUSTER_LEN] = {0x399, 0x389, 0x239};
-const uint32_t TESLA_AP1_CLUSTER_TIMEOUT_US[TESLA_AP1_CLUSTER_LEN] = {750000U, 750000U, 150000U};
-uint32_t tesla_ap1_cluster_tx_ts[TESLA_AP1_CLUSTER_LEN] = {0U, 0U, 0U};
-bool tesla_ap1_cluster_tx_seen[TESLA_AP1_CLUSTER_LEN] = {false, false, false};
+// DAS_object 0x309 is 33 Hz stock (5 muxes round robin). 100 ms timeout so
+// 100 Hz controlsd jitter does not let stock frames alternate with OP's.
+#define TESLA_AP1_CLUSTER_LEN 4
+const int TESLA_AP1_CLUSTER_ADDRS[TESLA_AP1_CLUSTER_LEN] = {0x399, 0x389, 0x239, 0x309};
+const uint32_t TESLA_AP1_CLUSTER_TIMEOUT_US[TESLA_AP1_CLUSTER_LEN] = {750000U, 750000U, 150000U, 100000U};
+uint32_t tesla_ap1_cluster_tx_ts[TESLA_AP1_CLUSTER_LEN] = {0U, 0U, 0U, 0U};
+bool tesla_ap1_cluster_tx_seen[TESLA_AP1_CLUSTER_LEN] = {false, false, false, false};
 
 static int tesla_ap1_cluster_index(int addr) {
   int idx = -1;
@@ -324,6 +327,16 @@ static bool tesla_tx_hook(const CANPacket_t *to_send) {
   if (tesla_ap1 && (addr == 0x399)) {
     int autopilot_state = GET_BYTE(to_send, 0) & 0x0FU;
     if ((autopilot_state >= 3) && (autopilot_state <= 5) && !controls_allowed) {
+      violation = true;
+    }
+  }
+
+  // AP1 DAS_object (IC discovery phase). Display only. Allowed only while
+  // controls are not allowed and the car is not moving, so a fake object can
+  // never replace the stock lead on the cluster while driving. A later
+  // live-lead patch would relax this and needs its own approval.
+  if (tesla_ap1 && (addr == 0x309)) {
+    if (controls_allowed || vehicle_moving) {
       violation = true;
     }
   }

@@ -24,11 +24,11 @@ it is packed here by hand. Checked on AP1 rlogs: decoded leadVehDx is within
 10 ft of openpilot's radar lead 97 % of the time (n=2,840). No counter, no
 checksum in this frame.
 
-Panda: stock BogPilot AP1 safety does NOT list 0x309 in TESLA_AP1_TX_MSGS,
-so without the separate (unapplied) safety patch every frame from here is
-dropped by the panda (counted in pandaStates.safetyTxBlocked) and the IC
-never sees it. With the patch, the panda also drops the stock 0x309 copy
-while openpilot sent one recently, so the two do not alternate on the IC.
+Panda (this branch): AP1 safety lists 0x309 in TESLA_AP1_TX_MSGS and allows it
+only while controls are not allowed and the car is not moving. It drops the
+stock bus-2 0x309 copy only while openpilot sent one within 100 ms, so the
+two do not alternate on the IC. Without that panda change every frame from
+here is dropped (pandaStates.safetyTxBlocked) and the IC never sees it.
 
 Not a product. No warranty. Display only. Parked only.
 """

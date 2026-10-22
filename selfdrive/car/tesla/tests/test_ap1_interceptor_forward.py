@@ -111,7 +111,7 @@ def test_fwd_hook_not_unconditional_block():
   assert "tesla_ap1_cluster_index(addr)" in cluster
   assert "tesla_op_recently_sent(tesla_ap1_cluster_tx_ts[idx], tesla_ap1_cluster_tx_seen[idx]" in cluster
   assert "block_msg = true;" not in cluster
-  assert "TESLA_AP1_CLUSTER_ADDRS[TESLA_AP1_CLUSTER_LEN] = {0x399, 0x389, 0x239}" in SAFETY
+  assert "TESLA_AP1_CLUSTER_ADDRS[TESLA_AP1_CLUSTER_LEN] = {0x399, 0x389, 0x239, 0x309}" in SAFETY
 
   # Safety flags are not zeroed; AP1 still uses AP1|LONG.
   assert "TESLA_FLAG_AP1 = 8" in SAFETY

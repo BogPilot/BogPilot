@@ -52,7 +52,7 @@ Checksum for 0x399 and 0x389 is `(addr & 0xFF) + (addr >> 8) + sum(bytes 0..6)` 
 
 - 0x3e9 `DAS_bodyControls`. It carries turn-signal, hazard, headlight, and wiper requests, not display. BogPilot has no ALCA or hazard feature to drive it, so replacing it could only suppress stock requests. Stock frames also set bits 22, 23, 26, 28 that no DBC signal covers, so a rebuilt frame would change them. Not in the panda TX list.
 - `DAS_object` (0x309) and `DAS_telemetry` (0x3a9): not `BO_` lines in this tree's DBC. No invented signals.
-- Test branch `bogpilot-tesla-ic-discovery` only: `selfdrive/car/tesla/ic_discovery.py` packs 0x309 `DAS_object` by hand from BogGyver/opendbc 9c0b6fe `tesla_can_pre1916.dbc` (BO_ 777, VAL_ L978-L999) for a parked-only icon test. Off unless `/data/params_bogpilot/ICDiscovery` is `1`; sends only in Park, disengaged, cruise off, vEgo < 0.1 m/s. Stock panda safety does not list 0x309, so the panda drops these frames unless the separate, unapplied 0x309 safety patch is approved and applied.
+- Test branch `bogpilot-tesla-ic-discovery` only: `selfdrive/car/tesla/ic_discovery.py` packs 0x309 `DAS_object` by hand from BogGyver/opendbc 9c0b6fe `tesla_can_pre1916.dbc` (BO_ 777, VAL_ L978-L999) for a parked-only icon test. Off unless `/data/params_bogpilot/ICDiscovery` is `1`; sends only in Park, disengaged, cruise off, vEgo < 0.1 m/s. On this branch the AP1 panda safety allows 0x309 on bus 0 only while controls are not allowed and the car is not moving, and drops the stock bus-2 copy only while openpilot sent 0x309 within 100 ms (same rule as 0x399/0x389/0x239).
 - Warning matrices 0x329 / 0x369 (0x349 stays the all-zero Hold clear only), pre-AP 0x659.
 
 

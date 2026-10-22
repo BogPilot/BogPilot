@@ -524,11 +524,11 @@ def test_panda_lists_cluster_addresses_for_ap1_only():
   ap1_list = header.split("const CanMsg TESLA_AP1_TX_MSGS[]")[1].split(";")[0]
   shared = header.split("const CanMsg TESLA_TX_MSGS[]")[1].split(";")[0]
   pt = header.split("const CanMsg TESLA_PT_TX_MSGS[]")[1].split(";")[0]
-  for addr in ("0x399", "0x389", "0x239"):
+  for addr in ("0x399", "0x389", "0x239", "0x309"):
     assert "{%s, 0, 8}" % addr in ap1_list
     assert addr not in shared
     assert addr not in pt
-  for addr in ("0x3e9", "0x309", "0x3a9", "0x659"):
+  for addr in ("0x3e9", "0x3a9", "0x659"):
     assert addr not in ap1_list
 
 
