@@ -15,6 +15,7 @@ from openpilot.selfdrive.car.tesla.actuator_plan import (
 from openpilot.selfdrive.car.tesla.cluster import (
   CLUSTER_BUS, ClusterController, HudInputs, path_from_model_v2,
 )
+from openpilot.selfdrive.car.tesla.ic_discovery import IC_DISCOVERY_BUS, IcDiscovery
 from openpilot.selfdrive.car.tesla.engage_ramp import Ap1EngageSteerRamp
 from openpilot.selfdrive.car.tesla.hso import AP1_HANDS_ON_LEVEL, Ap1DriverYield, ap1_lat_active, ap1_steering_pressed
 from openpilot.selfdrive.car.tesla.long_smooth import Ap1AccelSmoother, Ap1JerkLimit, ap1_brake_urgent, ap1_fcw
@@ -39,6 +40,9 @@ class CarController(CarControllerBase):
     self.tesla_can = TeslaCAN(self.packer, self.pt_packer)
     # AP1 only. Tinkla-style cluster frames (cluster.py).
     self.cluster = ClusterController() if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
+    # AP1 only, test branch. Parked-only 0x309 icon discovery (ic_discovery.py).
+    # Inert unless /data/params_bogpilot/ICDiscovery is 1.
+    self.ic_discovery = IcDiscovery(CP.carFingerprint) if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
     # Lazy SubMaster for modelV2 path only (no lead / object). None until first
     # need; False after a permanent init failure (tests without messaging).
     self._model_sm = None
@@ -188,6 +192,10 @@ class CarController(CarControllerBase):
     if self.cluster is not None:
       can_sends.extend(self.cluster_frames(CC, CS, now_nanos))
 
+    # AP1 IC discovery. Display only, parked only, after every other frame.
+    if self.ic_discovery is not None:
+      can_sends.extend(self.ic_discovery_frames(CC, CS, now_nanos))
+
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
     if self.ap1_accel_smoother is not None:
@@ -195,6 +203,26 @@ class CarController(CarControllerBase):
 
     self.frame += 1
     return new_actuators, can_sends
+
+  def ic_discovery_frames(self, CC, CS, now_nanos):
+    """Parked-only 0x309 test frames. A failure turns the harness off for the
+    rest of the drive; it must not touch any frame already built."""
+    try:
+      if not self.ic_discovery.poll():
+        return []
+      out = CS.out
+      frames = self.ic_discovery.update(
+        in_park=out.gearShifter == car.CarState.GearShifter.park,
+        op_enabled=bool(CC.enabled),
+        cruise_enabled=bool(out.cruiseState.enabled),
+        v_ego=float(out.vEgo),
+        now_nanos=now_nanos,
+      )
+      return [[addr, 0, dat, IC_DISCOVERY_BUS] for addr, dat in frames]
+    except Exception:
+      cloudlog.exception("tesla ap1 ic discovery disabled")
+      self.ic_discovery = None
+      return []
 
   def _model_path_for_cluster(self, enabled, ic_on):
     """Subscribe to modelV2 only while toggle on; use path only while engaged.
