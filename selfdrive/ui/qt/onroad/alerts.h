@@ -13,6 +13,7 @@ public:
   void clear();
   // BogPilot: true while any alert (small / mid / full) is on screen; the Developer HUD hides itself then
   bool alertShowing() const { return isVisible() && alert.size != cereal::ControlsState::AlertSize::NONE; }
+  bool fullAlertShowing() const { return isVisible() && alert.size == cereal::ControlsState::AlertSize::FULL; }
 
   // FrogPilot variables
   bool displayFerg;
