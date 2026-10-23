@@ -32,10 +32,45 @@ def _xyz(line, stride=MODEL_STRIDE):
   return [[_f(xs[i], 2), _f(ys[i], 2), _f(zs[i], 2)] for i in range(0, n, stride)]
 
 
-def _lead(ld):
-  # [status, dRel, yRel, vRel, aRel, vLead, modelProb, radar]
+def _lead(ld, handoff=False):
+  # [status, dRel, yRel, vRel, aRel, vLead, modelProb, radar, radarTrackId, handoff]
+  # radarTrackId: radard's track id (-1 = vision-only / none). handoff: the lead was present in
+  # the previous snapshot too but radard switched to another track id (see LeadTracker).
   return [bool(ld.status), _f(ld.dRel, 2), _f(ld.yRel, 2), _f(ld.vRel, 2), _f(ld.aRel, 2),
-          _f(ld.vLead, 2), _f(ld.modelProb, 2), bool(ld.radar)]
+          _f(ld.vLead, 2), _f(ld.modelProb, 2), bool(ld.radar), _track_id(ld), bool(handoff)]
+
+
+def _track_id(ld) -> int:
+  try:
+    return int(getattr(ld, "radarTrackId", -1))
+  except (TypeError, ValueError):
+    return -1
+
+
+class LeadTracker:
+  """Flags radar track handoffs between consecutive snapshots. Host-loop side, two ints of state.
+
+  A handoff is: lead present now and in the previous snapshot, and radarTrackId differs
+  (including radar <-> vision-only, where the id becomes/leaves -1). A lead appearing after
+  none is an acquisition, not a handoff.
+  """
+
+  def __init__(self):
+    self.prev = {"leadOne": None, "leadTwo": None}   # last track id while present, None = absent
+    self.switches = 0                                 # leadOne handoffs (for the 60 s summary)
+
+  def reset(self) -> None:
+    """Stream paused (not started / no subscriber): the next lead is an acquisition, not a handoff."""
+    self.prev = {"leadOne": None, "leadTwo": None}
+
+  def update(self, name: str, ld) -> bool:
+    tid = _track_id(ld) if ld.status else None
+    p = self.prev[name]
+    self.prev[name] = tid
+    handoff = tid is not None and p is not None and tid != p
+    if handoff and name == "leadOne":
+      self.switches += 1
+    return handoff
 
 
 def car_section(cs, lkf_yaw=None, fpcs=None):
@@ -85,11 +120,19 @@ def model_section(md):
   }
 
 
-def build(sm, frame: int, include_model: bool) -> dict:
-  """sm: SubMaster-like (sm[svc], sm.logMonoTime[svc], sm.seen[svc])."""
+def build(sm, frame: int, include_model: bool, meta: dict | None = None, leads: LeadTracker | None = None) -> dict:
+  """sm: SubMaster-like (sm[svc], sm.logMonoTime[svc], sm.seen[svc]).
+
+  meta (optional, from the streamer), copied as out["meta"] so a client can show the model rate
+  honestly instead of inferring it from whether this snapshot carries "model":
+    {"hz": state send rate, "modelHz": model section rate, "modelSrcHz": measured modelV2 rate}
+  leads (optional LeadTracker): fills the per-lead handoff flag.
+  """
   mono = sm.logMonoTime
   out = {"v": 1, "frame": frame, "mono": {}}
   seen = sm.seen
+  if meta is not None:
+    out["meta"] = meta
 
   lkf_yaw = None
   if seen.get("liveLocationKalman"):
@@ -107,7 +150,11 @@ def build(sm, frame: int, include_model: bool) -> dict:
     out["mono"]["frogpilotCarState"] = mono["frogpilotCarState"]
   if seen.get("radarState"):
     rs = sm["radarState"]
-    out["leads"] = {"leadOne": _lead(rs.leadOne), "leadTwo": _lead(rs.leadTwo)}
+    if leads is not None:
+      out["leads"] = {"leadOne": _lead(rs.leadOne, leads.update("leadOne", rs.leadOne)),
+                      "leadTwo": _lead(rs.leadTwo, leads.update("leadTwo", rs.leadTwo))}
+    else:
+      out["leads"] = {"leadOne": _lead(rs.leadOne), "leadTwo": _lead(rs.leadTwo)}
     out["mono"]["radarState"] = mono["radarState"]
   if include_model and seen.get("modelV2"):
     out["model"] = model_section(sm["modelV2"])

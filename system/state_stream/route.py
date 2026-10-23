@@ -121,6 +121,13 @@ class RouteSchedule:
     out, self._pending = self._pending[:limit], self._pending[limit:]
     return out
 
+  def resend_now(self) -> None:
+    """A subscriber just connected: queue the current chunk set (or cleared marker) immediately."""
+    if self.chunks:
+      self._pending = list(self.chunks)
+    elif self._cleared_left > 0:
+      self._pending = [CLEARED_MSG]
+
   @property
   def busy(self) -> bool:
     return bool(self._pending)
