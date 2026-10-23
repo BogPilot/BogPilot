@@ -6,6 +6,9 @@
 // Data: the comma's rlogsync daemon (v3.1+) rewrites /dev/shm/bogpilot_rlogsync_rate every 2 s with one line
 //   <epoch s> <total KB/s> <w1 KB/s> <w2 KB/s> <iface>
 // v3.2 appends the upload backlog: <pending bytes> <pending segments> <trend B/min | -> <scan epoch>
+// v3.3 appends <screen-rec bytes> <screen-rec files> (not used here). rev4b appends key=value tokens, read by key so
+// positions never matter: L=<logs bytes>,<segs> (rlog/qlog) V=<video bytes>,<files> (HEVC + qcamera) and SAVED=1
+// (boot: the last scan saved before the reboot, until rlogsync's first fresh scan after its boot delay).
 // A 5-field (v3.1) line shows only the speed; the PENDING block appears once the extra fields are there.
 // The UI reads it from a 1 Hz timer (never from paint). Shown with '—' when older than 10 s, hidden after 60 s.
 // Switch: /data/params_bogpilot/ShowUploadRate. No file = on; "0"/"false"/"off" = off. Re-read every 2 s.
@@ -20,6 +23,8 @@
 #endif
 
 #if BOGPILOT_UPLOAD_RATE
+
+#include <algorithm>
 
 #include <QByteArray>
 #include <QColor>
@@ -43,6 +48,7 @@ constexpr int BOX_W = 280, BOX_H = 90;   // fits "88.8 Mbps ↑" (281 px at Inte
 constexpr int STACK_GAP = 18;         // gap above a compass / weather / developer HUD box in the same corner
 constexpr int PEND_W = 250, PEND_GAP = 44;   // PENDING block width, gap to the speed block
 constexpr double TREND_FLAT_BPM = 0.5 * 1048576.0;   // |trend| below this (B/min) = flat
+constexpr int BOOT_CHECK_S = 120;     // offroad card: "checking…" this long after boot while there is no rate file yet
 
 struct Sample {
   bool valid = false;
@@ -52,6 +58,8 @@ struct Sample {
   bool has_pending = false, has_trend = false;   // v3.2 fields
   qint64 pending_bytes = 0, pending_segs = 0, scan_epoch = 0;
   double trend = 0;                    // backlog change, B/min (< 0 = draining)
+  bool has_tiers = false, has_video = false, saved = false;   // rev4b L= / V= / SAVED=1 tokens
+  qint64 logs_bytes = 0, logs_segs = 0, video_bytes = 0, video_files = 0;
 };
 
 // Missing file = on, same rule as the other default-on /data/params_bogpilot switches
@@ -82,6 +90,18 @@ inline Sample parse(const QByteArray &line) {
       s.pending_segs = n;
       if (f.size() > 7) s.trend = f[7].toDouble(&s.has_trend);   // "-" = not enough history yet
       if (f.size() > 8) s.scan_epoch = f[8].toLongLong();
+      // rev4b tokens, by key; anything unknown is ignored
+      for (int i = 9; i < f.size(); ++i) {
+        const QByteArray &k = f[i];
+        if (k == "SAVED=1") { s.saved = true; continue; }
+        if (!(k.startsWith("L=") || k.startsWith("V="))) continue;
+        const QList<QByteArray> v = k.mid(2).split(',');
+        bool ok_1 = false, ok_2 = false;
+        const qint64 v1 = v.size() == 2 ? v[0].toLongLong(&ok_1) : 0, v2 = v.size() == 2 ? v[1].toLongLong(&ok_2) : 0;
+        if (!ok_1 || !ok_2 || v1 < 0 || v2 < 0) continue;
+        if (k[0] == 'L') { s.has_tiers = true; s.logs_bytes = v1; s.logs_segs = v2; }
+        else { s.has_video = true; s.video_bytes = v1; s.video_files = v2; }
+      }
     }
   }
   s.valid = true;
@@ -104,6 +124,15 @@ inline QString etaText(double minutes) {
   if (m < 60) return QStringLiteral("ETA %1 min").arg(m);
   if (m >= 24 * 60) return QStringLiteral("ETA > 24 h");
   return QStringLiteral("ETA %1 h %2 min").arg(m / 60).arg(m % 60);
+}
+
+// 2 min / 1 h 25 m / > 24 h: fits the offroad card's ETA column
+inline QString etaShort(double minutes) {
+  if (minutes < 1) return QStringLiteral("< 1 min");
+  const int m = qRound(minutes);
+  if (m < 60) return QStringLiteral("%1 min").arg(m);
+  if (m >= 24 * 60) return QStringLiteral("> 24 h");
+  return QStringLiteral("%1 h %2 m").arg(m / 60).arg(m % 60);
 }
 
 enum class Backlog { None, CaughtUp, Draining, Growing, Flat, NoTrend };
@@ -132,6 +161,51 @@ inline QString pendingSubLine(const Sample &s, QColor *color = nullptr) {
   }
   if (color) *color = c;
   return t;
+}
+
+// Offroad card: one row per tier (rev4b L=/V= tokens). Empty = no tokens (older rlogsync): use pendingSubLine.
+struct TierLine {
+  QString tag, value, eta;
+  QColor value_color, eta_color;
+};
+
+inline QList<TierLine> tierLines(const Sample &s) {
+  QList<TierLine> rows;
+  if (!s.valid || !s.has_pending || !(s.has_tiers || s.has_video)) return rows;
+  const QColor white(255, 255, 255, 245), green(61, 220, 151, 255), amber(255, 196, 60, 255);
+  const Backlog state = backlogState(s);
+  const double drain = (state == Backlog::Draining && !s.saved) ? -s.trend : 0;   // B/min
+  const bool done = state == Backlog::CaughtUp;
+
+  TierLine logs{QStringLiteral("Logs"), QString(), QString(), white, green};
+  if (done || s.logs_bytes == 0) { logs.value = QStringLiteral("all sent"); logs.value_color = green; }
+  else {
+    logs.value = QStringLiteral("%1 seg%2").arg(s.logs_segs).arg(s.logs_segs == 1 ? "" : "s");
+    if (drain > 0) logs.eta = etaShort(s.logs_bytes / drain);   // logs go first, so they finish at this rate
+  }
+  TierLine video{QStringLiteral("HEVC"), QString(), QString(), white, green};
+  if (done || s.video_bytes == 0) { video.value = QStringLiteral("all sent"); video.value_color = green; }
+  else {
+    video.value = QStringLiteral("%1 file%2 · %3").arg(s.video_files).arg(s.video_files == 1 ? "" : "s").arg(sizeText(s.video_bytes));
+    if (drain > 0) video.eta = etaShort(std::min<double>(s.pending_bytes, s.logs_bytes + s.video_bytes) / drain);
+    else if (state == Backlog::Growing && !s.saved) { video.eta = QStringLiteral("growing"); video.eta_color = amber; }
+  }
+  rows << logs << video;
+  return rows;
+}
+
+// Seconds since boot (/proc/uptime), -1 when unknown
+inline qint64 uptimeSeconds(const QString &path = QStringLiteral("/proc/uptime")) {
+  QFile f(path);
+  if (!f.open(QIODevice::ReadOnly)) return -1;
+  bool ok = false;
+  const double up = f.read(64).split(' ').value(0).toDouble(&ok);
+  return ok ? qint64(up) : -1;
+}
+
+// Offroad card right after boot: no rate file yet (rlogsync's writer starts within seconds) -> "checking…"
+inline bool bootChecking(const Sample &s, qint64 uptime_s, bool enabled) {
+  return enabled && !s.valid && uptime_s >= 0 && uptime_s < BOOT_CHECK_S;
 }
 
 inline Sample readFile(const QString &path = RATE_PATH) {

@@ -41,6 +41,9 @@ private:
   QWidget *realdataPage = nullptr;
   QLabel *rdTitle = nullptr, *rdIcon = nullptr, *rdUpLabel = nullptr, *rdUpValue = nullptr, *rdUpArrow = nullptr, *rdStatus = nullptr;
   QLabel *rdPendLabel = nullptr, *rdPendValue = nullptr, *rdPendSub = nullptr, *rdFooter = nullptr;
+  QLabel *rdEtaHead = nullptr;                                      // "ETA" over the tier rows' right column
+  QLabel *rdTierTag[2] = {}, *rdTierValue[2] = {}, *rdTierEta[2] = {};   // rev4b: Logs / HEVC rows
+  QWidget *rdTierRow[2] = {};
   QPixmap rdUploadingIcon, rdDoneIcon;
   QString rdArrowStyle, rdSubStyle;
   QTimer *rdTimer = nullptr;
