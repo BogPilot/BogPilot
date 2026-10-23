@@ -264,6 +264,9 @@ class Controls:
 
     if not self.CP.notCar:
       self.events.add_from_msg(self.sm['driverMonitoringState'].events)
+      # BogPilot: opt-in phone-use alert (gate lives in dmonitoringd)
+      if self.sm['driverMonitoringState'].phoneUseAlert:
+        self.frogpilot_events.add(FrogPilotEventName.phoneUseDetected)
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:

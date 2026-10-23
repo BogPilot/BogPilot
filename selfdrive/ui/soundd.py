@@ -59,7 +59,14 @@ sound_list: dict[Any, tuple[str, int | None, float]] = {
   FrogPilotAudibleAlert.startup: ("startup.wav", 1, MAX_VOLUME),
   FrogPilotAudibleAlert.thisIsFine: ("this_is_fine.wav", 1, MAX_VOLUME),
   FrogPilotAudibleAlert.uwu: ("uwu.wav", 1, MAX_VOLUME),
+
+  # BogPilot: phone-use alert, played once. Loaded from the device-local
+  # BOGPILOT_SOUNDS_PATH (kept out of git); falls back to prompt_distracted.wav.
+  FrogPilotAudibleAlert.phoneUse: ("phone_use.wav", 1, MAX_VOLUME),
 }
+
+BOGPILOT_SOUNDS_PATH = Path("/data/bogpilot_sounds")
+BOGPILOT_SOUND_FALLBACKS = {"phone_use.wav": "prompt_distracted.wav"}
 
 def check_controls_timeout_alert(sm):
   controls_missing = time.monotonic() - sm.recv_time['controlsState']
@@ -105,6 +112,15 @@ class Soundd:
 
       random_events_path = self.random_events_directory / filename
       sounds_path = self.sound_directory / filename
+      bogpilot_path = BOGPILOT_SOUNDS_PATH / filename
+
+      if filename in BOGPILOT_SOUND_FALLBACKS:
+        if bogpilot_path.exists():
+          random_events_path = bogpilot_path
+        else:
+          filename = BOGPILOT_SOUND_FALLBACKS[filename]
+          random_events_path = self.random_events_directory / filename
+          sounds_path = self.sound_directory / filename
 
       if random_events_path.exists():
         wavefile = wave.open(str(random_events_path), 'r')
@@ -252,7 +268,8 @@ class Soundd:
       AudibleAlert.warningImmediate: self.frogpilot_toggles.warningImmediate_volume / 100.0,
 
       FrogPilotAudibleAlert.goat: self.frogpilot_toggles.prompt_volume / 100.0,
-      FrogPilotAudibleAlert.startup: self.frogpilot_toggles.engage_volume / 100.0
+      FrogPilotAudibleAlert.startup: self.frogpilot_toggles.engage_volume / 100.0,
+      FrogPilotAudibleAlert.phoneUse: self.frogpilot_toggles.promptDistracted_volume / 100.0,
     }
 
     for sound in sound_list:

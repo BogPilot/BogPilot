@@ -1101,6 +1101,15 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: ap1_follow_distance_changed_alert,
   },
 
+  # BogPilot: opt-in phone-use alert. LOW priority so stock DM alerts always win.
+  FrogPilotEventName.phoneUseDetected: {
+    ET.PERMANENT: Alert(
+      "Phone Down - Eyes on the Road",
+      "",
+      AlertStatus.userPrompt, AlertSize.small,
+      Priority.LOW, VisualAlert.none, FrogPilotAudibleAlert.phoneUse, 1.),
+  },
+
   FrogPilotEventName.leadDeparting: {
     ET.PERMANENT: Alert(
       "Lead departed",
