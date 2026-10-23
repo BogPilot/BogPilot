@@ -17,6 +17,11 @@ import time
 
 import zmq
 
+try:
+  from stream_view import LeadSmoother, ModelRate, GapStats, lead_text
+except ImportError:  # imported as openpilot.tools.state_stream.state_client
+  from openpilot.tools.state_stream.stream_view import LeadSmoother, ModelRate, GapStats, lead_text
+
 TOPIC = b"state"
 
 
@@ -56,18 +61,29 @@ def main() -> None:
     h, p = a.udp.rsplit(":", 1)
     udp = (socket.socket(socket.AF_INET, socket.SOCK_DGRAM), (h, int(p)))
   n, t0 = 0, time.monotonic()
+  smooth, mrate, gaps = LeadSmoother(), ModelRate(), GapStats()
+  shown = None
   while True:
     m = cl.recv()
     if m is None:
       continue
     n += 1
+    now = time.monotonic()
+    g_s = gaps.mark(now)
+    if g_s is not None:
+      print(f"gap {g_s:.2f}s")
+    mrate.feed(m, now)
+    shown, events = smooth.feed(m.get("leads", {}).get("leadOne"), now)
+    for e in events:
+      print(e)
     if udp:
       udp[0].sendto(json.dumps(m, separators=(",", ":")).encode(), udp[1])
     if time.monotonic() - t0 >= 1.0:
-      car, g, ld = m.get("car", {}), m.get("gps", {}), m.get("leads", {}).get("leadOne")
+      car, g = m.get("car", {}), m.get("gps", {})
       gps = f"{g.get('lat')},{g.get('lon')}" if a.show_gps else ("fix" if g.get("valid") else "nofix")
+      mrate.roll(now)
       print(f"{n:3d} Hz  v={car.get('vEgo')} steer={car.get('steeringAngleDeg')} gps={gps} hdg={g.get('headingDeg')} "
-            f"lead={ld[1] if ld and ld[0] else None} model={'model' in m}")
+            f"{lead_text(shown, smooth, now)} {mrate.text()}")
       n, t0 = 0, time.monotonic()
 
 

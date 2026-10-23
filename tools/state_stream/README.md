@@ -60,6 +60,7 @@ ZMQ multipart `[b"state", <utf-8 JSON>]`, one object per frame, ~1-3 kB.
 ```jsonc
 {
  "v": 1, "frame": 1234,
+ "meta": {"hz": 20, "modelHz": 10, "modelSrcHz": 19.8},  // send rate, model section rate, measured modelV2 rate (null until known)
  "mono": {"carState": ns, "radarState": ns, "modelV2": ns, "liveLocationKalman": ns},  // logMonoTime of each source
  "gps": {"valid": bool, "gpsOK": bool, "status": "valid",
          "lat": deg, "lon": deg, "alt": m, "headingDeg": 0..360 (calibrated NED yaw),
@@ -69,8 +70,9 @@ ZMQ multipart `[b"state", <utf-8 JSON>]`, one object per frame, ~1-3 kB.
          "leftBlinker", "rightBlinker", "hazard" (both blinkers), "leftBlindspot", "rightBlindspot",
          "brakePressed", "brakeLight", "gasPressed", "gear": "drive|reverse|park|neutral", "reverse", "doorOpen",
          "rideLevel": 0|3|4|5|6 (air suspension; 0 = not seen), "rideMoving": bool},
- "leads": {"leadOne": [status, dRel m, yRel m, vRel m/s, aRel, vLead m/s, modelProb, radar],
-           "leadTwo": [...]},
+ "leads": {"leadOne": [status, dRel m, yRel m, vRel m/s, aRel, vLead m/s, modelProb, radar,
+                      radarTrackId (-1 = vision-only/none), handoff],
+           "leadTwo": [...]},              // handoff: present in the previous snapshot with a different radarTrackId
  "model": {                          // only every 1/StateStreamModelHz s (default 10 Hz)
    "laneLines": [4 x [[x,y,z] x 11]],   // calibrated road frame, m; every 3rd of 33 points
    "laneLineProbs": [4], "roadEdges": [2 x [[x,y,z] x 11]], "roadEdgeStds": [2],
@@ -80,6 +82,29 @@ ZMQ multipart `[b"state", <utf-8 JSON>]`, one object per frame, ~1-3 kB.
 }
 ```
 Missing sections = source not yet seen. `null` = non-finite value.
+Older builds send 8-element lead lists and no `meta`; clients must accept both.
+
+The state topic is 20 Hz but the model section is only in every 2nd message (StateStreamModelHz 10).
+Show model rate as `meta.modelHz` / a received-model-sections count and model age as
+`mono.carState - mono.modelV2` of the last message that carried `model`; do not show
+`"model" in msg` (it alternates true/false by design).
+
+### Telemetry
+- No subscriber connected (ZMQ socket monitor on the PUB socket): tick() skips payload.build and
+  the sender skips JSON. Unknown count (old pyzmq without monitor events) = keep sending.
+  A new subscriber gets the active route resent immediately.
+- Every 60 s, while StateStream is enabled, one cloudlog event `state_stream_summary` (rlog
+  logMessage) with counts/rates/timings only, never positions: clients, connects/disconnects,
+  authOk/authFail, queued/sent/dropped/errors, skippedNoClient, routeSent, bytes,
+  rates {state, model, modelSrc, route, kBps}, encodeMsMean/Max, tickMsMean, hostCpuPct,
+  senderCpuPct, gaps {host, send, max, thresholdS 0.5}, leadSwitches, wifi
+  (from /proc/net/wireless + /sys/class/net/<iface>/statistics: level dBm min/max/mean,
+  link quality, tx/rx error and drop deltas; null if unreadable).
+- Send gaps are measured on capture timestamps. ZMQ PUB never blocks, so network losses show up
+  as Wi-Fi errors / disconnects on the comma and as gaps on the receiver (`gap 0.85s` lines).
+- `stream_view.py` (stdlib, Python 3.9+): `LeadSmoother` holds the displayed lead until a new
+  radarTrackId has persisted 0.5 s (marks HANDOFF) and reports every raw switch; `ModelRate`;
+  `GapStats`. Used by `state_client.py` and the Mac receiver.
 
 ### Lights / body signals
 `"lights": {"low": bool, "highArmed": bool, "high": bool}` from frogpilotCarState (AP1 only):
