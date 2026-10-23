@@ -8,7 +8,7 @@ Owners of other legacy Teslas — **Pre-AP, Model X AP1, and Model S/X AP2** —
 
 ## UI demo
 
-[![BogPilot UI demo: a car passing at about 115 mph](docs/media/bogpilot_ui_demo.gif)](docs/media/bogpilot_ui_demo.mp4)
+[![BogPilot UI demo: blind-spot warning, then a car passing at about 115 mph](docs/media/bogpilot_ui_demo_bsm_pass.gif)](docs/media/bogpilot_ui_demo.mp4)
 
 The current BogPilot UI replayed from a real drive log on the AP1 Model S: set speed, speed and speed limit row, live acceleration graph, path, and speed pills on tracked cars as one passes at about 115 mph. Plates are blurred. Click for the [full-quality video](docs/media/bogpilot_ui_demo.mp4).
 
