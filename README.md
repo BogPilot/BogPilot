@@ -55,7 +55,7 @@ The full stalk map is in `docs/tesla/STALK.md`. Every place this tree knowingly 
 - **Confidence ball:** port of comma's confidence ball on the right edge (green / orange / red from the model's disengage predictions). Visuals > BogPilot Confidence Ball.
 - **Developer HUD:** sunnypilot-style live metrics panel (accel, lead distance and speed, steering, lateral accel). Hidden while an alert banner shows; buttons don't move.
 - **Remote Screen Viewer:** view-only screen stream on port 8888 for the Tesla MCU2 browser. Device > Screen Settings.
-- **AP1 driving fixes:** steering blends from the measured wheel at engage and lateral resume; one-frame radar lead glitch filter; engage below 18 mph no longer drops; standstill engage (experimental, on by default, file toggle `AP1StandstillEngage`); stalk follow-distance changes show a 1 s banner.
+- **AP1 driving fixes:** steering blends from the measured wheel at engage and lateral resume; one-frame radar lead glitch filter; engage below 18 mph no longer drops; standstill engage (on by default, file toggle `AP1StandstillEngage`); stalk follow-distance changes show a 1 s banner.
 - **AP1 recommended toggles:** applied once when the car is set to Tesla AP1 Model S; owner changes are kept.
 - **Other:** BogPilot boot logo; GPS is optional (no engage block without a modem, no "Poor GPS" banner, GPS assist data without a SIM); experimental HEVC + state stream to a computer on the same Wi-Fi (toggle `HevcStream`).
 
@@ -63,7 +63,6 @@ The full stalk map is in `docs/tesla/STALK.md`. Every place this tree knowingly 
 
 - `bogpilot-tesla-cem-upload-ui`: CEM status next to the no-GPS slot, an on-screen upload-rate readout with pending backlog and ETA, and an offroad upload card (Mbps). Also: look-ahead curve brake that lands on the curve speed (Tesla only), Always On Lateral override fix for an LKAS Fault and AOL held off at parking speed, radar-only close-lead hold under a confident camera lead, quick-twist personality fix, standstill engage brake hold, and a fix for policy-head `lead_prob` being squashed twice.
 - `bogpilot-tesla-upload-ui`: upload card splits pending into Logs and HEVC rows, each with an ETA.
-- `bogpilot-tesla-phone-alert`: opt-in phone-use alert from driver monitoring (off by default; above 20 mph, 120 s cooldown).
 - `bogpilot-tesla-route-stream` / `-route-stream-telemetry`: all of the above plus state-stream telemetry (rate, gaps and Wi-Fi summary every 60 s, no positions) and lead radar track IDs for smoother lead display.
 - `bogpilot-tesla-bog-theme`: **The Bog**, the device web UI re-themed in BogPilot greys with the BogPilot emblem. A re-imagining of Aidenir's **The Pond**.
 
