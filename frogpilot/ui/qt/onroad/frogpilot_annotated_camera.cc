@@ -38,6 +38,14 @@ FrogPilotAnnotatedCameraWidget::FrogPilotAnnotatedCameraWidget(QWidget *parent) 
   QObject::connect(animationTimer, &QTimer::timeout, [this] {
     animationFrameIndex = (animationFrameIndex + 1) % totalFrames;
   });
+#if BOGPILOT_UPLOAD_RATE
+  // 1 Hz read of the uploader's rate file; paint only uses the cached sample
+  uploadRateTimer = new QTimer(this);
+  QObject::connect(uploadRateTimer, &QTimer::timeout, [this] {
+    uploadRate = (redesign && uploadRateEnabled) ? bogpilot_uprate::readFile() : bogpilot_uprate::Sample();
+  });
+  uploadRateTimer->start(bogpilot_uprate::READ_INTERVAL_MS);
+#endif
   QObject::connect(frogpilotUIState(), &FrogPilotUIState::themeUpdated, this, &FrogPilotAnnotatedCameraWidget::updateSignals);
   QObject::connect(uiState(), &UIState::offroadTransition, [this] {
     standstillTimer.invalidate();
@@ -167,6 +175,9 @@ void FrogPilotAnnotatedCameraWidget::updateState(const FrogPilotUIState &fs, con
   if (developerHudCheckFrame-- <= 0) {
     developerHudEnabled = developerHudFileEnabled();
     bogpilot::swapSpeedGraph() = developerHudFileEnabled(bogpilot::SWAP_SPEED_GRAPH_PATH);  // same "1"/"true"/"on" parser
+#if BOGPILOT_UPLOAD_RATE
+    uploadRateEnabled = bogpilot_uprate::toggleEnabled();
+#endif
     developerHudCheckFrame = UI_FREQ * 2;
   }
 
@@ -190,6 +201,10 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
   const cereal::ModelDataV2::Reader &model = sm["modelV2"].getModelV2();
 
   hudShown = developerHudShown(frogpilot_scene);
+  longitudinalPausedRect = QRect();
+#if BOGPILOT_UPLOAD_RATE
+  weatherDrawnRect = QRect();
+#endif
 
   paintNoGps(p, sm);
 
@@ -233,7 +248,8 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
     paintLongitudinalPaused(p, frogpilot_scene);
   }
 
-  if (!bigMapOpen && frogpilot_toggles.value("pedals_on_ui").toBool()) {
+  const bool pedalsShown = !bigMapOpen && frogpilot_toggles.value("pedals_on_ui").toBool();
+  if (pedalsShown) {
     paintPedalIcons(p, carState, frogpilotCarState, frogpilot_scene, frogpilot_toggles);
   }
 
@@ -282,7 +298,71 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
   if (!frogpilot_scene.map_open && !hideBottomIcons) {
     paintWeather(p, frogpilotPlan, frogpilot_scene);
   }
+
+  updateLeadLabelKeepout(pedalsShown);
+
+#if BOGPILOT_UPLOAD_RATE
+  // last, so it sits on top of everything above, including the blind-spot lane fill (drawn in drawLaneLines)
+  paintUploadRate(p);
+#endif
 }
+
+// BogPilot redesign: driver-side bottom-corner icon rects for the next frame's adjacent-lead speed pill
+// (bogpilot::placeAdjacentSpeed); the CEM / paused icons are taken where they were drawn this frame.
+void FrogPilotAnnotatedCameraWidget::updateLeadLabelKeepout(bool pedalsShown) {
+  leadLabelKeepout.clear();
+  if (!redesign) {
+    return;
+  }
+  QVector<QRectF> status;
+  if (cemStatusPosition != QPoint(0, 0)) {
+    status.append(QRectF(cemStatusPosition, QSizeF(statusIconSize(), statusIconSize())));
+  }
+  if (lateralPausedPosition != QPoint(0, 0)) {
+    status.append(QRectF(lateralPausedPosition, QSizeF(statusIconSize(), statusIconSize())));
+  }
+  if (!longitudinalPausedRect.isNull()) {
+    status.append(QRectF(longitudinalPausedRect));
+  }
+  leadLabelKeepout = bogpilot::bottomCornerKeepout(width(), rightHandDM, mapButtonVisible, pedalsShown, status);
+}
+
+#if BOGPILOT_UPLOAD_RATE
+// TEMPORARY: rlog upload rate (+ PENDING backlog / ETA with rlogsync v3.2) in the bottom corner opposite the DM
+// cluster (bottom-right LHD, bottom-left RHD), moved up to sit 18 px above a compass / weather box or the
+// Developer HUD when one is in that corner; both blocks move together.
+void FrogPilotAnnotatedCameraWidget::paintUploadRate(QPainter &p) {
+  if (!redesign || !uploadRateEnabled || bigMapOpen || fullAlertShowing || !uploadRate.valid) {
+    return;
+  }
+
+  QPoint anchor(rightHandDM ? bogpilot::EDGE : width() - bogpilot::EDGE, height() - bogpilot::EDGE);
+
+  QVector<QRect> taken;
+  if (compassPosition != QPoint(0, 0)) {
+    taken.append(QRect(compassPosition, QSize(widget_size, widget_size)));
+  }
+  if (!weatherDrawnRect.isNull()) {
+    taken.append(weatherDrawnRect);
+  }
+  if (hudShown) {   // not alertShowing: keep the readout still while an alert hides the HUD
+    taken.append(developerHudPanelRect());
+  }
+  for (int pass = 0; pass < 4; ++pass) {   // boxes can only push it up, so this settles
+    bool moved = false;
+    for (const QRect &r : taken) {
+      if (bogpilot_uprate::readoutRect(anchor, rightHandDM, uploadRate.has_pending).intersects(r)) {
+        anchor.ry() = r.top() - bogpilot_uprate::STACK_GAP - 6;   // box bottom = anchor.y() + 5
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
+  const qint64 age = QDateTime::currentSecsSinceEpoch() - uploadRate.epoch;
+  bogpilot_uprate::paint(p, anchor, rightHandDM, uploadRate, age, InterFont(20, QFont::DemiBold), InterFont(44, QFont::Bold));
+}
+#endif
 
 void FrogPilotAnnotatedCameraWidget::paintAdjacentPaths(QPainter &p, const cereal::CarState::Reader &carState, const FrogPilotUIScene &frogpilot_scene, const QJsonObject &frogpilot_toggles) {
   std::function<void(bool, float, float, const QPolygonF &)> drawAdjacentPath = [&p, &frogpilot_toggles, this](bool isBlindSpot, float width, float requirement, const QPolygonF &polygon) {
@@ -731,6 +811,7 @@ void FrogPilotAnnotatedCameraWidget::paintLongitudinalPaused(QPainter &p, FrogPi
   }
 
   QRect longitudinalWidget(longitudinalIconPosition, QSize(statusIconSize(), statusIconSize()));
+  longitudinalPausedRect = longitudinalWidget;
 
   p.setBrush(blackColor(166));
   p.setPen(QPen(QColor(bg_colors[STATUS_TRAFFIC_MODE_ENABLED]), 10));
@@ -1169,6 +1250,9 @@ void FrogPilotAnnotatedCameraWidget::paintWeather(QPainter &p, const cereal::Fro
   }
 
   QRect weatherRect(weatherIconPosition, QSize(widget_size, widget_size));
+#if BOGPILOT_UPLOAD_RATE
+  weatherDrawnRect = weatherRect;
+#endif
 
   p.setBrush(blackColor(166));
   p.setPen(QPen(blackColor(), 10));

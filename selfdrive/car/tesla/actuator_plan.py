@@ -216,7 +216,7 @@ def build_actuator_plan(frame, lat_active, hands_on_fault, openpilot_longitudina
                         acc_state, das_counters, pcm_cancel, chassis_das_only=False,
                         epas_error=None, eac_fault=False, hands_on_level=0,
                         eac_status=None, soft_start=False, driver_yield=False, gas_pressed=False,
-                        steer_tick=None, standby=False):
+                        steer_tick=None, standby=False, steer_session=None):
   """Same steering branches CarController.update had before this function existed.
 
   Disengaged lateral: no steering frame. Sending type-NONE 0x488 while
@@ -241,13 +241,19 @@ def build_actuator_plan(frame, lat_active, hands_on_fault, openpilot_longitudina
 
   lkas_enabled = lat_active and not hands_on_fault
   apply_angle_last = last_angle_deg
+  # AP1 Always On Lateral: the steering branches below use the lateral session (engaged, or AOL
+  # lateral while not engaged) instead of CarControl.enabled, so an AOL driver override keeps
+  # 0x488 owned by openpilot (type NONE at the measured wheel) and the resume goes through the
+  # same measured hold as engaged. None (default, and always with AOL off) means `enabled`.
+  # Longitudinal below still uses `enabled` only.
+  steer_enabled = enabled if steer_session is None else bool(steer_session)
   steer = None
   # AP1 only. Hands pause and EAC_FAULT still win over a latched code 6 or 3.
   # Code 3 takes this path only after hands drop; at or above 2, hands_pause
   # keeps type NONE even though code 3 is not itself a temporary fault.
   hands_pause = bool(chassis_das_only) and (hands_on_level >= AP1_HANDS_ON_LEVEL or bool(driver_yield))
   hold_measured = ap1_hold_measured_angle(
-    chassis_das_only, enabled, eac_fault, hands_pause, eac_status, epas_error, soft_start)
+    chassis_das_only, steer_enabled, eac_fault, hands_pause, eac_status, epas_error, soft_start)
   if chassis_das_only and eac_fault:
     lkas_enabled = False
 
@@ -267,7 +273,7 @@ def build_actuator_plan(frame, lat_active, hands_on_fault, openpilot_longitudina
       apply_angle = _ap1_limited_angle(requested_angle_deg, last_angle_deg, measured_angle_deg, v_ego)
       apply_angle_last = apply_angle
       steer = SteerCommand(apply_angle, True, steer_counter)
-    elif chassis_das_only and enabled and not hands_on_fault:
+    elif chassis_das_only and steer_enabled and not hands_on_fault:
       # Cruise stays up. Do not send the planned path angle.
       apply_angle_last = measured_angle_deg
       steer = SteerCommand(measured_angle_deg, False, steer_counter)

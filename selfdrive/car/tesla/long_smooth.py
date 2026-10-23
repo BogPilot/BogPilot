@@ -59,21 +59,24 @@ The jerk fields follow the ramped request (not the raw planner value), so
 they widen as the request deepens rather than snapping to 8 at the planner
 step; urgent frames send the full 8 immediately.
 
-Standstill hold and launch (brake pedal "thunk", drives 0000002f/30/31).
-The DI latches its standstill HOLD brake pressure from the request it sees
-when HOLD begins (raw 0x148 brake request: -2.01 m/s^2 -> 216, -1.68 -> 185,
-about -0.1 -> 132-171) and on resume dumps that pressure in 0.13-0.24 s
-whatever launch accel is sent; the iBooster then returns the pedal to rest in
-about 0.55 s. The stock DAS (bus 2 shadow) sends accelMin 0 and jerk +/-1.2
-at standstill instead of our -2.0 and +/-8. So once the car is at standstill
-(and there is no FCW) a deeper request is relaxed up to
-AP1_STANDSTILL_HOLD_ACCEL at AP1_STANDSTILL_RELAX_JERK, so HOLD latches less
-pressure and there is less to dump at the launch. A launch request at or
-above that value passes through on the same step (no added launch delay), and
-nothing changes while the car is still moving. Ap1JerkLimit sends jerkMax
+Standstill hold and launch (drives 0000002f/30/31). At standstill the
+request passes through unchanged (StopAccel -2.0 while stopped behind a lead),
+as before 350f77fd; the -1.0 standstill hold floor that 350f77fd added for the
+brake pedal "thunk" was reverted at the driver's request (he does not think
+the hold pressure caused it). Ap1JerkLimit still sends jerkMax
 AP1_LAUNCH_JERK_MAX (stock-like) below AP1_SLEW_MIN_SPEED; jerkMin stays at
-the full 8 so braking is never limited. Whether the DI rate-limits its HOLD
-release by DAS_jerkMax is untested.
+the full 8 so braking is never limited.
+
+Standstill engage (route 000000a5 20:44:44.2 ET, brake pedal thunk right
+after engagement). Disengaged at standstill the standby DAS_control
+(actuator_plan, AP1StandstillEngage) asks for accelMin -1.4 and the DI holds
+the car. On engage LongControl restarts its stopping ramp from 0 (-0.01,
+-0.10 ... reaching -2.0 after 2.6 s), the DI drops its hold (hold state 3 -> 0)
+and the brakes let off, then re-apply as the ramp deepens. So on the first
+active frame at standstill in the LongControl stopping state the request is
+held at AP1_STANDSTILL_ENGAGE_ACCEL until the ramp passes it, LongControl
+leaves stopping or the request rises (launch), the car moves, or an FCW.
+Engaging at a green light (not stopping) is unchanged.
 """
 
 import math
@@ -137,11 +140,6 @@ AP1_BRAKE_URGENT_ACCEL = -1.0
 # m/s^2. A falling request at or below this passes through on the same step.
 AP1_BRAKE_HARD_ACCEL = -2.0
 
-# m/s^2. Request floor once the car is at standstill (no FCW). The stock DAS
-# sends accelMin 0 here; the DI holds the car with its own HOLD pressure.
-AP1_STANDSTILL_HOLD_ACCEL = -1.0
-# m/s^3. How fast a deeper standstill request relaxes up to the floor.
-AP1_STANDSTILL_RELAX_JERK = 1.0
 # Gas handoff. While the driver presses the accelerator, DAS_control carries the
 # neutral frame (0). Before this, the first frame after the release restarted
 # the slew from 0, so a driver at +1.2 m/s^2 saw the request drop to 0 and climb
@@ -155,6 +153,13 @@ AP1_GAS_HANDOFF_MAX = 2.0
 # m/s^3. DAS_jerkMax below AP1_SLEW_MIN_SPEED (stock DAS sends about 1.2 at
 # standstill). DAS_jerkMin stays at AP1_FULL_JERK_LIMIT there.
 AP1_LAUNCH_JERK_MAX = 1.5
+# m/s^2. Standstill engage hold: the standby DAS_control accelMin
+# (actuator_plan.AP1_STANDBY_ACCEL_MIN), so the request stays continuous.
+AP1_STANDSTILL_ENGAGE_ACCEL = -1.4
+# m/s. Below this the car counts as stopped for the engage hold.
+AP1_STANDSTILL_ENGAGE_V = 0.1
+# Frames after engage in which the LongControl stopping state arms the hold.
+AP1_STANDSTILL_ENGAGE_FRAMES = 10
 
 
 def ap1_brake_urgent(CC):
@@ -163,7 +168,7 @@ def ap1_brake_urgent(CC):
 
 
 def ap1_fcw(CC):
-  """FCW on the HUD (standstill hold relax and launch jerk are skipped)."""
+  """FCW on the HUD (the low-speed launch jerkMax is skipped)."""
   return bool(CC.hudControl.visualAlert == _FCW)
 
 
@@ -191,21 +196,58 @@ class Ap1AccelSmoother:
     self.last = None
     self.release_j = 0.0  # current drive-release jerk (m/s^3), 0 when not releasing
     self.gas_seed = None  # latched aEgo from the last gas-neutral frame
+    self.was_active = False
+    self.engage_hold = None   # standstill engage hold level, or None
+    self.engage_used = False
+    self.active_frames = 0
+    self.prev_target = None
 
   def reset(self):
     self.last = None
     self.release_j = 0.0
     self.gas_seed = None
+    self.was_active = False
+    self.engage_hold = None
+    self.engage_used = False
+    self.active_frames = 0
+    self.prev_target = None
 
-  def update(self, target, active, v_ego, gas_neutral=False, urgent=False, dt=DT_CTRL, standstill=False, fcw=False,
+  def update(self, target, active, v_ego, gas_neutral=False, urgent=False, dt=DT_CTRL, fcw=False,
              a_ego=None):
     """urgent: FCW or LongControl stopping. A falling request passes through.
 
-    standstill: the car is stopped (CarState.standstill). Without an FCW a
-    request below AP1_STANDSTILL_HOLD_ACCEL is held at that floor, reached
-    from a deeper last output at AP1_STANDSTILL_RELAX_JERK.
+    Below AP1_SLEW_MIN_SPEED (including standstill) the request passes through
+    unchanged, so the standstill hold sends StopAccel as planned.
     """
     target = float(target)
+    out = self._update(target, active, v_ego, gas_neutral, urgent, dt, fcw, a_ego)
+    now_active = active and not gas_neutral
+    self.active_frames = self.active_frames + 1 if (now_active and self.was_active) else (1 if now_active else 0)
+    # The first engaged carControl still carries the previous longControlState
+    # ("off"), so frame 1 arms the hold on standstill alone (it equals the
+    # standby accelMin the DI already sees) and the stopping state is checked
+    # from frame 2 on.
+    first = self.active_frames == 1
+    stopping = urgent and not fcw  # LongControl stopping state
+    arm = 0 < self.active_frames <= AP1_STANDSTILL_ENGAGE_FRAMES and (stopping or (first and not fcw))
+    if arm and self.engage_hold is None and v_ego < AP1_STANDSTILL_ENGAGE_V and target <= 0.0 and not self.engage_used:
+      self.engage_used = True
+      self.engage_hold = AP1_STANDSTILL_ENGAGE_ACCEL
+    elif self.engage_hold is not None and (not active or gas_neutral or fcw or (not stopping and not first) or
+                                           v_ego >= AP1_STANDSTILL_ENGAGE_V or
+                                           target <= self.engage_hold or
+                                           (self.prev_target is not None and target > self.prev_target + 1e-3)):
+      self.engage_hold = None
+    if self.engage_hold is not None:
+      out = min(out, self.engage_hold)
+      self.last = out
+    if not now_active:
+      self.engage_used = False
+    self.was_active = now_active
+    self.prev_target = target if active else None
+    return out
+
+  def _update(self, target, active, v_ego, gas_neutral, urgent, dt, fcw, a_ego):
     if gas_neutral:
       self.last = 0.0
       self.release_j = 0.0
@@ -225,16 +267,6 @@ class Ap1AccelSmoother:
       if v_ego >= self.min_speed and not fcw:
         self.last = self.gas_seed
       self.gas_seed = None
-    if standstill and not fcw and target < AP1_STANDSTILL_HOLD_ACCEL:
-      floor = AP1_STANDSTILL_HOLD_ACCEL
-      if self.last is None or self.last >= floor:
-        out = floor
-      else:
-        out = min(floor, self.last + AP1_STANDSTILL_RELAX_JERK * dt)
-      if hasattr(self, "release_j"):
-        self.release_j = 0.0
-      self.last = out
-      return out
     if self.last is None or v_ego < self.min_speed:
       self.last = target
       return target

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import base64
 import hashlib
 import json
 import os
@@ -30,8 +29,8 @@ from openpilot.system.version import get_build_metadata
 from panda import Panda
 
 from openpilot.frogpilot.assets.theme_manager import HOLIDAY_THEME_PATH, THEME_COMPONENT_PARAMS
-from openpilot.frogpilot.common.frogpilot_utilities import delete_file, get_frogpilot_api_info, get_lock_status, run_cmd, extract_tar
-from openpilot.frogpilot.common.frogpilot_variables import ACTIVE_THEME_PATH, ERROR_LOGS_PATH, EXCLUDED_KEYS, FROGPILOT_API, RESOURCES_REPO, SCREEN_RECORDINGS_PATH, THEME_SAVE_PATH,\
+from openpilot.frogpilot.common.frogpilot_utilities import delete_file, get_lock_status, run_cmd, extract_tar
+from openpilot.frogpilot.common.frogpilot_variables import ACTIVE_THEME_PATH, ERROR_LOGS_PATH, EXCLUDED_KEYS, SCREEN_RECORDINGS_PATH, THEME_SAVE_PATH,\
                                                            frogpilot_default_params, params, params_memory, update_frogpilot_toggles
 from openpilot.frogpilot.system.the_pond import helpers, utilities
 
@@ -97,19 +96,6 @@ def _car_params():
 def _favorite_id(fav):
   raw = f"{fav.get('longitude')},{fav.get('latitude')}|{fav.get('routeId') or ''}|{fav.get('name') or ''}"
   return hashlib.sha1(raw.encode()).hexdigest()
-
-def _frogpilot_api_payload(**extra):
-  info = get_frogpilot_api_info()
-  return {
-    "api_token": info.api_token,
-    "build_metadata": info.build_metadata,
-    "device": info.device_type,
-    "frogpilot_dongle_id": info.dongle_id,
-    **extra,
-  }
-
-def _gitlab_action(file_path, content):
-  return {"action": "create", "file_path": file_path, "content": content, "encoding": "base64"}
 
 _gear_lock = threading.Lock()
 _parked_snapshot = {"parked": False, "fresh": False}
@@ -1442,101 +1428,9 @@ def setup(app):
 
   @app.route("/api/themes/submit", methods=["POST"])
   def submit_theme():
-    try:
-      theme_name = request.form.get("themeName")
-      if not theme_name:
-        return jsonify({"error": "Missing theme name"}), 400
-
-      discord_username = request.form.get("discordUsername") or "Unknown"
-
-      theme_path, error = utilities.create_theme(request.form, request.files, temporary=True)
-      if error:
-        return jsonify({"message": error}), 400
-
-      safe_theme_name = utilities.normalize_theme_name(theme_name, for_path=True)
-      combined_name = f"{safe_theme_name}~{discord_username}"
-
-      def gitlab_post(commit_payload):
-        resp = requests.post(f"{FROGPILOT_API}/gitlab/commit", json=_frogpilot_api_payload(**commit_payload),
-                             headers={"Content-Type": "application/json", "User-Agent": "frogpilot-api/1.0"}, timeout=60)
-        if resp.status_code not in (200, 201):
-          raise RuntimeError(f"GitLab commit error {resp.status_code}: {resp.text}")
-        return resp.json()
-
-      def encode_file_base64(path):
-        with open(path, "rb") as f:
-          return base64.b64encode(f.read()).decode("utf-8")
-
-      def send_discord_notification(username, theme_name, asset_types):
-        payload = _frogpilot_api_payload(asset_types=asset_types, theme_name=theme_name, username=username)
-
-        try:
-          resp = requests.post(f"{FROGPILOT_API}/discord/theme", json=payload, headers={"Content-Type": "application/json", "User-Agent": "frogpilot-api/1.0"}, timeout=30)
-          resp.raise_for_status()
-          cloudlog.info("the_pond: sent theme submission notification")
-        except requests.exceptions.RequestException:
-          cloudlog.exception("the_pond: failed to send theme notification")
-
-      asset_types = []
-      submission_urls = {}
-
-      distance_icons_path = theme_path / "distance_icons"
-      if distance_icons_path.exists() and any(distance_icons_path.iterdir()):
-        zip_path = shutil.make_archive(str(distance_icons_path), "zip", distance_icons_path)
-        gitlab_post({
-          "branch": "Distance-Icons",
-          "commit_message": f"Added Distance Icons: {combined_name}",
-          "actions": [_gitlab_action(f"{combined_name}.zip", encode_file_base64(zip_path))],
-        })
-        asset_types.append("Distance Icons")
-        submission_urls["distance_icons"] = f"https://gitlab.com/{RESOURCES_REPO}-Submissions/-/tree/Distance-Icons"
-
-      theme_actions = []
-      for folder in ["colors", "icons", "signals", "sounds"]:
-        folder_path = theme_path / folder
-        if folder_path.exists() and any(folder_path.iterdir()):
-          zip_path = shutil.make_archive(str(folder_path), "zip", folder_path)
-          theme_actions.append(_gitlab_action(f"{combined_name}/{folder}.zip", encode_file_base64(zip_path)))
-
-      if theme_actions:
-        gitlab_post({
-          "branch": "Themes",
-          "commit_message": f"Added Theme: {combined_name}",
-          "actions": theme_actions,
-        })
-        asset_types.append("Theme")
-        submission_urls["theme"] = f"https://gitlab.com/{RESOURCES_REPO}-Submissions/-/tree/Themes"
-
-      wheel_file = request.files.get("steeringWheel")
-      if wheel_file and wheel_file.filename:
-        suffix = Path(wheel_file.filename).suffix
-        wheel_file.seek(0)
-        encoded_wheel = base64.b64encode(wheel_file.read()).decode("utf-8")
-        gitlab_post({
-          "branch": "Steering-Wheels",
-          "commit_message": f"Added Steering Wheel: {combined_name}",
-          "actions": [_gitlab_action(f"{combined_name}{suffix}", encoded_wheel)],
-        })
-        asset_types.append("Steering Wheel")
-        submission_urls["steering_wheel"] = f"https://gitlab.com/{RESOURCES_REPO}-Submissions/-/tree/Steering-Wheels"
-
-      if not submission_urls:
-        return jsonify({"error": "No valid theme data or steering wheel file provided"}), 400
-
-      send_discord_notification(discord_username, theme_name, asset_types)
-
-      return jsonify({
-        "message": "Submission successful!",
-        "branches": submission_urls
-      }), 200
-
-    except Exception:
-      cloudlog.exception("the_pond submit_theme failed")
-      return jsonify({"error": "Theme submission failed. Please try again later."}), 500
-
-    finally:
-      if "theme_path" in locals() and theme_path is not None and theme_path.parent.exists():
-        delete_file(theme_path.parent)
+    # BogPilot: theme submission uploaded the theme plus a Discord username and device
+    # identifiers to the FrogPilot API. Disabled; themes can still be made and saved locally.
+    return jsonify({"error": "Theme submission is disabled in BogPilot. Your theme can still be saved on this device."}), 403
 
   @app.route("/api/tmux_log/capture", methods=["POST"])
   def capture_tmux_log_route():

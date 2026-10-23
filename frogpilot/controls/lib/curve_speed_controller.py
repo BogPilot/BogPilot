@@ -22,6 +22,9 @@ class CurveSpeedController:
 
     self.training_timer = 0
 
+    # Optional brand cap on the learned cornering limit (Tesla: selfdrive/car/tesla/curve_speed.py).
+    self.max_lateral_acceleration = None
+
     self.curvature_data = json.loads(params.get("CurvatureData") or "{}")
 
     self.required_curvatures = [str(round(road_curvature, ROUNDING_PRECISION)) for road_curvature in np.arange(MIN_CURVATURE, MAX_CURVATURE + STEP, STEP)]
@@ -90,8 +93,10 @@ class CurveSpeedController:
 
   def update_target(self, v_ego):
     lateral_acceleration = self.lateral_acceleration
+    if self.max_lateral_acceleration is not None:
+      lateral_acceleration = min(lateral_acceleration, self.max_lateral_acceleration)
     if self.frogpilot_planner.frogpilot_weather.weather_id != 0:
-      lateral_acceleration -= self.lateral_acceleration * self.frogpilot_planner.frogpilot_weather.reduce_lateral_acceleration
+      lateral_acceleration -= lateral_acceleration * self.frogpilot_planner.frogpilot_weather.reduce_lateral_acceleration
 
     if self.target_set:
       csc_speed = (lateral_acceleration / abs(self.frogpilot_planner.road_curvature))**0.5

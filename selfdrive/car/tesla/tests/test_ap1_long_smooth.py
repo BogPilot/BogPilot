@@ -8,7 +8,7 @@ from openpilot.selfdrive.car.tesla.long_smooth import (
   AP1_BRAKE_BYPASS_ACCEL, AP1_BRAKE_HARD_ACCEL, AP1_BRAKE_ONSET_JERK, AP1_BRAKE_URGENT_ACCEL, AP1_COMFORT_JERK_LIMIT,
   AP1_DRIVE_RELEASE_BRAKE_JERK, AP1_DRIVE_RELEASE_JERK, AP1_DRIVE_RELEASE_RAMP_S,
   AP1_FALL_JERK, AP1_FULL_JERK_LIMIT, AP1_JERK_BLEND_START, AP1_JERK_LIMIT_NARROW_RATE, AP1_RISE_JERK, AP1_SLEW_MIN_SPEED,
-  AP1_LAUNCH_JERK_MAX, AP1_STANDSTILL_HOLD_ACCEL, AP1_STANDSTILL_RELAX_JERK, ap1_fcw,
+  AP1_LAUNCH_JERK_MAX, ap1_fcw,
   Ap1AccelSmoother, Ap1JerkLimit, ap1_brake_ramp_jerk, ap1_brake_urgent, ap1_jerk_limit_target,
 )
 from openpilot.selfdrive.car.tesla.values import CarControllerParams
@@ -412,42 +412,32 @@ def test_teslacan_default_jerk_unchanged_for_other_callers():
   assert sig.parameters["jerk_max"].default == CarControllerParams.JERK_LIMIT_MAX
 
 
-# --- Standstill hold relax and launch (brake pedal thunk, drives 2f/30/31) ---
+# --- Standstill hold and launch (350f77fd -1.0 hold floor reverted: StopAccel -2.0 passes) ---
 
-def test_standstill_hold_relaxes_to_floor():
+def test_standstill_hold_passes_stop_accel():
   s = Ap1AccelSmoother()
-  out = [s.update(-1.5, True, 0.0, urgent=True, standstill=True)]
-  # First standstill frame with no history: the floor.
-  assert out[0] == pytest.approx(AP1_STANDSTILL_HOLD_ACCEL)
+  assert s.update(-2.0, True, 0.0, urgent=True) == pytest.approx(-2.0)
   s = Ap1AccelSmoother()
-  s.update(-1.6, True, 0.05, urgent=True)  # stopping ramp, not yet at standstill: passes
-  assert s.last == pytest.approx(-1.6)
-  out = [s.update(-1.6 - 0.008 * i, True, 0.0, urgent=True, standstill=True) for i in range(150)]
-  steps = [b - a for a, b in zip([-1.6] + out, out, strict=False)]
-  assert all(0 <= d <= AP1_STANDSTILL_RELAX_JERK * 0.01 + 1e-9 for d in steps)  # only relaxes, never steps
-  assert out[-1] == pytest.approx(AP1_STANDSTILL_HOLD_ACCEL)
-  assert min(out) >= -1.6 - 1e-9
-
-
-def test_standstill_hold_never_deepens_past_floor_but_shallower_passes():
+  s.update(-1.6, True, 0.05, urgent=True)  # stopping ramp just before standstill
+  out = [s.update(-1.6 - 0.008 * i, True, 0.0, urgent=True) for i in range(150)]
+  assert out == pytest.approx([max(-1.6 - 0.008 * i, -2.8) for i in range(150)])  # request as planned, no floor
   s = Ap1AccelSmoother()
-  s.update(-0.5, True, 0.0, urgent=True, standstill=True)
-  assert s.update(-2.0, True, 0.0, urgent=True, standstill=True) == pytest.approx(AP1_STANDSTILL_HOLD_ACCEL)
-  assert s.update(-0.4, True, 0.0, urgent=True, standstill=True) == pytest.approx(-0.4)
+  s.update(-0.5, True, 0.0, urgent=True)
+  assert s.update(-2.0, True, 0.0, urgent=True) == pytest.approx(-2.0)
+  assert s.update(-0.4, True, 0.0, urgent=True) == pytest.approx(-0.4)
 
 
 def test_standstill_launch_passes_same_step():
   s = Ap1AccelSmoother()
   for _ in range(200):
-    s.update(-2.0, True, 0.0, urgent=True, standstill=True)
-  assert s.update(0.3, True, 0.0, standstill=True) == pytest.approx(0.3)
+    s.update(-2.0, True, 0.0, urgent=True)
+  assert s.update(0.3, True, 0.0) == pytest.approx(0.3)
 
 
 def test_standstill_fcw_or_moving_keeps_full_brake():
   s = Ap1AccelSmoother()
-  assert s.update(-2.0, True, 0.0, urgent=True, standstill=True, fcw=True) == pytest.approx(-2.0)
+  assert s.update(-2.0, True, 0.0, urgent=True, fcw=True) == pytest.approx(-2.0)
   s = Ap1AccelSmoother()
-  # Moving (standstill False) at low speed: stopping ramp passes through as before.
   assert s.update(-2.0, True, 0.5, urgent=True) == pytest.approx(-2.0)
   s = Ap1AccelSmoother()
   s.update(0.0, True, V)
@@ -456,8 +446,8 @@ def test_standstill_fcw_or_moving_keeps_full_brake():
 
 def test_standstill_inactive_or_gas_neutral_unchanged():
   s = Ap1AccelSmoother()
-  assert s.update(-2.0, False, 0.0, standstill=True) == pytest.approx(-2.0)
-  assert s.update(-2.0, True, 0.0, gas_neutral=True, standstill=True) == 0.0
+  assert s.update(-2.0, False, 0.0) == pytest.approx(-2.0)
+  assert s.update(-2.0, True, 0.0, gas_neutral=True) == 0.0
 
 
 def test_launch_jerk_limits_low_speed_only():
@@ -482,30 +472,29 @@ def test_ap1_fcw_from_carcontrol():
   assert ap1_fcw(CC.as_reader())
 
 
-def test_controller_standstill_hold_floor_reaches_das_control(cc_mod):  # noqa: F811
+def test_controller_standstill_hold_sends_stop_accel(cc_mod):  # noqa: F811
   sent = _das(cc_mod, [-2.0] * 120, v=0.0, standstill=True)
-  assert sent[0][1] == pytest.approx(AP1_STANDSTILL_HOLD_ACCEL, abs=0.04)
-  assert all(s[1] >= AP1_STANDSTILL_HOLD_ACCEL - 0.04 for s in sent)
+  assert all(s[1] == pytest.approx(-2.0, abs=0.04) for s in sent)
   sent = _das(cc_mod, [-2.0] * 5, v=0.0, standstill=True, fcw_from=0)
   assert all(s[1] == pytest.approx(-2.0, abs=0.04) for s in sent)
 
 
 def test_stop_approach_output_continuous():
-  # Drive 30 18:38:59-18:39:03: stopping ramp while vEgo crosses AP1_SLEW_MIN_SPEED (launch jerkMax switch) and then
-  # 0.1 m/s (standstill floor). The sent accel must never step by more than the request does; jerkMax switching is
-  # the only thing that changes at 1 m/s.
+  # Drive 30 18:38:59-18:39:03: stopping ramp while vEgo crosses AP1_SLEW_MIN_SPEED (launch jerkMax switch) and
+  # standstill. The sent accel follows the request down to StopAccel -2.0 and holds it; jerkMax switching is the only
+  # thing that changes at 1 m/s.
   s, jl = Ap1AccelSmoother(), Ap1JerkLimit()
   v, prev, req_prev = 1.3, None, None
   outs, jerks = [], []
   for i in range(500):
     req = max(-0.6 - 0.008 * i, -2.0)  # ~0.8 m/s^3 stopping ramp to StopAccel
-    v = max(v - 0.01, 0.0)  # standstill (v < 0.1) at i = 120, request -1.56 there
-    out = s.update(req, True, v, urgent=v < 0.5, standstill=v < 0.1)
+    v = max(v - 0.01, 0.0)
+    out = s.update(req, True, v, urgent=v < 0.5)
     jerks.append(jl.update(out, True, v))
     if prev is not None:
-      assert abs(out - prev) <= abs(req - req_prev) + AP1_STANDSTILL_RELAX_JERK * 0.01 + 1e-9, (i, v, prev, out)
+      assert abs(out - prev) <= abs(req - req_prev) + 1e-9, (i, v, prev, out)
     prev, req_prev = out, req
     outs.append(out)
-  assert min(outs) == pytest.approx(-1.56, abs=0.02)  # floor caught the ramp before StopAccel -2.0
-  assert outs[-1] == pytest.approx(AP1_STANDSTILL_HOLD_ACCEL)
+  assert min(outs) == pytest.approx(-2.0)
+  assert outs[-1] == pytest.approx(-2.0)
   assert all(j[0] == -AP1_FULL_JERK_LIMIT for j in jerks)  # braking jerk never limited

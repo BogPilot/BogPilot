@@ -13,7 +13,6 @@ from openpilot.frogpilot.common.frogpilot_functions import backup_toggles
 from openpilot.frogpilot.common.frogpilot_utilities import capture_report, flash_panda, is_url_pingable, lock_doors, run_thread_with_lock, update_maps, update_openpilot
 from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, FrogPilotVariables, get_frogpilot_toggles, params, params_cache, params_memory
 from openpilot.frogpilot.controls.frogpilot_planner import FrogPilotPlanner
-from openpilot.frogpilot.system.frogpilot_stats import send_stats
 from openpilot.frogpilot.system.frogpilot_tracking import FrogPilotTracking
 from openpilot.selfdrive.car.tesla.ap1_defaults import apply_ap1_defaults_once
 from openpilot.system.state_stream.streamer import StateStreamer
@@ -105,9 +104,6 @@ def frogpilot_thread():
 
       if frogpilot_toggles.random_themes:
         theme_manager.update_active_theme(time_validated, frogpilot_toggles, randomize_theme=True)
-
-      if time_validated:
-        send_stats(json.loads(params.get("LastGPSPosition") or "{}"), params, frogpilot_toggles)
 
     elif started and not started_previously:
       if error_log.is_file():

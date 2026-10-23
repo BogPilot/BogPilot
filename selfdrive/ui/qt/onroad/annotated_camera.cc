@@ -705,19 +705,28 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
   fillAlpha = std::clamp(fillAlpha, 0.f, 255.f);
 
   if (redesign) {
-    // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: lead speed pill above
-    // the box and a distance tag below (option A2); adjacent leads get the box only.
+    // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: speed number inside
+    // the box and a distance tag below it, flipped above for close leads (option B, v6); adjacent leads get the box plus
+    // their speed inside it (option A).
     const QRectF box = bogpilot::leadLockBox(vd, d_rel, width(), height());
     // v5: colour by time gap at the car's speed (primary white -> orange -> red, adjacent muted grey -> orange -> red)
     const QColor color = bogpilot::leadDistanceColor(lead_data.getDRel(), adjacent, (*uiState()->sm)["carState"].getCarState().getVEgo());
     bogpilot::paintLeadLock(painter, box, QString(), color);
-    if (!adjacent) {
+    if (adjacent) {
+      // Adjacent-lane lead: absolute speed (number only) inside the box; hidden below 5 so roadside returns stay unlabelled.
+      const int adj_speed = qRound(std::max(0.0f, lead_data.getVLead()) * frogpilot_nvg->speedConversion);
+      if (adj_speed >= bogpilot::ADJ_SPEED_MIN) {
+        // moved outside the box when the lower-left icons would cover it (keepout from the last frame: the icons
+        // paint after the leads)
+        bogpilot::paintAdjacentSpeed(painter, box, QString::number(adj_speed), color, frogpilot_nvg->leadLabelKeepout,
+                                     rightHandDM, QRectF(rect()));
+      }
+    } else {
       frogpilot_nvg->leadTextRect = QRect();
       bogpilot::LeadLabels labels;
       labels.vision_only = !lead_data.getRadar();
       const int lead_speed = qRound(std::max(0.0f, lead_data.getVLead()) * frogpilot_nvg->speedConversion);
       labels.speed = (labels.vision_only ? "~" : "") + QString::number(lead_speed);
-      labels.speed_unit = speedUnit;
       labels.dist = QString::number(qRound(d_rel * frogpilot_nvg->distanceConversion));
       labels.dist_unit = frogpilot_nvg->distanceConversion == 1.0f ? "m" : "ft";
       if (v_rel < -4.4704f) {
