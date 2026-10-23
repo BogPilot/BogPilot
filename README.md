@@ -6,6 +6,12 @@ Owners of other legacy Teslas — **Pre-AP, Model X AP1, and Model S/X AP2** —
 
 **Not a product. No warranty. The driver remains responsible. Comply with local law.** Not validated as safe to drive. The maintainer has driven it on one AP1 Model S with a comma 3X, but that is a personal impression, not a bench or safety validation.
 
+## UI demo
+
+[![BogPilot UI demo: a car passing at about 115 mph](docs/media/bogpilot_ui_demo.gif)](docs/media/bogpilot_ui_demo.mp4)
+
+The current BogPilot UI replayed from a real drive log on the AP1 Model S: set speed, speed and speed limit row, live acceleration graph, path, and speed pills on tracked cars as one passes at about 115 mph. Plates are blurred. Click for the [full-quality video](docs/media/bogpilot_ui_demo.mp4).
+
 Pinned FrogPilot SHA: `1e23dec6352cef5a36a87be0af7d7a082b7c48a4`.
 
 ## AP1 status (tag `ap1-driving-milestone-4`)
