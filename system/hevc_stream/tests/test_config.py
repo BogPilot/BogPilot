@@ -80,6 +80,6 @@ def test_process_registered():
 
 
 def test_default_has_no_state_readers():
-  # Route 5b: extra msgq readers on state topics evicted driving readers (commIssue).
+  # A recorded drive: extra msgq readers on state topics evicted driving readers (commIssue).
   assert c.DEFAULT_SERVICES == ("wideRoadEncodeData", "roadEncodeData")
   assert not set(c.DEFAULT_SERVICES) & set(c.STATE_SERVICES)

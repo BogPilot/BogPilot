@@ -1,6 +1,6 @@
 """AP1 comfort-band accel slew for DAS_control (CarController side only).
 
-Route 0000002a: the planner aTarget is the only source of request jitter.
+On a recorded drive the planner aTarget is the only source of request jitter.
 CarController passes it straight through (LongControl PID gains are 0) and
 DAS_control tells the DI it may follow at +/-8 m/s^3 (stock AP1 DAS sends
 roughly +/-0.2 to +/-1.2). Planner jerk on that drive: p95 0.7, p99 1.9
@@ -34,7 +34,7 @@ value is rate limited (AP1_JERK_LIMIT_NARROW_RATE) so the limit itself never
 steps down. Below AP1_SLEW_MIN_SPEED, while inactive, and on the gas-neutral
 frame it is the full 8 (the old behavior).
 
-Regen onset ramp (road test of 6914de87, route 0000002e). The planner turns
+Regen onset ramp (road test of 6914de87). The planner turns
 a sudden drop in its plan into an overshooting step: aTarget is
 2 * (v(0.55 s) - v0) / 0.55 - a0, so when the plan's current accel a0 is
 +1.2 and the plan falls to about -0.2 (allowThrottle going false, or a lead
@@ -59,7 +59,7 @@ The jerk fields follow the ramped request (not the raw planner value), so
 they widen as the request deepens rather than snapping to 8 at the planner
 step; urgent frames send the full 8 immediately.
 
-Standstill hold and launch (drives 0000002f/30/31). At standstill the
+Standstill hold and launch (three recorded drives). At standstill the
 request passes through unchanged (StopAccel -2.0 while stopped behind a lead),
 as before 350f77fd; the -1.0 standstill hold floor that 350f77fd added for the
 brake pedal "thunk" was reverted at the driver's request (he does not think
@@ -67,7 +67,7 @@ the hold pressure caused it). Ap1JerkLimit still sends jerkMax
 AP1_LAUNCH_JERK_MAX (stock-like) below AP1_SLEW_MIN_SPEED; jerkMin stays at
 the full 8 so braking is never limited.
 
-Standstill engage (route 000000a5 20:44:44.2 ET, brake pedal thunk right
+Standstill engage (a recorded drive, brake pedal thunk right
 after engagement). Disengaged at standstill the standby DAS_control
 (actuator_plan, AP1StandstillEngage) asks for accelMin -1.4 and the DI holds
 the car. On engage LongControl restarts its stopping ramp from 0 (-0.01,
@@ -131,7 +131,7 @@ AP1_JERK_LIMIT_NARROW_RATE = 10.0
 
 # Regen onset ramp (m/s^3). Deepening a request at or below 0 m/s^2. ISO 15622
 # ACC comfort guidance is 2.5 m/s^3 above 20 m/s; the stock DI's own lift-off
-# regen ramp after a cruise cancel on 0000002e averaged about 0.6 m/s^3
+# regen ramp after a cruise cancel on a recorded drive averaged about 0.6 m/s^3
 # (peaks 1.0-2.6). 2.0 sits between the two.
 AP1_BRAKE_ONSET_JERK = 2.0
 # m/s^2. The regen ramp jerk blends from AP1_BRAKE_ONSET_JERK at this request

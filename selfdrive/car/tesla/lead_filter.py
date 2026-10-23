@@ -1,6 +1,6 @@
 """AP1 one-frame radar lead glitch filter (radard, AP1 only).
 
-Route 58 17:45:20.8: leadOne jumped for one radar frame from the lead car
+On a recorded drive leadOne jumped for one radar frame from the lead car
 (46 m, 10.6 m/s) to a stationary roadside track (42 m, 0.3 m/s, yRel -7.5) and
 the plan stepped -1.60 -> -2.81 m/s^2 (12.5 bar friction thunk). 17:45:28.8: a
 one-frame radar-only lead at 1.5 m (modelProb 0) stepped the plan -0.88 -> -1.71.
@@ -16,8 +16,8 @@ Rules, per lead slot, at the radard rate (Tesla 20 Hz):
   frame. If the next frame agrees with the new lead, it is accepted, so a real
   cut-in is delayed by at most one frame.
 - A lead appearing (no lead -> lead) or disappearing is never delayed.
-- Close radar-only point under a confident camera lead (route 000000a5
-  20:44:38.2 ET): at 4 mph behind a stopped car the camera lead was at 9.5 m
+- Close radar-only point under a confident camera lead (a
+  recorded drive): at 4 mph behind a stopped car the camera lead was at 9.5 m
   (prob 1.00) and a stationary radar-only track at 2.06 m (modelProb 0) won
   radard's low-speed override for 2 radar frames after the 1-frame hold above,
   stepping the plan -0.47 -> -1.47 m/s^2 into the regen -> friction handoff

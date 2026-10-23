@@ -5,7 +5,7 @@ safety_tesla.h only accepts DAS_accelMin == DAS_accelMax == inactive_accel
 (raw 375, 0.00 m/s^2). Any other accel frame is dropped. carcontroller runs
 with the new carState and the previous CarControl, so the first pressed step
 still had longActive=True and sent an accel request the panda rejected
-(route 00000010 segment 18, twice). AP1 now sends the neutral frame (both
+(a recorded drive, twice). AP1 now sends the neutral frame (both
 limits 0, set speed = vEgo) for every step the pedal is pressed and returns to
 the normal request when it is released.
 

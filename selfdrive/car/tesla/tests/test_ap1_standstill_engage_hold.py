@@ -1,4 +1,4 @@
-"""Standstill engage hold (route 000000a5 20:44:44.2 ET brake pedal thunk after engage)."""
+"""Standstill engage hold (a recorded drive: brake pedal thunk after engage)."""
 from openpilot.selfdrive.car.tesla.long_smooth import (Ap1AccelSmoother, AP1_STANDSTILL_ENGAGE_ACCEL,
                                                        AP1_STANDSTILL_ENGAGE_V)
 
@@ -32,7 +32,7 @@ def test_route_a5_standstill_engage_holds_standby_level():
 
 
 def test_green_light_engage_at_standstill_unchanged():
-  # Route 000000a0 19:53:36.9 ET: standstill engage straight into a launch (+0.51).
+  # A recorded drive: standstill engage straight into a launch (+0.51).
   frames = [(0.0, False, False)] * 3 + [(0.51, True, False)] + [(0.51 + 0.01 * i, True, False) for i in range(20)]
   out = run(frames)
   assert out[3:] == [f[0] for f in frames[3:]]

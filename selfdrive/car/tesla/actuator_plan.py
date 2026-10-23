@@ -121,9 +121,9 @@ def ap1_long_acc_state(camera_acc_state, chassis_das_only):
   """
   # AP1: stock DAS reports accState 0 below ~18 mph with no lead (stock TACC
   # minimum speed). Forwarding that 0 made the DI drop cruise ~100 ms after
-  # every sub-18 mph engage (routes 53/54). Tinkla always sends 4 in drive.
+  # every sub-18 mph engage (two recorded drives). Tinkla always sends 4 in drive.
   # Stock DAS also sends 13 (ACC_CANCEL_GENERIC_SILENT) on some low-speed
-  # roads (route 57: dirt track / unmarked roads, 16:53:37, 17:03:09, 17:03:23).
+  # roads (a recorded drive: dirt track / unmarked roads, three times).
   # Forwarding it cancelled DI cruise within ~20 ms with no driver input. The
   # stock DAS is not the cruise owner while openpilot is engaged; driver cancel
   # (stalk, brake, gas) uses its own path. Tinkla always sends 4 in drive.
@@ -166,8 +166,8 @@ def ap1_gas_neutral(chassis_das_only, openpilot_longitudinal_control, enabled, g
 
   controlsd drops longActive for the press, but carcontroller runs with the
   new carState and the previous step's CarControl. On the first pressed step
-  that stale longActive=True frame was the one the panda rejected (route
-  00000010 segment 18, twice). Gas wins over longActive here.
+  that stale longActive=True frame was the one the panda rejected (a
+  recorded drive, twice). Gas wins over longActive here.
 
   Style: lukasloetkolben frog_ap1 teslacan.create_longitudinal_command keeps
   sending DAS_control while long is inactive with accel 0 and DAS_setSpeed =
@@ -193,7 +193,7 @@ def ap1_hold_measured_angle(chassis_das_only, enabled, eac_fault, hands_pause,
                            eac_status, epas_error, soft_start):
   """True when AP1 must command ANGLE at the measured wheel, not the planner.
 
-  EPAS on route 0000000e stayed EAC_INHIBITED with code 6 while openpilot kept
+  EPAS on a recorded drive stayed EAC_INHIBITED with code 6 while openpilot kept
   sending planner ANGLE; the wheel never moved and there was no UI fault.
   Hold measured until EAC_ACTIVE (and after soft-start / latched 6 or 3).
   """

@@ -1,6 +1,6 @@
 """AP1 0x488 counter continuity at stock <-> openpilot handovers.
 
-Drive 18/19: every disengage where the stock stream came back with the
+Two recorded drives: every disengage where the stock stream came back with the
 counter openpilot had just sent (delta 0) latched EPAS code 7, and an engage
 with a regressing/repeated counter latched code 7 and the EPB revoked EAC.
 """

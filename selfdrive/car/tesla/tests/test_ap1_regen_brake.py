@@ -383,7 +383,7 @@ def test_following_uses_ap1_comfort_for_desired_distance():
   assert "ap1_comfort_brake" in src
 
 
-# --- Braking lead: lead stopping term goes to stock (route 57 16:57:44 FCW) ----
+# --- Braking lead: lead stopping term goes to stock (a recorded-drive FCW) ----
 
 def test_lead_comfort_brake_blend_off_by_default():
   import openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc as long_mpc

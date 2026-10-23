@@ -17,7 +17,7 @@ available regen power is estimated:
     below the request for > 0.5 s above the low-speed fade band
   * recovers toward the ceiling at 0.5 kW/s
 Regen decel capacity = fade(v) * P*0.9/(m*v), m = 2100 kg. The fade comes from
-route 56 (16:00:58): regen torque fell from -113 Nm at 10.5 mph to -43 Nm at
+a recorded drive: regen torque fell from -113 Nm at 10.5 mph to -43 Nm at
 5 mph and 0 at 2 mph.
 
 References: Tinkla/Unity PCC_module.py hard-codes REGEN_DECEL_V; this replaces

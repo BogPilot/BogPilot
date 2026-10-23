@@ -4,7 +4,7 @@ Before this, the engage soft-start (actuator_plan.AP1_ENGAGE_SOFT_START_FRAMES,
 also re-armed by the hands-pause resume in hso.Ap1DriverYield) held the
 measured wheel for 300 ms and then sent the planner angle on the next 0x488.
 The only bound on that step was apply_std_steer_angle_limits, whose DOWN table
-(toward centre) allows 5-7 deg per 50 Hz frame at 5-10 m/s. Routes 55-58
+(toward centre) allows 5-7 deg per 50 Hz frame at 5-10 m/s. Several recorded drives
 (new_1013d / new_1013e) show 150-580 deg/s command steps right at the end of
 the hold.
 

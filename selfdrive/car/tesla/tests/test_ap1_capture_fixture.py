@@ -50,7 +50,7 @@ EXPECTED = (
 
 
 def test_route_label_has_no_dongle_and_recording_is_frog_ap1():
-  assert ROUTE_LABEL == "ap1-parked-2026-10-03"
+  assert ROUTE_LABEL == "ap1-parked-capture"
   assert "--" not in ROUTE_LABEL
   assert SOURCE_BRANCH == "frog_ap1"
   assert SOURCE_COMMIT == "73a16cdd"

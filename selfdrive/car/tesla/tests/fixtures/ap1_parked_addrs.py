@@ -4,7 +4,7 @@ The route was recorded on frog_ap1, not on this BogPilot tree. Counts are
 can-RX frame counts from segment 0 of that route. No payload bytes are stored.
 """
 
-ROUTE_LABEL = "ap1-parked-2026-10-03"
+ROUTE_LABEL = "ap1-parked-capture"
 
 # One panda. These three buses carried traffic at the same time.
 OBSERVED_BUSES = (0, 1, 2)

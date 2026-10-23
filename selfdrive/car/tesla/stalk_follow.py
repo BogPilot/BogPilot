@@ -185,7 +185,7 @@ _PERSONALITY_BY_DETENT = {3: _PERSONALITY["aggressive"], 5: _PERSONALITY["standa
 def crossed_personality(prev_detent, detent):
   """Personality of the last named detent (3, 5, 7) the stalk passed over between prev_detent and detent.
 
-  A quick twist can skip detents on CAN (2026-10-20 route 000000a5: DTR 200 -> 166 -> 100 -> 33 never reported 66),
+  A quick twist can skip detents on CAN (a recorded drive: DTR 200 -> 166 -> 100 -> 33 never reported 66),
   so a landing on 1, 2, 4 or 6 that jumped over a named detent would otherwise keep the old personality while a slow
   twist through the same detents changes it. Returns None when nothing named was skipped (or no history).
   Both ends are excluded: prev_detent was already applied and a named landing is handled by ap1_stalk_commands.

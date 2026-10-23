@@ -218,7 +218,7 @@ class LongitudinalPlanner:
 
     if self.ap1_engage_brake:
       # FrogPilot publishes minAcceleration = 0 while disengaged, so the 0.05/step slew below held
-      # braking to ~1 m/s^2 per second after engaging behind a closing lead (route 3c seg 4, FCW).
+      # braking to ~1 m/s^2 per second after engaging behind a closing lead (a recorded drive, seg 4, FCW).
       # AP1: during that engage ramp, if the MPC is following a lead, the braking limit goes to its
       # normal value at once. No lead (cruise / curve slowdown) and the max-accel side keep the ramp.
       if reset_state:

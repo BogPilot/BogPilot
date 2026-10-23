@@ -111,7 +111,7 @@ def test_cluster_display_only_lifts():
 def test_carcontroller_feeds_das_acc_speed_limit_overlay_with_04_scale():
   """OP set is written to DAS_accSpeedLimit; DBC factor must be 0.4 (not 0.2).
 
-  Route 21 cluster digital set=60 was packing raised 30 with factor 0.2 (raw 150 → IC@0.4 = 60).
+  A recorded drive's cluster digital set=60 was packing raised 30 with factor 0.2 (raw 150 → IC@0.4 = 60).
   """
   from pathlib import Path
   src = (Path(__file__).resolve().parents[1] / "carcontroller.py").read_text()
@@ -132,7 +132,7 @@ def test_cruise_set_mph_conversion():
 
 
 def test_cruise_set_mph_rejects_unset_sentinel():
-  """Route 23: pcmCruise standstill DI set=0 → VCruiseHelper UNSET must not hit IC."""
+  """A recorded drive: pcmCruise standstill DI set=0 → VCruiseHelper UNSET must not hit IC."""
   assert cruise_set_mph(V_CRUISE_UNSET_MS) is None
   assert cruise_set_mph(V_CRUISE_UNSET_MS * 0.99) is None
   # Legitimate highway set still packs
@@ -219,7 +219,7 @@ def test_ap1_tip_authority_until_pull_or_disengage():
 
 
 def test_ap1_raise_holdoff_recent_stalk_gap_sticky_and_rwd():
-  """drive24: buttonEvents clear 80–240 ms before enabled rises — still classify.
+  """A recorded drive: buttonEvents clear 80–240 ms before enabled rises — still classify.
 
   Press DN/UP → clear buttons → enable 80–200 ms later → sticky (no raise).
   Mirror for RWD → allow raise. Same-frame press+enable still covered above.
@@ -320,7 +320,7 @@ def test_ap1_tip_up_plus_one_and_clears():
   h.update(False, False, False, False, slc, 20 * MPH, current_set_ms=set30, dt=dt)
   assert h.tip_ms == 0.0
 
-  # Tip then lower SLC: tip STAYS (authority until pull / disengage — drive 2a)
+  # Tip then lower SLC: tip STAYS (authority until pull / disengage — seen on a recorded drive)
   h = Ap1RaiseHoldoff()
   h.update(True, False, False, False, 40 * MPH, 20 * MPH, current_set_ms=46 * MPH, dt=dt)
   h.update(True, False, True, False, 40 * MPH, 20 * MPH, current_set_ms=46 * MPH, dt=dt)
@@ -440,7 +440,7 @@ def test_prev_5_ms_snap():
 
 
 def test_ap1_level_held_across_missed_edge_still_sticky():
-  """drive25: short edge missed by events but level held → sticky on enable.
+  """A recorded drive: short edge missed by events but level held → sticky on enable.
 
   Models 20 Hz planner ticks that never see the 10 ms press edge; continuous
   level True across the gap still arms _last_up/_dn_t. Gap 80–200 ms ≪ RECENT_S.
@@ -485,7 +485,7 @@ def test_ap1_level_held_across_missed_edge_still_sticky():
 
 
 def test_ap1_decel_tip_down_no_di_chase():
-  """drive25: engaged DECEL latches software set; does not track DI downward.
+  """A recorded drive: engaged DECEL latches software set; does not track DI downward.
 
   Short DN → −1 mph from current set; long hold → next-lower-5. Plan must stay
   on tip_ms (e.g. 30) even when DI sits at ~vEgo/2 (cliff was 31→12→3).
@@ -632,17 +632,17 @@ def test_ap1_card_feeds_button_states_levels():
   assert "resumePressed" in vsrc
   assert "_ap1_accel_held" not in vsrc  # edge latch removed (was clear-before-update bug)
   assert "_ap1_resume_held" not in vsrc  # RWD now continuous level, not buttonEvents
-  # Sticky latch must still beat slc_desired (drive26/27); post-pull floor is ok (drive28)
+  # Sticky latch must still beat slc_desired (recorded-drive finding); post-pull floor is ok (DI-half fix)
   assert "hold.sticky_vego" in vsrc
   assert "latched_vego_ms" in vsrc
   assert vsrc.index("hold.sticky_vego") < vsrc.index("max(set_hint, float(slc_desired))")
 
 
 def test_ap1_short_rwd_while_enabled_clears_sticky_and_allows_raise():
-  """drive26 F1: short RWD hold while sticky must clear tip/sticky → allow_raise.
+  """Recorded-drive finding F1: short RWD hold while sticky must clear tip/sticky → allow_raise.
 
   Models continuous resumePressed level seen for ~100 ms (2×50 ms ticks) while
-  enabled — the buttonEvents edge-only path missed these on route 26.
+  enabled — the buttonEvents edge-only path missed these on a recorded drive.
   """
   dt = 0.05
   slc = 25 * MPH
@@ -675,7 +675,7 @@ def test_ap1_short_rwd_while_enabled_clears_sticky_and_allows_raise():
 
 
 def test_ap1_tip_base_from_sticky_not_slc_floor():
-  """drive26/27 F2: engaged tip from sticky uses latch, not max(plan, SLC+offset).
+  """Recorded-drive finding F2: engaged tip from sticky uses latch, not max(plan, SLC+offset).
 
   DN from sticky ~20.9 → ~19.9 (not ~30). UP from sticky → +1 from sticky (not 31).
   """
@@ -734,13 +734,13 @@ def test_ap1_vcruise_tip_base_prefers_sticky_over_slc():
   i_plan = vsrc.index("set_hint = float(v_cruise)")
   assert i_sticky < i_tip < i_plan
   assert "set_hint = max(set_hint, float(slc_desired))" in vsrc
-  # drive 2a: do NOT seed tip after raise (SLC tracking until stalk tip)
+  # Recorded drive: do NOT seed tip after raise (SLC tracking until stalk tip)
   assert "hold.tip_ms = float(v_cruise)" not in vsrc
   assert "SLC tracking mode" in vsrc
 
 
 def test_ap1_tip_after_raise_not_di_half_seed():
-  """drive28: after RWD raise to SLC+offset, tip DN must be raised−1, not DI≈vEgo/2.
+  """A recorded drive: after RWD raise to SLC+offset, tip DN must be raised−1, not DI≈vEgo/2.
 
   Logged: fp=51 dig=51 di_set/cs_v≈22; tip DN → fp/over=21 (half cliff).
   User wanted 51→50. Root cause: tip_ms cleared on raise; set_hint=post-min DI.
@@ -751,7 +751,7 @@ def test_ap1_tip_after_raise_not_di_half_seed():
   di_half = 22.0 * MPH  # post-min DI / cs_v while overlay shows 51
   vego = 44.2 * MPH
 
-  # Soft-sim of frogpilot_vcruise set_hint + tip seed (drive28 fix)
+  # Soft-sim of frogpilot_vcruise set_hint + tip seed (DI-half fix)
   def set_hint_for(hold, v_cruise_post_min, slc_desired):
     if hold.sticky_vego and float(hold.latched_vego_ms) > 0.0:
       return float(hold.latched_vego_ms)
@@ -809,10 +809,10 @@ def test_ap1_vcruise_set_hint_after_raise_floors_slc_not_di():
   from pathlib import Path
   vsrc = (Path(__file__).resolve().parents[4] / "frogpilot" / "controls" / "lib" /
           "frogpilot_vcruise.py").read_text()
-  assert "drive28" in vsrc
+  assert "a recorded drive: tip DN from 51" in vsrc
   assert "vEgo/2" in vsrc
   assert "set_hint = max(set_hint, float(slc_desired))" in vsrc
-  # drive 2a: raise path must not seed tip_ms (SLC tracking until stalk tip)
+  # Recorded drive: raise path must not seed tip_ms (SLC tracking until stalk tip)
   assert "hold.tip_ms = float(v_cruise)" not in vsrc
   assert "tip_full" in vsrc and "spdCtrlLvr" in vsrc
 
@@ -889,7 +889,7 @@ def test_carstate_cruise_speed_tracks_di_cruise_set(carstate_mod):
 
 
 def test_ap1_tip_full_pos2_next_5_on_edge():
-  """drive 2a: SpdCtrl DN_2ND/UP_2ND (tip_full) → next-5 on rising edge, no hold.
+  """A recorded drive: SpdCtrl DN_2ND/UP_2ND (tip_full) → next-5 on rising edge, no hold.
 
   Pos1 (tip_full=False) stays ±1. Matches stock IC briefly showing 45 then OP
   used to overwrite to 49 when pos1+pos2 collapsed into one level.
@@ -1089,7 +1089,7 @@ def test_ap1_vcruise_uses_ap1_cruise_ms_without_sticky_slc_cap():
   assert not hasattr(Ap1RaiseHoldoff, "LIMIT_RISE_MS")
 
 
-# --- AP1 posted-limit guard (drive 2a seg 5: 45→5 mph blip ~1.4 s) -----------
+# --- AP1 posted-limit guard (a recorded drive, seg 5: 45→5 mph blip ~1.4 s) -----------
 
 def _guard_run(g, seq, dt=0.05):
   """seq: [(limit_mph, offset_mph, seconds)] → list of (target_mph, offset_mph) per tick."""
@@ -1299,7 +1299,7 @@ def test_ap1_guard_does_not_touch_tip_or_min_clamps():
 
 
 def test_ap1_guard_drop_back_after_bogus_rise_is_immediate():
-  # Drive 35 seg 11: limit 35, camera misread 80 for ~9.6 s, then back to 35.
+  # A recorded drive, seg 11: limit 35, camera misread 80 for ~9.6 s, then back to 35.
   g = Ap1SlcLimitGuard()
   out = _guard_run(g, [(35, 6, 2.0), (80, 10, 9.6), (35, 6, 0.05)])
   assert out[-1] == (35, 6)  # no extra 2 s at 80 on the way back

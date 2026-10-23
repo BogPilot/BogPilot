@@ -4,7 +4,7 @@ Python-level checks for the actuator plan plus a precise document of the C
 tesla_fwd_hook change. panda safety unit tests are not runnable on this x86
 box (no panda/tests/safety tree in this checkout).
 
-Confirmed by 2026-10-04 rlogs: when Tesla safety param 10 started, stock bus-2
+Confirmed by recorded rlogs: when Tesla safety param 10 started, stock bus-2
 0x488 and 0x2b9 stopped appearing on bus 0 within ~0.1s because fwd_hook
 blocked them unconditionally and sendcan emitted type-NONE 0x488 the whole
 time disengaged. Stock AEB/Autopilot then faulted.

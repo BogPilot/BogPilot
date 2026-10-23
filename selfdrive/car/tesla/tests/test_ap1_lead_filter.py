@@ -59,7 +59,7 @@ def test_never_two_held_frames_in_a_row():
   assert out[2]['dRel'] == 10.0
 
 
-# Route 000000a5 seg 5, 20:44:38.09-38.34 ET: stopped car ahead at 9.5 m on camera
+# A recorded drive, seg 5, over ~0.25 s: stopped car ahead at 9.5 m on camera
 # (prob 1.00) and a stationary radar-only track at 2.06 m (modelProb 0) for 3 radar frames.
 A5_MODEL = (1.0, 9.3, 0.0)
 

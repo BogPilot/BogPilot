@@ -1,6 +1,6 @@
 """AP1 CarState: EPB EAC revoke → permanent steer fault; stock 0x488 counters.
 
-Drive 18: after an EPAS code 7 latch the EPB set EPB_epasEACAllow to 0 and
+A recorded drive: after an EPAS code 7 latch the EPB set EPB_epasEACAllow to 0 and
 kept it there until the car was power cycled. EPAS stayed INHIBITED and the
 driver only got the silent steer warning while engaged for 20 s.
 """

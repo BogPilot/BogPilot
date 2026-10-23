@@ -9,7 +9,7 @@ same Wi-Fi (in-car travel router). Transport: ZMQ PUB, multipart
 | file | default | meaning |
 |---|---|---|
 | HevcStream | 1 | 0 disables |
-| HevcStreamServices | wideRoadEncodeData,roadEncodeData | state topics (carState, liveCalibration, radarState, modelV2) are opt-in; adding them adds msgq readers that can evict driving readers (route 5b commIssue) |
+| HevcStreamServices | wideRoadEncodeData,roadEncodeData | state topics (carState, liveCalibration, radarState, modelV2) are opt-in; adding them adds msgq readers that can evict driving readers (commIssue seen on a recorded drive) |
 | HevcStreamIface | wlan0 | interface whose private IPv4 is bound (never 0.0.0.0/public) |
 | HevcStreamPort | 8765 | |
 | HevcStreamAllow | (none) | comma list of client IPs allowed (e.g. the Mac's reserved IP) |

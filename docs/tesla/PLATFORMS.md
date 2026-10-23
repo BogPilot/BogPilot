@@ -107,7 +107,7 @@ BogPilot is not a product. No warranty. The driver remains responsible. Comply w
 
 ## Parked capture
 
-A parked route from 2026-10-03, recorded on a comma 3X running `frog_ap1` at `73a16cdd`, is summarized as `ap1-parked-2026-10-03` in `selfdrive/car/tesla/tests/fixtures/ap1_parked_addrs.py`. The log is not in this repo. VIN, GPS, and dongle id are not stored.
+A parked capture, recorded on a comma 3X running `frog_ap1` at `73a16cdd`, is summarized as `ap1-parked-capture` in `selfdrive/car/tesla/tests/fixtures/ap1_parked_addrs.py`. The log is not in this repo. VIN, GPS, and dongle id are not stored.
 
 One panda. Buses 0, 1, and 2 were active. `0x2b9` (`DAS_control`) was present on buses 0, 1, and 2. `0x2bf` was absent (count 0), so this capture is not the dual-panda powertrain fingerprint. All seven `DTR_Dist_Rq` raw values were seen: 0, 33, 66, 100, 133, 166, 200. Controls never went active. `vEgo` stayed near 0. This is not an engagement test.
 

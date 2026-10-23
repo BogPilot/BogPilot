@@ -1,5 +1,6 @@
 """AP1 ride level (0x11B): pure decode, DBC layout via CANParser with synthetic frames, isolation."""
 import glob
+import os
 import pickle
 import re
 from pathlib import Path
@@ -9,7 +10,7 @@ import pytest
 from openpilot.selfdrive.car.tesla.ap1_ride import ap1_ride
 
 ROOT = Path(__file__).resolve().parents[4]
-PKLS = sorted(glob.glob("/workspace/out/park_can/0000005*.pkl"))  # local-only CAN extracts (no GPS)
+PKLS = sorted(glob.glob(os.path.join(os.environ.get("BP_PARK_CAN_DIR", "/workspace/out/park_can"), "*.pkl")))  # local-only CAN extracts (no GPS)
 
 
 def frame(level, moving=False, b3=0x83):

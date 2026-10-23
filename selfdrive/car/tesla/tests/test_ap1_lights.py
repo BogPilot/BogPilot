@@ -1,4 +1,4 @@
-"""AP1 exterior lights: pure decode, parser config safety, and an east-drive replay."""
+"""AP1 exterior lights: pure decode, parser config safety, and a recorded-drive replay."""
 import glob
 import os
 import re
@@ -9,7 +9,7 @@ import pytest
 from openpilot.selfdrive.car.tesla.ap1_lights import ap1_lights
 
 ROOT = Path(__file__).resolve().parents[4]
-EAST = sorted(glob.glob("/workspace/realdata/east/*/rlog"), key=lambda p: int(p.split("/")[-2].rsplit("--", 1)[1]))
+RECORDED = sorted(glob.glob(os.path.join(os.environ.get("BP_RECORDED_DRIVE", "/workspace/realdata/recorded_drive"), "*/rlog")), key=lambda p: int(p.split("/")[-2].rsplit("--", 1)[1]))
 
 
 def test_decode():
@@ -45,7 +45,7 @@ def _parser():
   return CANParser
 
 
-@pytest.mark.skipif(not EAST, reason="needs /workspace/realdata/east")
+@pytest.mark.skipif(not RECORDED, reason="needs BP_RECORDED_DRIVE (a recorded drive's segment dirs)")
 def test_replay_east_toggles():
   CANParser = _parser()
   if CANParser is None:
@@ -54,7 +54,7 @@ def test_replay_east_toggles():
   cp = CANParser("tesla_can", [("GTW_carState", 10), ("STW_ACTN_RQ", 10)], 0)
   cp_cam = CANParser("tesla_can", [("DAS_bodyControls", 0)], 2)
   prev, changes, n = None, 0, 0
-  for p in EAST:
+  for p in RECORDED:
     with open(p, "rb") as fh:
       raw = fh.read()
     for e in log.Event.read_multiple_bytes(raw, traversal_limit_in_words=2**63 - 1):

@@ -23,7 +23,7 @@ def test_only_ap1_gets_a_gate():
 
 
 def test_single_frame_blip_moves_cap_partially_and_decays():
-  # 00000030 18:39:45.69 ET: allowThrottle false for one 50 ms plan step.
+  # A recorded drive: allowThrottle false for one 50 ms plan step.
   out = _run([True] * 5 + [False] + [True] * 20)
   assert out[4] == 0.0
   assert out[5] == pytest.approx(A_UP)
@@ -38,7 +38,7 @@ def test_sustained_no_throttle_reaches_coast_cap():
 
 
 def test_chatter_keeps_most_of_the_cap():
-  # The e3574753 chatter acted as early caution (0000002e 16:09 ET).
+  # The e3574753 chatter acted as early caution (on a recorded drive).
   out = _run([True, False] * 40)
   assert min(out[20:]) > 0.6
 

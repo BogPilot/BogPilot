@@ -1,4 +1,4 @@
-"""Replay real rlogs (east drive) through StateStreamer at the host's modelV2 cadence.
+"""Replay real rlogs (a recorded drive) through StateStreamer at the host's modelV2 cadence.
 
 Checks: payload values equal the rlog values, ~20 Hz out / ~10 Hz model, and tick()
 cost is tiny vs the 50 ms frogpilot_process budget, with a real ZMQ loopback PUB.
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-DATA = sorted(glob.glob("/workspace/realdata/east/*/rlog"))
-pytestmark = pytest.mark.skipif(not DATA, reason="needs /workspace/realdata/east")
+DATA = sorted(glob.glob(os.path.join(os.environ.get("BP_RECORDED_DRIVE", "/workspace/realdata/recorded_drive"), "*/rlog")))
+pytestmark = pytest.mark.skipif(not DATA, reason="needs BP_RECORDED_DRIVE (a recorded drive's segment dirs)")
 ROOT = Path(__file__).resolve().parents[3]
 SERVICES = ("carState", "radarState", "modelV2", "liveLocationKalman")
 

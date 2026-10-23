@@ -25,7 +25,7 @@ PARAMS_DIR = Path("/data/params_bogpilot")
 ENCODE_SERVICES = ("wideRoadEncodeData", "roadEncodeData", "driverEncodeData")
 STATE_SERVICES = ("carState", "liveCalibration", "radarState", "modelV2")
 ALLOWED_SERVICES = ENCODE_SERVICES + STATE_SERVICES
-# Encode streams only by default. Route 5b (bundle-1013, 41a156b1): hevc_streamd's
+# Encode streams only by default. On a recorded drive (bundle-1013, 41a156b1) hevc_streamd's
 # extra msgq readers on carState / liveCalibration / radarState pushed those queues
 # past msgq NUM_READERS (15); every re-subscribe evicts ALL readers of the queue, so
 # calibrationd / dmonitoringd / paramsd / torqued / lagd / plannerd kept missing

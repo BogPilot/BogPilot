@@ -124,7 +124,7 @@ LEAD_BRAKING_BP = [0.3, 1.0]
 # Off by default. Closed-loop sim (bundle_1013 report): mixing a stock lead term
 # with the regen-sized ego term demands 0.3*v^2 m of extra gap the moment the lead
 # brakes (−3.5 m/s^2 slams, 48 m stop gap at 30 m/s), and an open-loop replay of
-# the route 57 16:57:44 FCW shows the old matched-cb plan already brakes −1.4 to
+# a recorded-drive FCW shows the old matched-cb plan already brakes −1.4 to
 # −1.7 m/s^2 there, so the logged −0.86 plateau is not explained by this term.
 AP1_LEAD_BRAKE_BLEND = False
 
@@ -134,8 +134,8 @@ def lead_comfort_brake(comfort_brake, a_lead):
 
   Steady lead (|a| small): the regen value, so its v_lead^2 term cancels our own
   regen-sized term and the steady-follow gap equals stock. Braking lead: stock
-  COMFORT_BRAKE, so a hard-braking lead is not assumed to stop gently (route 57
-  16:57:44 FCW: the plan plateaued at -0.86 m/s^2). Never below comfort_brake,
+  COMFORT_BRAKE, so a hard-braking lead is not assumed to stop gently (a recorded-drive
+  FCW: the plan plateaued at -0.86 m/s^2). Never below comfort_brake,
   so x_obstacle only moves closer (add-only braking).
   """
   if not AP1_LEAD_BRAKE_BLEND or comfort_brake >= COMFORT_BRAKE - 1e-9:

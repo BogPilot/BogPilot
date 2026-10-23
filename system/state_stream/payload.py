@@ -5,7 +5,7 @@ downsampled lists out of capnp readers into plain Python values. No I/O, no
 logging, no serialization here: the sender thread does JSON + ZMQ.
 
 Sources are ONLY services the host SubMaster already reads, so no msgq reader is
-added (route 5b: carState is at NUM_READERS=15). GPS comes from
+added (on a recorded drive carState was at NUM_READERS=15). GPS comes from
 liveLocationKalman (fused GNSS), not gpsLocation/gpsLocationExternal.
 liveTracks / liveCalibration are included only if the host already subscribes
 to them (it does not by default).

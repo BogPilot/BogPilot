@@ -122,9 +122,9 @@ class FrogPilotVCruise:
         rwd = bool(getattr(fp_cs, "resumePressed", False))
         # Tip base = current software set (sticky latch / tip / raised set).
         # NEVER use raw post-min DI alone after a pull raise — DI_cruiseSet is
-        # ~vEgo/2 under OP overlay (drive28: tip DN from 51 latched ~21/24.5).
+        # ~vEgo/2 under OP overlay (a recorded drive: tip DN from 51 latched ~21/24.5).
         # Sticky still wins first so engaged tip-from-sticky is not SLC-floored
-        # (drive26/27 F2). When neither sticky nor tip (post-pull allow_raise),
+        # (recorded-drive finding F2). When neither sticky nor tip (post-pull allow_raise),
         # floor the hint with slc_desired so tip ±1 from the raised set.
         hold = self.ap1_raise_holdoff
         if hold.sticky_vego and float(hold.latched_vego_ms) > 0.0:
@@ -135,7 +135,7 @@ class FrogPilotVCruise:
           set_hint = float(v_cruise)
           if slc_desired is not None and float(slc_desired) >= CRUISING_SPEED:
             set_hint = max(set_hint, float(slc_desired))
-        # SpdCtrl 4/8 = pos2 next-5; 16/32 = pos1 ±1 (drive 2a).
+        # SpdCtrl 4/8 = pos2 next-5; 16/32 = pos1 ±1 (seen on a recorded drive).
         spd = int(getattr(fp_cs, "spdCtrlLvr", 0) or 0)
         tip_full = spd in (4, 8)  # UP_2ND / DN_2ND
         allow_raise, sticky_vego = hold.update(
@@ -154,7 +154,7 @@ class FrogPilotVCruise:
           self._ap1_tip_override_active = True
         elif getattr(self, "_ap1_tip_override_active", False):
           # Tip cleared (pull / disengage): drop stale override so SLC+offset
-          # can apply (drive 2a ME30 — tip seed had floored desired at 51).
+          # can apply (recorded drive, ME30 — tip seed had floored desired at 51).
           self.slc.overridden_speed = 0.0
           self._ap1_tip_override_active = False
           slc_desired = max(0.0, float(self.slc_target) + float(self.slc_offset)) - v_ego_diff

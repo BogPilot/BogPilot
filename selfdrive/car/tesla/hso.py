@@ -28,7 +28,7 @@ AP1_DRIVER_INPUT_LEVEL = 1
 # Resume hold after a hands pause. Once hands reach AP1_HANDS_ON_LEVEL while
 # engaged, 0x488 stays type NONE until EPAS has reported level 0 (no driver
 # torque at all) for this long; any level >= 1 restarts it. In logged AP1
-# drives 9 of 14 level 3 overrides dropped to 1 first and reached 0 up to
+# drives, 9 of 14 level 3 overrides dropped to 1 first and reached 0 up to
 # 2.9 s later. After reaching 0 the driver came back within 0.24-0.56 s in
 # 9 of 10 re-presses (next 1.0 s, then >= 2 s). Builds used 0.8 s then 0.5 s
 # (Tinkla's HSO numb period is 50 frames = 0.5 s); shortened to 0.3 s.

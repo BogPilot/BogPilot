@@ -6,7 +6,7 @@ over ZMQ PUB on the comma's **wlan0 private IP only**. Default **OFF**.
 ## Why it lives inside `frogpilot_process`
 msgq allows 15 readers per topic (`NUM_READERS`). A new reader past that evicts
 **all** readers of the topic, so planner/controls miss messages and you get
-commIssue / "TAKE CONTROL IMMEDIATELY" (route 5b, hevc_streamd state topics).
+commIssue / "TAKE CONTROL IMMEDIATELY" (seen on a recorded drive, hevc_streamd state topics).
 StateStream adds **no msgq reader**: it reads the `SubMaster` that
 `frogpilot_process` already has (`carState, radarState, modelV2,
 liveLocationKalman, ...`), once per its 20 Hz modelV2 loop, after
@@ -110,7 +110,7 @@ One level for the whole car, not per corner and not a measured height: map each 
 Auto (speed) changes post the new level about 5 s before rideMoving sets; manual changes move immediately,
 so animate on rideMoving, or on the level change if you want to lead it.
 
-East drive (route 6d) check: low on 99.9 % (off only at shutdown), highArmed on 100 %,
+Recorded-drive check: low on 99.9 % (off only at shutdown), highArmed on 100 %,
 high on 6.4 % with 26 on/off switches.
 
 ## Security / privacy

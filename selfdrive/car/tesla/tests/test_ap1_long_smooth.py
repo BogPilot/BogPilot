@@ -91,7 +91,7 @@ def _e357_reference(start, target, n=300):
 
 
 def test_lead_pickup_step_e1_drive_release_then_regen_ramp():
-  # 0000002e 16:09:22.12 ET: aTarget +1.37 -> -0.88 in one plan step (86 m lead).
+  # A recorded drive: aTarget +1.37 -> -0.88 in one plan step (86 m lead).
   out = _run([1.37] * 5 + [-0.88] * 100)
   assert 1.37 - DN_BRAKE < out[5] < 1.37  # soft start
   k0 = next(i for i, o in enumerate(out) if o <= 0.0)
@@ -480,7 +480,7 @@ def test_controller_standstill_hold_sends_stop_accel(cc_mod):  # noqa: F811
 
 
 def test_stop_approach_output_continuous():
-  # Drive 30 18:38:59-18:39:03: stopping ramp while vEgo crosses AP1_SLEW_MIN_SPEED (launch jerkMax switch) and
+  # A recorded drive, ~4 s: stopping ramp while vEgo crosses AP1_SLEW_MIN_SPEED (launch jerkMax switch) and
   # standstill. The sent accel follows the request down to StopAccel -2.0 and holds it; jerkMax switching is the only
   # thing that changes at 1 m/s.
   s, jl = Ap1AccelSmoother(), Ap1JerkLimit()

@@ -2,12 +2,12 @@
 
 The planner caps the MPC's max accel at the coast accel (about -0.3 m/s^2)
 whenever the driving model's gasPressProbs[1] is below 0.4 (allowThrottle).
-On the e3574753 drives (routes 0000002f/30/31) that flag flipped 10-46 times
+On the e3574753 recorded drives that flag flipped 10-46 times
 a minute while engaged, often for a single 50 ms plan step. Each flip moved
 the MPC max-accel limit from about +2 to -0.3 in one step; the plan collapses
 and the planner's aTarget formula (2 * (v(action_t) - v0) / action_t - a0)
-turns the collapse into a step of up to -2.2 m/s^2 (route 00000030 18:39:45.69
-and 18:39:56.69 ET), which then passes through the regen ramp's -2.0
+turns the collapse into a step of up to -2.2 m/s^2 (twice on a recorded
+drive, 11 s apart), which then passes through the regen ramp's -2.0
 hard-brake bypass. About half of the plan steps larger than 0.4 m/s^2 on those
 routes sat within 0.1 s of a flip.
 
@@ -21,7 +21,7 @@ MPC max accel linearly toward the coast cap by that fraction:
     that keeps hinting "no throttle" (chatter) keeps most of the cap. The
     e3574753 chatter acted as early caution before a lead appeared; a pure
     debounce or an upstream-style ramped limit dropped it and in replay of
-    0000002e 16:09 ET (lead first seen at 86 m) closed the min gap from 34.5
+    a recorded drive (lead first seen at 86 m) closed the min gap from 34.5
     to about 27 m with -1.8 m/s^2 braking. This filter keeps 33.8 m / -1.17.
 At or below MIN_ALLOW_THROTTLE_SPEED (creep) and while the planner is reset
 (not engaged) it follows the raw flag at once. Only the max-accel limit is

@@ -1,7 +1,7 @@
 """Stock AP1 cluster frames from bus 2 (src 2) of the user's AP1 rlogs.
 
 Sampled from two AP1 Model S captures on the box: the 7-segment frog_ap1
-drive and the 2026-10-04 BogPilot drive. Raw 8-byte payloads of these three
+drive and a later BogPilot drive. Raw 8-byte payloads of these three
 cluster ids only: no VIN, GPS, or dongle id. Over all 10218 src-2 frames of 0x399 / 0x389 / 0x239 in those logs,
 every set bit lies inside a tesla_can.dbc signal, and every 0x399 / 0x389
 checksum matches (addr lo + addr hi + bytes 0..6) & 0xFF.

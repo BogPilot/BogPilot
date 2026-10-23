@@ -1,4 +1,5 @@
-"""Loopback: real seg56_4 ecamera.hevc AUs -> Publisher (127.0.0.1) -> mac_client -> ffmpeg decode."""
+"""Loopback: a real recorded ecamera.hevc segment's AUs -> Publisher (127.0.0.1) -> mac_client -> ffmpeg decode."""
+import os
 import shutil
 import sys
 import threading
@@ -12,10 +13,10 @@ from openpilot.system.hevc_stream.hevc_streamd import Publisher
 from openpilot.system.hevc_stream.synth import encode_events
 
 ROOT = Path(__file__).resolve().parents[3]
-SEG = Path("/workspace/realdata/seg56_4/00000056--daea8b839e--4/ecamera.hevc")
+SEG = Path(os.environ.get("BP_HEVC_SEGMENT", "/workspace/realdata/hevc_segment/ecamera.hevc"))
 sys.path.insert(0, str(ROOT / "tools/hevc_stream"))
 
-pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or not SEG.exists(), reason="needs ffmpeg + seg56_4")
+pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or not SEG.exists(), reason="needs ffmpeg + BP_HEVC_SEGMENT (a recorded ecamera.hevc)")
 N = 40
 
 

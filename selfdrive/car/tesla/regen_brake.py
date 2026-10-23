@@ -29,7 +29,7 @@ from pathlib import Path
 STOCK_COMFORT_BRAKE = 2.5
 
 # Regen-sized comfort target for AP1 lead approaches (m/s²).
-# Route 0000002a: at 30–35 mph regen alone topped out near 1.0 m/s² actual
+# A recorded drive: at 30–35 mph regen alone topped out near 1.0 m/s² actual
 # decel before the friction brakes joined, so the comfort target is 1.0.
 # At v = 0 the lead cost reduces to STOP_DISTANCE for any value here, so the
 # stopped gap does not change.

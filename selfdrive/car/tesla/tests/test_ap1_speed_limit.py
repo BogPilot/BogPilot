@@ -303,7 +303,7 @@ def test_parser_lists_ui_msgs_ap1_only_frequency_zero(carstate_mod):
 
 
 def test_dashboard_camera_far_above_map_uses_map():
-  # Drive 35 seg 11: DAS_fusedSpeedLimit 80 while UI_mapSpeedLimit code 8 (35) and mpp 35.
+  # A recorded drive, seg 11: DAS_fusedSpeedLimit 80 while UI_mapSpeedLimit code 8 (35) and mpp 35.
   assert dashboard_speed_limit_ms(80.0, 8, 35.0, 0) == pytest.approx(35 * MPH)
   assert dashboard_speed_limit_ms(80.0, 0, 35.0, 0) == pytest.approx(35 * MPH)  # mpp only
 

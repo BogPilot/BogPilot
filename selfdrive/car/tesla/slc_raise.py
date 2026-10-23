@@ -13,13 +13,13 @@ Engage / tip policy (simplified):
   - Classify engage from stalk pressed within the last ~0.8 s. Caller must
     feed continuous stalk *levels* (carstate.button_states via frogpilotCarState
     accelPressed / decelPressed / resumePressed), not 10 ms buttonEvents —
-    frogpilot_vcruise samples at 20 Hz and misses short holds (drive26 RWD).
+    frogpilot_vcruise samples at 20 Hz and misses short holds (RWD on a recorded drive).
   - While engaged, stalk UP/DN only adjust the software set the same way both
     directions (+1 / next-5 up, −1 / next-lower-5 down). Tip base is the current
     software set (sticky latch / tip_ms / raised set). Sticky still wins first
-    (never max(plan, SLC) while sticky — drive26/27). After RWD raise, vcruise
-    floors set_hint with slc_desired (no tip seed — SLC tracking, drive 2a) so
-    tips never base off DI_cruiseSet (~vEgo/2 under overlay — drive28).
+    (never max(plan, SLC) while sticky — seen on recorded drives). After RWD raise, vcruise
+    floors set_hint with slc_desired (no tip seed — SLC tracking) so
+    tips never base off DI_cruiseSet (~vEgo/2 under overlay — seen on a recorded drive).
     No DECEL raise holdoff. Engaged RWD/pull clears tip+sticky and re-allows raise.
   - Tipped / post-raise set is authority until stalk pull (re-latch SLC+offset)
     or disengage; SLC raise must not yank the set back up after a down tip.
@@ -34,7 +34,7 @@ Engage / tip policy (simplified):
 IC set digit (DAS_accSpeedLimit on 0x389) tracks the OP set via the cluster
 pack path. DBC factor is 0.4. cruise_set_mph rejects V_CRUISE_UNSET (255 kph)
 so standstill DI set=0 cannot pack ~158 mph / cluster digital set ~90
-(route 23 segments 5/8).
+(seen on a recorded drive, segs 5/8).
 
 Not a product. No warranty. The driver remains responsible. Comply with local law.
 """
@@ -308,7 +308,7 @@ class Ap1RaiseHoldoff:
 
 
 class Ap1SlcLimitGuard:
-  """AP1 posted-limit sanity filter for SLC (drive 2a seg 5: 45→5 mph blip ~1.4 s).
+  """AP1 posted-limit sanity filter for SLC (a recorded drive, seg 5: 45→5 mph blip ~1.4 s).
 
   Applied in frogpilot_vcruise to the SLC target/offset it uses and publishes
   (frogpilotPlan.slcSpeedLimit[+Offset]), so SLC tracking after a pull, pull
@@ -322,7 +322,7 @@ class Ap1SlcLimitGuard:
     - Sudden drop (more than SUDDEN_DROP_MPH, or below SUDDEN_DROP_RATIO of the
       accepted limit): must persist CONFIRM_S before it is accepted.
     - Except a drop straight back to the limit that was in force before a rise
-      less than RETURN_WINDOW_S ago: accepted immediately (drive 35: a bogus
+      less than RETURN_WINDOW_S ago: accepted immediately (a recorded drive: a bogus
       35->80 rise was otherwise held 2 s longer on the way back to 35).
   The offset is the one SLC reported for the accepted limit.
   """
@@ -435,7 +435,7 @@ def cruise_set_mph(set_speed_ms: float | None) -> float | None:
   Returns None (keep stock IC set) for missing/non-positive speeds and for the
   V_CRUISE_UNSET sentinel (255 kph ≈ 158 mph) that pcmCruise publishes when
   DI_cruiseSet is 0 at standstill — packing that onto 0x389 made the cluster digital set lock ~90
-  (route 23 --5/--8). Also rejects values above V_CRUISE_MAX.
+  (seen on a recorded drive, segs 5/8). Also rejects values above V_CRUISE_MAX.
   """
   if set_speed_ms is None:
     return None

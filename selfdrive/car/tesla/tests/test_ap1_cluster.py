@@ -151,7 +151,7 @@ def test_das_acc_speed_limit_written_from_op_set_when_engaged():
 def test_das_acc_speed_limit_30_packs_as_dig_30_not_60():
   """Regression: DBC 0.4 so raised 30 → raw 75 → dig 30 (not raw 150 → dig 60).
 
-  Route 21 @ bd26defe packed 30 with legacy factor 0.2 (raw=150); IC scales
+  A recorded drive @ bd26defe packed 30 with legacy factor 0.2 (raw=150); IC scales
   0.4 and showed dig 60 (=2×). Factor 0.4 packs raw=75 → dig 30.
   """
   out = _send(c.ClusterController(), hud(cruise_set_mph=30.0), all_stock(), NS)

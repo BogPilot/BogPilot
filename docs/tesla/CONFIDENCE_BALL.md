@@ -23,7 +23,7 @@ from the driving model's own predictions of whether you are about to brake or ta
 smoothed with the same first-order filter as the comma four (0.5 s time constant, starting at
 -0.5 so the ball slides in from below when you engage).
 
-On route 0000002a the ball was green 92.8% of the engaged time, orange 6.5% and red 0.7%
+On a recorded drive the ball was green 92.8% of the engaged time, orange 6.5% and red 0.7%
 (0.5% from the raw value; the rest is the half-second slide-in right after engaging).
 
 ## Where it sits

@@ -262,7 +262,7 @@ class HudInputs:
   model_path: Optional[ModelPath] = None
   # OP cruise set in mph for DAS_accSpeedLimit on 0x389. None keeps stock
   # (IC set digit follows DI / Mobileye). DBC factor is 0.4 so OP 30 packs
-  # as dig 30 (route 21 dig=60 was 0.2 packing vs IC 0.4). Used so the dash
+  # as dig 30 (a recorded drive: dig=60 was 0.2 packing vs IC 0.4). Used so the dash
   # tracks an SLC raise without fake stalk on 0x45.
   cruise_set_mph: Optional[float] = None
 
@@ -328,7 +328,7 @@ def path_from_model_v2(model_v2) -> Optional[ModelPath]:
   can fall back to actuator curvature + 50 m.
 
   Sign: y left-positive matches modelV2 and the actuator-curvature path
-  already shipped (route 0f stock Mobileye c2 agrees with this sign more
+  already shipped (on a recorded drive stock Mobileye c2 agrees with this sign more
   often than the negated fit; stock c0 is a different reference and is not
   matched). Lead cars / DAS_object / DAS_telemetry are not read here.
   """
@@ -424,7 +424,7 @@ def build_das_status2(stock, h, mode):
     if h.fcw:
       v["DAS_longCollisionWarning"] = LONG_FCW_VEHICLE
     # Overlay OP set on the IC set-speed digit (mph). DBC factor 0.4 matches
-    # the IC (route 21 dig=60 was packing 30 with legacy 0.2 → raw 150 →
+    # the IC (a recorded drive: dig=60 was packing 30 with legacy 0.2 → raw 150 →
     # IC@0.4 showed 60). Stock fused/vision speed-limit fields stay untouched.
     # None => keep stock DAS_accSpeedLimit.
     if h.cruise_set_mph is not None and h.cruise_set_mph > 0:

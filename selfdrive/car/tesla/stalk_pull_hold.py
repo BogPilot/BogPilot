@@ -8,12 +8,12 @@ engage / resume; a continuous hold of ~1.23 s while already engaged is
 repurposed as one Experimental Mode toggle. Release returns to IDLE and
 re-arms.
 
-Evidence from AP1 rlogs (routes 10/11/12/17): RWD asserts continuously
+Evidence from AP1 rlogs (several recorded drives): RWD asserts continuously
 for the pulse seen on the bus (spring stalk). Observed RWD holds were
 70–140 ms (taps). No ≥0.5 s hold appeared in those logs — a 2.0 s hold
 requires holding against the spring so SpdCtrlLvr stays at 2.
 
-RE-ENABLED (PULL_HOLD_ENABLED = True). Drive 18 showed the stock DI treats a
+RE-ENABLED (PULL_HOLD_ENABLED = True). A recorded drive showed the stock DI treats a
 held RWD pull as resume: ~0.7 s into the hold the cruise set speed may jump
 back to the remembered set (e.g. 15 -> 31 mph) before Experimental Mode
 toggles. That DI side-effect is accepted: engaged-only ~2 s hold toggles

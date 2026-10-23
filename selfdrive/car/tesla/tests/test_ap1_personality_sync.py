@@ -74,7 +74,7 @@ def test_gives_up_so_taps_are_not_fought(monkeypatch):
   assert card._ap1_personality_target is None
 
 
-# Quick twists skip detents on CAN (2026-10-20 route 000000a5 seg 5, 20:44:04 ET: DTR 200 -> 166 -> 100 -> 33 never
+# Quick twists skip detents on CAN (a recorded drive, seg 5, a quick twist: DTR 200 -> 166 -> 100 -> 33 never
 # reported 66, so LongitudinalPersonality stayed relaxed and the icon stayed on three bars).
 def _settled(monkeypatch, raw=200, value=2):
   fake = FakeParams(value)
