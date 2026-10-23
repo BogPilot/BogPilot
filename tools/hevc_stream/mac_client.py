@@ -156,6 +156,17 @@ class Client:
     finally:
       self._stop = True
       ff.kill()
+      ff.wait()
+      th.join(1.0)
+      for f in (ff.stdin, ff.stdout):
+        try:
+          f.close()
+        except OSError:
+          pass
+
+  def close(self):
+    self._stop = True
+    self.sock.close(linger=0)
 
 
 def main():

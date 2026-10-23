@@ -39,7 +39,8 @@ def only_onroad(started: bool, params, CP: car.CarParams, classic_model, tinygra
   return started
 
 def hevc_stream(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
-  # BogPilot experimental: /data/params_bogpilot/HevcStream (default on, 0 disables). Onroad only.
+  # BogPilot experimental video stream: /data/params_bogpilot/VideoStream (default OFF, 1 enables;
+  # legacy HevcStream also needs an explicit 1). Onroad only, and only with token + allowlist set.
   from openpilot.system.hevc_stream.config import should_run
   return should_run(started)
 
