@@ -72,14 +72,151 @@ def test_wifi_sampler_files(tmp_path):
   st.mkdir(parents=True)
   for k, v in (("tx_errors", 1), ("tx_dropped", 2), ("rx_dropped", 3), ("tx_bytes", 1000)):
     (st / k).write_text(str(v))
-  w = tel.WifiSampler("wlan0", proc=proc, sys_net=tmp_path / "net")
+  w = tel.WifiSampler("wlan0", proc=proc, sys_net=tmp_path / "net", probe=NoProbe())
   w.window()  # baseline for deltas
   w.sample()
   w.sample()
   (st / "tx_dropped").write_text("7")
   out = w.window()
   assert out["samples"] == 2 and out["levelMin"] == -52 and out["linkMean"] == 58 and out["d_tx_dropped"] == 5
-  assert tel.WifiSampler("wlan0", proc=tmp_path / "missing", sys_net=tmp_path).window()["samples"] == 0
+  assert tel.WifiSampler("wlan0", proc=tmp_path / "missing", sys_net=tmp_path, probe=NoProbe()).window()["samples"] == 0
+  assert out["source"] == "proc"
+
+
+class NoProbe:
+  available = False
+
+
+# Seen on the device: iface listed, every field zero.
+WIRELESS_ZERO = """Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
+ face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
+ wlan0: 0000    0.     0.      0.       0      0      0      0      0        0
+  p2p0: 0000    0.     0.      0.       0      0      0      0      0        0
+"""
+
+# Shape as seen on the device (values neutral).
+WPA_POLL = "RSSI=-58\nLINKSPEED=433\nNOISE=9999\nFREQUENCY=5180\nAVG_RSSI=-60\n"
+NMCLI = " :40\n*:72\n :30\n"
+
+
+def test_proc_all_zero_is_unknown_not_0dbm():
+  assert tel.parse_proc_wireless(WIRELESS_ZERO, "wlan0") == {"unknown": True}
+  assert tel.parse_proc_wireless(WIRELESS_ZERO, "p2p0") == {"unknown": True}
+
+
+def test_parse_wpa_signal_poll():
+  assert tel.parse_wpa_signal_poll(WPA_POLL) == {"connected": True, "rssi_dbm": -58, "avg_rssi_dbm": -60, "noise_dbm": None,
+                                                 "linkspeed_mbps": 433, "freq_mhz": 5180}
+  r = tel.parse_wpa_signal_poll("RSSI=-50\nNOISE=-92\n")   # older wpa_supplicant: no AVG_RSSI etc.
+  assert r["rssi_dbm"] == -50 and r["noise_dbm"] == -92 and r["avg_rssi_dbm"] is None and r["linkspeed_mbps"] is None
+  assert tel.parse_wpa_signal_poll("FAIL\n") == {"connected": False}
+  assert tel.parse_wpa_signal_poll("") is None
+  assert tel.parse_wpa_signal_poll("RSSI=-9999\n") is None
+
+
+def test_parse_nmcli_wifi():
+  assert tel.parse_nmcli_wifi(NMCLI) == {"connected": True, "signal_pct": 72}
+  assert tel.parse_nmcli_wifi(" :40\n") == {"connected": False}
+  assert tel.parse_nmcli_wifi(None) is None and tel.parse_nmcli_wifi("") is None
+
+
+def _probe(outputs, tools, **kw):
+  calls = []
+
+  def run(cmd, timeout):
+    calls.append((cmd[0], timeout))
+    return outputs.get(cmd[0])
+  p = tel.LinkProbe("wlan0", run=run, which=lambda t: t in tools, threaded=False, **kw)
+  return p, calls
+
+
+def test_probe_wpa_cli_primary_then_nmcli_fallback():
+  p, calls = _probe({"wpa_cli": None, "nmcli": NMCLI}, tools={"wpa_cli", "nmcli", "iw"})
+  assert p.tools == ["wpa_cli", "nmcli"]   # iw is not used (absent on the device)
+  p.kick(0.0)
+  assert [c[0] for c in calls] == ["wpa_cli", "nmcli"] and all(c[1] == tel.LINK_PROBE_TIMEOUT for c in calls)
+  assert p.latest() == {"connected": True, "signal_pct": 72, "source": "nmcli"}
+
+
+def test_probe_wpa_cli_wins_and_nmcli_requests_no_network_name():
+  seen = []
+
+  def run(cmd, timeout):
+    seen.append(cmd)
+    return WPA_POLL if cmd[0] == "wpa_cli" else NMCLI
+  p = tel.LinkProbe("wlan0", run=run, which=lambda t: True, threaded=False)
+  p.kick(0.0)
+  assert seen == [["wpa_cli", "-i", "wlan0", "signal_poll"]] and p.latest()["rssi_dbm"] == -58
+  p2 = tel.LinkProbe("wlan0", run=run, which=lambda t: t == "nmcli", threaded=False)
+  p2.kick(0.0)
+  assert seen[-1] == ["nmcli", "-t", "-f", "IN-USE,SIGNAL", "dev", "wifi"]
+
+
+def test_probe_rate_limited():
+  p, calls = _probe({"nmcli": NMCLI}, tools={"nmcli"})
+  p.kick(0.0)
+  p.kick(5.0)
+  assert len(calls) == 1
+  p.kick(10.0)
+  assert len(calls) == 2
+
+
+def test_probe_none_available_reports_unavailable(tmp_path):
+  p, _ = _probe({}, tools=set())
+  assert not p.available
+  proc = tmp_path / "wireless"
+  proc.write_text(WIRELESS_ZERO)
+  w = tel.WifiSampler("wlan0", proc=proc, sys_net=tmp_path, probe=p)
+  w.sample()
+  out = w.window()
+  assert out["source"] == "unavailable" and out["unknown"] == 1 and out["unavailable"] == 1
+  assert "level" not in out and "rssi_dbm" not in out   # all-zero proc never shows up as 0 dBm
+
+
+def test_zero_proc_falls_back_to_probe(tmp_path):
+  proc = tmp_path / "wireless"
+  proc.write_text(WIRELESS_ZERO)
+  t = [0.0]
+  (tmp_path / "wlan0").mkdir()
+  (tmp_path / "wlan0/operstate").write_text("up\n")
+  p, calls = _probe({"wpa_cli": WPA_POLL}, tools={"wpa_cli"})
+  w = tel.WifiSampler("wlan0", proc=proc, sys_net=tmp_path, probe=p, clock=lambda: t[0])
+  for i in range(3):
+    t[0] = i * 5.0
+    w.sample()
+  out = w.window()
+  assert len(calls) == 2   # t=0 and t=10: at most every 10 s
+  assert out["source"] == "wpa_cli" and out["rssi_dbm"] == -58 and out["avg_rssi_dbm"] == -60
+  assert out["noise_dbm"] is None and out["linkspeed_mbps"] == 433 and out["freq_mhz"] == 5180
+  assert out["operstate"] == "up" and out["unknown"] == 3 and out["probeSamples"] == 3 and "level" not in out
+
+
+def test_probe_thread_never_blocks_caller():
+  import threading
+  gate = threading.Event()
+
+  def slow(cmd, timeout):
+    gate.wait(2.0)
+    return WPA_POLL
+  p = tel.LinkProbe("wlan0", run=slow, which=lambda t: t == "wpa_cli")   # threaded (default)
+  t0 = time.monotonic()
+  p.kick(0.0)
+  p.kick(100.0)          # previous probe still running: skipped, not waited on
+  assert time.monotonic() - t0 < 0.1 and p.latest() is None
+  gate.set()
+  assert _wait(lambda: p.latest() is not None)
+  assert p.latest()["rssi_dbm"] == -58 and p.runs == 1
+
+
+def test_pyzmq_monitor_api_present():
+  """APIs ClientTracker relies on (device pyzmq 25.1.2 / libzmq 4.3.4)."""
+  import zmq
+  from zmq.utils.monitor import recv_monitor_message  # noqa: F401
+  assert hasattr(zmq.Socket, "get_monitor_socket") and hasattr(zmq.Socket, "disable_monitor")
+  for name in ("EVENT_ACCEPTED", "EVENT_DISCONNECTED", "NOBLOCK"):
+    assert hasattr(zmq, name)
+  if zmq.zmq_version_info() >= (4, 3):
+    assert hasattr(zmq, "EVENT_HANDSHAKE_SUCCEEDED") and hasattr(zmq, "EVENT_HANDSHAKE_FAILED_AUTH")
 
 
 def test_gap_counter():

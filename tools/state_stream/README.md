@@ -99,7 +99,12 @@ Show model rate as `meta.modelHz` / a received-model-sections count and model ag
   rates {state, model, modelSrc, route, kBps}, encodeMsMean/Max, tickMsMean, hostCpuPct,
   senderCpuPct, gaps {host, send, max, thresholdS 0.5}, leadSwitches, wifi
   (from /proc/net/wireless + /sys/class/net/<iface>/statistics: level dBm min/max/mean,
-  link quality, tx/rx error and drop deltas; null if unreadable).
+  link quality, tx/rx error and drop deltas; null if unreadable). An all-zero
+  /proc/net/wireless row is "unknown", not 0 dBm; signal then comes from
+  `wpa_cli -i <iface> signal_poll` (rssi_dbm, avg_rssi_dbm, linkspeed_mbps, freq_mhz;
+  NOISE=9999 -> null), else `nmcli -t -f IN-USE,SIGNAL dev wifi` (signal_pct), else
+  `source: "unavailable"`. Probed at most every 10 s in a side thread with a 1 s timeout.
+  `operstate` from sysfs. Network names are never requested or logged.
 - Send gaps are measured on capture timestamps. ZMQ PUB never blocks, so network losses show up
   as Wi-Fi errors / disconnects on the comma and as gaps on the receiver (`gap 0.85s` lines).
 - `stream_view.py` (stdlib, Python 3.9+): `LeadSmoother` holds the displayed lead until a new
