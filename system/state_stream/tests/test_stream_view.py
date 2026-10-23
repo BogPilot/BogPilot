@@ -1,5 +1,5 @@
 """Client-side display helpers (tools/state_stream/stream_view.py): lead smoothing by radar
-track id, model rate/age, gap stats. Pure Python, also runs on MM2 (Python 3.9)."""
+track id, model rate/age, gap stats. Pure Python, also runs on the Mac receiver (Python 3.9)."""
 import os
 import sys
 
