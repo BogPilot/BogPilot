@@ -1,5 +1,6 @@
 #include "selfdrive/ui/qt/window.h"
 
+#include <QDateTime>
 #include <QFontDatabase>
 
 #include "system/hardware/hw.h"
@@ -64,10 +65,35 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
   )");
   setAttribute(Qt::WA_NoSystemBackground);
 
+  screensaver = new OffroadScreensaver(this);
+  main_layout->addWidget(screensaver);
+  QObject::connect(screensaver, &OffroadScreensaver::dismissed, this, [this]() {
+    if (main_layout->currentWidget() == screensaver) {
+      main_layout->setCurrentWidget(homeWindow);
+    }
+  });
+  // Registered after the settings-closing timeout slot, so settings close first.
+  QObject::connect(device(), &Device::interactiveTimeout, this, [this]() {
+    if (main_layout->currentWidget() != homeWindow || uiState()->scene.started) {
+      return;
+    }
+    if (screensaver->onInteractiveTimeout()) {
+      main_layout->setCurrentWidget(screensaver);
+    }
+  });
+  QObject::connect(uiState(), &UIState::offroadTransition, this, [this](bool offroad) {
+    if (!offroad) {
+      screensaver->dismiss();
+    }
+  });
+
   screenStream = new ScreenStream(this, this);
 }
 
 void MainWindow::openSettings(int index, const QString &param) {
+  if (screensaver) {
+    screensaver->dismiss();
+  }
   main_layout->setCurrentWidget(settingsWindow);
   settingsWindow->setCurrentPanel(index, param);
 }
@@ -90,8 +116,21 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
   FrogPilotUIScene &frogpilot_scene = fs.frogpilot_scene;
   QJsonObject &frogpilot_toggles = fs.frogpilot_toggles;
 
+  const QEvent::Type type = event->type();
+  const bool pointer = type == QEvent::TouchBegin || type == QEvent::TouchUpdate || type == QEvent::TouchEnd ||
+                       type == QEvent::MouseButtonPress || type == QEvent::MouseButtonRelease || type == QEvent::MouseMove;
+  // The tap that dismisses the screensaver must not fall through onto the home screen.
+  if (pointer && (screensaver_block_until > QDateTime::currentMSecsSinceEpoch() || (screensaver && screensaver->isVisible()))) {
+    device()->resetInteractiveTimeout(frogpilot_toggles.value("screen_timeout").toInt(), frogpilot_toggles.value("screen_timeout_onroad").toInt());
+    if (screensaver && screensaver->isVisible()) {
+      screensaver->dismiss();
+      screensaver_block_until = QDateTime::currentMSecsSinceEpoch() + 500;
+    }
+    return true;
+  }
+
   bool ignore = false;
-  switch (event->type()) {
+  switch (type) {
     case QEvent::TouchBegin:
     case QEvent::TouchUpdate:
     case QEvent::TouchEnd:

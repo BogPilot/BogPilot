@@ -405,6 +405,10 @@ void Device::setAwake(bool on) {
   }
 }
 
+void Device::setDisplayHold(bool hold) {
+  display_hold = hold;
+}
+
 void Device::resetInteractiveTimeout(int timeout, int timeout_onroad) {
   if (timeout == -1) {
     timeout = (ignition_on ? 10 : 30);
@@ -475,10 +479,11 @@ void Device::updateWakefulness(const UIState &s, const FrogPilotUIState &fs) {
       resetInteractiveTimeout(frogpilot_toggles.value("screen_timeout").toInt(), frogpilot_toggles.value("screen_timeout_onroad").toInt());
     }
   } else if (interactive_timeout > 0 && --interactive_timeout == 0) {
+    // Slots may set display_hold (offroad screensaver) before the awake update below.
     emit interactiveTimeout();
   }
 
-  setAwake(s.scene.started || interactive_timeout > 0);
+  setAwake(s.scene.started || interactive_timeout > 0 || display_hold);
 }
 
 UIState *uiState() {
