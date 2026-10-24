@@ -609,6 +609,31 @@ void AnnotatedCameraWidget::drawLaneLines(QPainter &painter, const UIState *s, c
   } else if ((sm["carState"].getCarState().getLeftBlindspot() || sm["carState"].getCarState().getRightBlindspot()) && frogpilot_toggles.value("blind_spot_path").toBool()) {
     frogpilot_nvg->paintBlindSpotPath(painter, sm["carState"].getCarState(), frogpilot_scene);
   }
+
+  // BogPilot 88 mph flame tire tracks: after the red BSM fill on a side turns off, if that side's
+  // adjacent radar lead is faster than 88 mph, burn two tire tracks down that lane for 3 s.
+  // Display only; red_fill_shown mirrors exactly when the two branches above draw the red fill.
+  {
+    const auto car_state = sm["carState"].getCarState();
+    const bool adjacent_ui = frogpilot_toggles.value("adjacent_path_metrics").toBool() || frogpilot_toggles.value("adjacent_paths").toBool();
+    const bool bs_path = frogpilot_toggles.value("blind_spot_path").toBool();
+    const double min_width = frogpilot_toggles.value("lane_detection_width").toDouble();
+    const bool blindspot[2] = {car_state.getLeftBlindspot(), car_state.getRightBlindspot()};
+    const float lane_width[2] = {frogpilot_scene.lane_width_left, frogpilot_scene.lane_width_right};
+    const bool radar_fresh = sm.rcv_frame("radarState") > scene.started_frame;
+    const auto fp_radar = fpsm["frogpilotRadarState"].getFrogpilotRadarState();
+    const auto lead_left = fp_radar.getLeadLeft();
+    const auto lead_right = fp_radar.getLeadRight();
+    bogpilot_flames::FlameSideInput flame_in[2];
+    for (int i = 0; i < 2; ++i) {
+      const bool lane_ok = adjacent_ui ? lane_width[i] >= min_width : lane_width[i] != 0;
+      flame_in[i].red_fill_shown = bs_path && blindspot[i] && lane_ok;
+      const auto &lead = i == 0 ? lead_left : lead_right;
+      flame_in[i].lead_status = radar_fresh && lead.getStatus();
+      flame_in[i].lead_v = lead.getVLead();
+    }
+    flameTracks.updateAndPaint(painter, flame_in, frogpilot_scene.track_adjacent_vertices);
+  }
   frogpilot_nvg->paintPathEdges(painter, fpsm["navInstruction"].getNavInstruction(), scene, frogpilot_scene, sm);
 
   painter.restore();

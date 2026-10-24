@@ -7,6 +7,7 @@
 #include "selfdrive/ui/qt/widgets/cameraview.h"
 
 #include "frogpilot/ui/qt/onroad/accel_graph.h"
+#include "frogpilot/ui/qt/onroad/bsm_flame_tracks.h"
 #include "frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h"
 #include "frogpilot/ui/qt/onroad/steering_arc.h"
 #include "frogpilot/ui/qt/onroad/frogpilot_buttons.h"
@@ -82,6 +83,7 @@ protected:
   void showEvent(QShowEvent *event) override;
   void updateFrameMat() override;
   void drawLaneLines(QPainter &painter, const UIState *s, const FrogPilotUIState *fs);
+  bogpilot_flames::FlameTracks flameTracks;  // BogPilot 88 mph BSM flame tire tracks (file toggle BSMFlameTracks, default off)
   void drawLead(QPainter &painter, const cereal::RadarState::LeadData::Reader &lead_data, const cereal::FrogPilotPlan::Reader &frogpilotPlan, const QPointF &vd, const QColor &marker_color, const FrogPilotUIState *fs, bool adjacent = false);
   void drawHud(QPainter &p, const cereal::FrogPilotPlan::Reader &frogpilotPlan, const FrogPilotUIState &fs, const QJsonObject &frogpilot_toggles);
   void drawDriverState(QPainter &painter, const UIState *s, const QJsonObject &frogpilot_toggles);
