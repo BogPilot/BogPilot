@@ -4,6 +4,7 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import COMFORT_BRAKE
 
 from openpilot.frogpilot.common.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME
+from openpilot.frogpilot.controls.lib.csc_straight_gate import CSCStraightGate, csc_seed, csc_straight_fix_enabled
 from openpilot.frogpilot.controls.lib.curve_speed_controller import CurveSpeedController
 from openpilot.frogpilot.controls.lib.speed_limit_controller import SpeedLimitController
 from openpilot.selfdrive.car.tesla.curve_speed import TESLA_CSC_MAX_LAT_ACCEL
@@ -14,6 +15,11 @@ class FrogPilotVCruise:
 
     self.csc = CurveSpeedController(self)
     self.slc = SpeedLimitController()
+
+    # BogPilot CSCStraightFix: persistence-gated CSC (see csc_straight_gate.py).
+    self.csc_straight_fix = csc_straight_fix_enabled()
+    self.csc_gate = CSCStraightGate()
+    self.csc_ref_target = 0.0  # last cycle's target without CSC (m/s); 0 = not known yet
 
     self.forcing_stop = False
     self.override_force_stop = False
@@ -53,8 +59,21 @@ class FrogPilotVCruise:
       self.csc.max_lateral_acceleration = TESLA_CSC_MAX_LAT_ACCEL
 
     # FrogsGoMoo's Curve Speed Controller
-    if v_ego > CRUISING_SPEED and sm["controlsState"].enabled and self.frogpilot_planner.road_curvature_detected and frogpilot_toggles.curve_speed_controller:
-      self.csc.update_target(v_ego)
+    csc_seed_value = None
+    if self.csc_straight_fix:
+      blinker = sm["carState"].leftBlinker or sm["carState"].rightBlinker
+      csc_allowed = v_ego > CRUISING_SPEED and sm["controlsState"].enabled and frogpilot_toggles.curve_speed_controller and not blinker
+      csc_ref = self.csc_ref_target if self.csc_ref_target >= CRUISING_SPEED else v_cruise
+      planner_curve = self.frogpilot_planner.road_curvature_detected
+      curve_speed = self.csc.curve_speed() if planner_curve else float("inf")
+      csc_detected = self.csc_gate.update(csc_allowed, planner_curve, curve_speed, csc_ref, DT_MDL)
+      if csc_detected and not self.csc.target_set:
+        csc_seed_value = csc_seed(csc_ref, self.csc.curve_speed())
+    else:
+      csc_detected = self.frogpilot_planner.road_curvature_detected
+
+    if v_ego > CRUISING_SPEED and sm["controlsState"].enabled and csc_detected and frogpilot_toggles.curve_speed_controller:
+      self.csc.update_target(v_ego, seed=csc_seed_value)
 
       self.csc_controlling_speed = True
 
@@ -95,12 +114,14 @@ class FrogPilotVCruise:
 
       self.tracked_model_length = max(self.tracked_model_length - (v_ego * DT_MDL), 0)
       v_cruise = min((self.tracked_model_length // PLANNER_TIME), v_cruise)
+      self.csc_ref_target = 0.0
 
     else:
       self.forcing_stop = False
 
       self.tracked_model_length = self.frogpilot_planner.model_length
 
+      v_cruise_in = v_cruise
       targets = [self.csc_target, v_cruise]
       slc_desired = None
       if frogpilot_toggles.speed_limit_controller:
@@ -108,6 +129,8 @@ class FrogPilotVCruise:
         targets.append(slc_desired)
 
       v_cruise = min([target if target >= CRUISING_SPEED else v_cruise for target in targets])
+      # BogPilot CSCStraightFix: the same merge without CSC = the target CSC would cap (next cycle's reference).
+      self.csc_ref_target = min([target if target >= CRUISING_SPEED else v_cruise_in for target in targets[1:]])
       # AP1: lift AFTER min() so pre-lift DI/csc seed cannot undo the raise.
       # Engage: UP/DN → sticky vEgo; RWD → raise. Engaged UP/DN → tip set
       # (authority until pull). No stalk TX / panda change.
@@ -167,5 +190,12 @@ class FrogPilotVCruise:
         v_cruise = ap1_cruise_ms(
           v_cruise, sticky_vego, tip_ms, allow_raise, slc_desired, self.slc_target,
           CRUISING_SPEED, self.csc_controlling_speed, self.csc_target)
+        # BogPilot CSCStraightFix reference: AP1 set authority without CSC (pure call, no state change).
+        # The merge input is rebuilt without CSC; slc_desired may have been refreshed by a tip clear above.
+        ref_targets = [v_cruise_in] + ([slc_desired] if slc_desired is not None else [])
+        ref_merged = min([target if target >= CRUISING_SPEED else v_cruise_in for target in ref_targets])
+        self.csc_ref_target = ap1_cruise_ms(
+          ref_merged, sticky_vego, tip_ms, allow_raise, slc_desired, self.slc_target,
+          CRUISING_SPEED, False, ref_merged)
 
     return v_cruise

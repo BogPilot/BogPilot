@@ -5,6 +5,7 @@ import numpy as np
 from openpilot.common.realtime import DT_MDL
 
 from openpilot.frogpilot.common.frogpilot_variables import CRUISING_SPEED, DEFAULT_LATERAL_ACCELERATION, PLANNER_TIME, params
+from openpilot.frogpilot.controls.lib.csc_straight_gate import MIN_CURVATURE as MIN_GATE_CURVATURE, csc_curve_speed
 
 CALIBRATION_PROGRESS_THRESHOLD = 10 / DT_MDL
 MAX_CURVATURE = 0.1
@@ -91,15 +92,24 @@ class CurveSpeedController:
 
     params.put_float_nonblocking("CalibratedLateralAcceleration", self.lateral_acceleration)
 
-  def update_target(self, v_ego):
+  def effective_lateral_acceleration(self):
     lateral_acceleration = self.lateral_acceleration
     if self.max_lateral_acceleration is not None:
       lateral_acceleration = min(lateral_acceleration, self.max_lateral_acceleration)
     if self.frogpilot_planner.frogpilot_weather.weather_id != 0:
       lateral_acceleration -= lateral_acceleration * self.frogpilot_planner.frogpilot_weather.reduce_lateral_acceleration
+    return lateral_acceleration
+
+  def curve_speed(self):
+    # BogPilot: the CSC curve speed for the current road curvature (m/s), used by CSCStraightGate.
+    return csc_curve_speed(self.effective_lateral_acceleration(), self.frogpilot_planner.road_curvature)
+
+  def update_target(self, v_ego, seed=None):
+    # seed: BogPilot CSCStraightFix first target (min(target, curve speed)); None = stock vEgo seed.
+    lateral_acceleration = self.effective_lateral_acceleration()
 
     if self.target_set:
-      csc_speed = (lateral_acceleration / abs(self.frogpilot_planner.road_curvature))**0.5
+      csc_speed = (lateral_acceleration / max(abs(self.frogpilot_planner.road_curvature), MIN_GATE_CURVATURE))**0.5
       decel_rate = (v_ego - csc_speed) / self.frogpilot_planner.time_to_curve
 
       self.target = max(self.target - decel_rate * DT_MDL, csc_speed)
@@ -107,4 +117,4 @@ class CurveSpeedController:
     else:
       self.target_set = True
 
-      self.target = v_ego
+      self.target = v_ego if seed is None else float(seed)
