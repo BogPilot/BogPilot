@@ -13,7 +13,13 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
-from werkzeug.utils import secure_filename
+try:
+  from werkzeug.utils import secure_filename
+except ImportError:  # BogPilot: werkzeug/flask aren't in the AGNOS 17.2 venv
+  def secure_filename(filename: str) -> str:
+    filename = os.path.basename(filename.replace("\\", "/"))
+    filename = re.sub(r"[^A-Za-z0-9_.-]", "", "_".join(filename.split()))
+    return filename.strip("._")
 
 from openpilot.common.conversions import Conversions as CV
 from openpilot.system.loggerd.config import get_available_bytes, get_used_bytes

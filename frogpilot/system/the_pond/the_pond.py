@@ -13,10 +13,16 @@ import threading
 import time
 
 from datetime import datetime, timedelta, timezone
-from flask import Flask, Response, jsonify, render_template, request, send_file, send_from_directory, stream_with_context
+try:
+  from flask import Flask, Response, jsonify, render_template, request, send_file, send_from_directory, stream_with_context
+except ImportError:  # BogPilot: flask isn't in the AGNOS 17.2 venv; main() idles instead of crash-looping
+  Flask = None
 from io import BytesIO
 from pathlib import Path
-from werkzeug.utils import secure_filename
+try:
+  from werkzeug.utils import secure_filename
+except ImportError:
+  from openpilot.frogpilot.system.the_pond.utilities import secure_filename
 
 from cereal import car, messaging
 from opendbc.can.parser import CANParser
@@ -1745,6 +1751,11 @@ def create_app():
   return app
 
 def main():
+  if Flask is None:
+    cloudlog.error("the_pond: flask not installed, web UI disabled")
+    while True:
+      time.sleep(3600)
+
   app = create_app()
 
   port = 8083 if PC else 8082
