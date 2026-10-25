@@ -21,7 +21,7 @@
 namespace bogpilot_flames {
 
 constexpr float MPH_TO_MS = 0.44704f;
-constexpr float TRIGGER_SPEED_MS = 25.0f * MPH_TO_MS;  // TEST BUILD: 25 mph (11.18 m/s); final = 88 mph (39.34 m/s). Strictly faster than this
+constexpr float TRIGGER_SPEED_MS = 88.0f * MPH_TO_MS;  // 39.34 m/s; strictly faster than this
 constexpr int64_t DURATION_MS = 3000;                  // flames on screen
 constexpr int64_t GRACE_MS = 500;                      // lead may cross 88 mph up to 0.5 s after the fill turns off
 constexpr int64_t TOGGLE_RECHECK_MS = 2000;
