@@ -150,7 +150,8 @@ inline TeslaSetupStatus readTeslaSetupStatus(bool fingerprintAP1, bool hasPedal,
   // Pedal and radar
   auto hwStatus = [&](const QString &carKey, const QString &enabledKey, bool detected, QString &value, QString &desc) {
     const QString fromCar = car.value(carKey).toString();
-    if (!fromCar.isEmpty()) {
+    // "n/a" is what the car code writes for AP1 (no Pre-AP pedal/radar settings); fall through to detection.
+    if (!fromCar.isEmpty() && fromCar != QStringLiteral("n/a")) {
       value = shortStatus(fromCar);
       desc = fromCar;
       return;
