@@ -5288,7 +5288,7 @@ Developer - Highly customizable riggin’s fer seasoned enthusiasts</translation
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;Show flame trails behind fast-passing cars on the blind-spot display.&lt;/b&gt;&lt;br&gt;&lt;br&gt;When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds. This test build triggers above 25 mph.&lt;br&gt;&lt;br&gt;Display only. It doesn't change how openpilot drives.&lt;br&gt;&lt;br&gt;Off until enabled. Saved in &lt;b&gt;/data/params_bogpilot/BSMFlameTracks&lt;/b&gt; (1 on, 0 off), the same file the flames read.</source>
+        <source>&lt;b&gt;Show flame trails behind fast-passing cars on the blind-spot display.&lt;/b&gt;&lt;br&gt;&lt;br&gt;When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds.&lt;br&gt;&lt;br&gt;Display only. It doesn't change how openpilot drives.&lt;br&gt;&lt;br&gt;On by default. Saved in &lt;b&gt;/data/params_bogpilot/BSMFlameTracks&lt;/b&gt; (1 on, 0 off), the same file the flames read.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

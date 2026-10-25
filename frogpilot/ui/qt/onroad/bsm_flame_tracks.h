@@ -8,9 +8,10 @@
 //
 // Display only. It does not read or change anything the car uses to drive.
 //
-// File-backed toggle /data/params_bogpilot/BSMFlameTracks, default OFF (the prebuilt params_pyx.so
+// File-backed toggle /data/params_bogpilot/BSMFlameTracks, default ON (the prebuilt params_pyx.so
 // cannot store new Params keys). Same parser as the other BogPilot file toggles
-// ("1"/"true"/"on" = on, anything else or no file = off). Re-read every 2 s while driving.
+// ("1"/"true"/"on" = on, "0"/"false"/"off" = off, no file or anything else = on). Re-read every 2 s
+// while driving. An explicit "0" written by the settings switch keeps them off.
 //
 // The trigger logic (FlameTrigger) is plain C++ with no Qt so it can be unit-tested off-device.
 
@@ -29,6 +30,7 @@ constexpr int64_t TOGGLE_RECHECK_MS = 2000;
 // tire track. Track width, geometry and timing do not depend on it.
 constexpr float FLAME_HEIGHT_SCALE = 0.55f;
 constexpr const char *TOGGLE_KEY = "BSMFlameTracks";
+constexpr bool TOGGLE_DEFAULT = true;  // missing/unknown file = on; must match visual_settings.cc
 
 struct FlameSideInput {
   bool red_fill_shown = false;  // the red BSM lane fill was drawn for this side this frame
@@ -105,7 +107,7 @@ private:
 namespace bogpilot_flames {
 
 inline bool fileEnabled() {
-  return bogpilot::readFileToggle(QString::fromLatin1(TOGGLE_KEY), false);
+  return bogpilot::readFileToggle(QString::fromLatin1(TOGGLE_KEY), TOGGLE_DEFAULT);
 }
 
 // Adjacent-lane polygons come from update_line_data(): for N model points the polygon is

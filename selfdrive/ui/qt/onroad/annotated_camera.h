@@ -83,7 +83,7 @@ protected:
   void showEvent(QShowEvent *event) override;
   void updateFrameMat() override;
   void drawLaneLines(QPainter &painter, const UIState *s, const FrogPilotUIState *fs);
-  bogpilot_flames::FlameTracks flameTracks;  // BogPilot 88 mph BSM flame tire tracks (file toggle BSMFlameTracks, default off)
+  bogpilot_flames::FlameTracks flameTracks;  // BogPilot 88 mph BSM flame tire tracks (file toggle BSMFlameTracks, default on)
   void drawLead(QPainter &painter, const cereal::RadarState::LeadData::Reader &lead_data, const cereal::FrogPilotPlan::Reader &frogpilotPlan, const QPointF &vd, const QColor &marker_color, const FrogPilotUIState *fs, bool adjacent = false);
   void drawHud(QPainter &p, const cereal::FrogPilotPlan::Reader &frogpilotPlan, const FrogPilotUIState &fs, const QJsonObject &frogpilot_toggles);
   void drawDriverState(QPainter &painter, const UIState *s, const QJsonObject &frogpilot_toggles);
