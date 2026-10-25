@@ -124,8 +124,8 @@ function Root() {
       <div class="onroad-overlay" role="dialog" aria-modal="true" aria-labelledby="onroad-title">
         <div class="onroad-message">
           <i class="bi bi-car-front-fill onroad-icon" aria-hidden="true"></i>
-          <h1 id="onroad-title">The Pond is locked while driving</h1>
-          <p>Shift into Park to use The Pond.</p>
+          <h1 id="onroad-title">The Bog is locked while driving</h1>
+          <p>Shift into Park to use The Bog.</p>
         </div>
       </div>`
     }}
