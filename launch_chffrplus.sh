@@ -32,6 +32,29 @@ function agnos_init {
   fi
 }
 
+# BogPilot: the Qt UI needs weston. From AGNOS 14 the "magic" service owns the display
+# (DRM master, raylib) and only fakes the weston socket for the old updater. weston and
+# weston-ready are still installed but not enabled, so swap them in for this boot only.
+# A reboot brings magic back, so switching to a raylib fork (NotAutopilot) keeps working.
+function qt_display_init {
+  # Qt 5.12.8 modules AGNOS 11+ no longer ships (Qml, Quick, QuickWidgets, Positioning, Sql)
+  if [ -d "$DIR/third_party/qt5/larch64/lib" ]; then
+    export QML2_IMPORT_PATH="$DIR/third_party/qt5/larch64/qml"
+    export QT_PLUGIN_PATH="$DIR/third_party/qt5/larch64/plugins"
+  fi
+
+  if systemctl is-active --quiet weston-ready; then
+    return
+  fi
+  if systemctl is-active --quiet magic; then
+    sudo systemctl stop magic
+  fi
+  # magic leaves its fake socket behind; weston-ready would see it and finish too early
+  sudo rm -f /var/tmp/weston/wayland-0 /var/tmp/weston/wayland-0.lock
+  sudo systemctl start weston
+  sudo systemctl start weston-ready
+}
+
 function launch {
   # Remove orphaned git lock if it exists on boot
   [ -f "$DIR/.git/index.lock" ] && rm -f $DIR/.git/index.lock
@@ -74,9 +97,23 @@ function launch {
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$DIR/frogpilot/third_party:$PWD"
 
+  # BogPilot: comma 3 (tici) can't run AGNOS 17.2 builds. Stop before agnos_init so it is never flashed.
+  if [ -f /sys/firmware/devicetree/base/model ]; then
+    DEVICE_TYPE=$(cat /sys/firmware/devicetree/base/model | tr -d '\0' | awk -F'comma ' '{print $2}')
+    if [ "$DEVICE_TYPE" = "tici" ]; then
+      echo "============================================="
+      echo "This BogPilot branch needs a comma 3X (AGNOS 17.2)."
+      echo "comma 3 (tici): install the bogpilot-tesla branch."
+      echo "============================================="
+      sleep 30
+      exit 1
+    fi
+  fi
+
   # hardware specific init
   if [ -f /AGNOS ]; then
     agnos_init
+    qt_display_init
   fi
 
   # write tmux scrollback to a file
