@@ -1770,7 +1770,7 @@ DEVICE_CONTROLS_TOGGLES = (
   ToggleDefinition(
     title=("Share Driving Data"),
     param="FrogPilotTelemetry",
-    description=("<b>Automatically share anonymized driving data with FrogPilot to help improve it.</b><br><br>Only driving signals are shared: no video, no GPS or location, no VIN, and no identifiers. Turn this off to opt out."),
+    description=("<b>Help improve BogPilot</b> by sharing a privacy-safe car fingerprint. BogPilot itself sends no data: this toggle does not upload anything. To share a fingerprint from your own logs, see github.com/BogPilot/bogpilot-fingerprint"),
     parent_param="DeviceManagement",
     tuning_level=4,  # BogPilot: telemetry removed; level 4 > max TuningLevel 3 keeps it hidden
   ),
