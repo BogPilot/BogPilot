@@ -11,14 +11,24 @@ Sent, all on bus 0 (CANBUS.chassis), and all whitelisted by SAFETY_TESLA_PREAP:
   0x214 EPB_epasControl      every 2 frames, EPB_epasEACAllow 1, same counter
   0x560 radar VIN fragments  every 10 frames, only with radar emulation on.
                              Consumed by the panda, never put on the car.
-Not ported from NAP: 0x551 pedal (longitudinal deferred), 0x45 stock-CC
-spoofing, 0x3E9 body controls, 0x2B9. The panda blocks all of them.
+Pedal longitudinal (only with FLAG_TESLA_PREAP_ENABLE_PEDAL in the installed
+safety param; preap_pedal.py, NAP + Tinkla):
+  0x551 GAS_COMMAND  every 2 frames on the pedal bus (tesla_preap_pedal.dbc BO_ 1361)
+  0x45  STW_ACTN_RQ  stock-CC cancel copy, bus 0, at most every 10 frames and
+                     only while openpilot is enabled and stock CC is driving
+                     (tesla_can.dbc BO_ 69)
+Not ported from NAP: VirtualDAS, 0x3E9 body controls, 0x2B9, iBooster. The panda
+blocks all of them.
 """
+from cereal import car
 
 from openpilot.common.numpy_fast import clip
 from openpilot.selfdrive.car import apply_std_steer_angle_limits
 from openpilot.selfdrive.car.tesla.values import CANBUS, CarControllerParams
+from openpilot.selfdrive.car.tesla.preap_pedal import BrakeAlert, PedalLongController, pedal_calibration
 from panda import Panda
+
+LongCtrlState = car.CarControl.Actuators.LongControlState
 
 PREAP_HANDS_LAT_PAUSE = 3   # NAP: lat_active = CC.latActive and hands_on_level < 3
 PREAP_MAX_ANGLE = 360.0     # panda PREAP_MAX_ANGLE (3600 in 0.1 deg)
@@ -75,13 +85,38 @@ def preap_radar_config(CP, bogpilot_dir=None):
     return None
 
 
+def preap_pedal_config(CP, bogpilot_dir=None):
+  """(required, PedalLongController or None). required is True when the safety
+  param has ENABLE_PEDAL. A required pedal without a usable calibration (should
+  not happen: the interface checked it) gives no controller and the interface
+  raises accFaulted so openpilot long cannot stay engaged."""
+  from openpilot.selfdrive.car.tesla.preap_pedal import preap_pedal_bus_from_cp
+  bus = preap_pedal_bus_from_cp(CP)
+  if bus is None:
+    return False, None
+  try:
+    from openpilot.selfdrive.car.tesla.preap_settings import load_preap_settings
+    settings, _ = load_preap_settings(bogpilot_dir) if bogpilot_dir is not None else load_preap_settings()
+    calib = pedal_calibration(settings)
+    if calib is None:
+      return True, None
+    return True, PedalLongController(calib, bus)
+  except Exception:
+    return True, None
+
+
 class PreapController:
-  def __init__(self, tesla_can, radar=None):
-    """radar: None, or dict(vin=str, position=int, epas_type=int)."""
+  def __init__(self, tesla_can, radar=None, pedal=None, pedal_required=False):
+    """radar: None, or dict(vin=str, position=int, epas_type=int).
+    pedal: None, or a preap_pedal.PedalLongController."""
     self.tesla_can = tesla_can
     self.radar = radar
     self.radar_idx = 0
     self.apply_angle_last = 0.0
+    self.pedal = pedal
+    self.pedal_missing = pedal_required and pedal is None
+    self.brake_alert_tracker = BrakeAlert()
+    self.brake_alert = False
 
   def update(self, CC, CS, frame):
     sends = []
@@ -103,4 +138,11 @@ class PreapController:
       sends.append(create_radar_vin_msg(self.radar_idx, self.radar.get("vin", ""), True,
                                         int(self.radar.get("position", 0)), int(self.radar.get("epas_type", 0))))
       self.radar_idx = (self.radar_idx + 1) % 3
+
+    if self.pedal is not None:
+      sends.extend(self.pedal.update(CC, CS, frame))
+      long_active = bool(CC.enabled) and bool(CC.longActive)
+      stopping = CC.actuators.longControlState == LongCtrlState.stopping
+      self.brake_alert = self.brake_alert_tracker.update(long_active, float(CC.actuators.accel), stopping,
+                                                         float(CS.out.vEgo))
     return sends

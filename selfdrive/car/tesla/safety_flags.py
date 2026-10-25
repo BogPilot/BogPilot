@@ -84,12 +84,14 @@ def learn_pedal_bus(fingerprint):
   return seen[0] if len(seen) == 1 else None
 
 
-def preap_safety_param(settings, pedal_bus_learned=None):
+def preap_safety_param(settings, pedal_bus_learned=None, pedal_long=False):
   """SAFETY_TESLA_PREAP param from load_preap_settings() values.
 
-  ENABLE_PEDAL is never set: pedal longitudinal is not ported, so the panda
-  keeps 0x551 blocked. PEDAL_BUS_ZERO only records the bus for that later
-  work. CALIBRATION is never set from the host.
+  ENABLE_PEDAL is set only with pedal_long=True, which interface.py passes only
+  when preap_pedal.pedal_long_bus() returned a bus (pedal enabled, calibration
+  done, openpilot-long toggle on, GAS_SENSOR seen on one bus). Without it the
+  panda keeps 0x551 and the 0x45 cancel blocked. CALIBRATION is never set from
+  the host.
   """
   flags = 0
   if settings.get("radar_enabled"):
@@ -100,4 +102,6 @@ def preap_safety_param(settings, pedal_bus_learned=None):
     bus = pedal_bus_learned if pedal_bus_learned in PEDAL_BUSES else settings.get("pedal_can_bus", 2)
     if bus == 0:
       flags |= Panda.FLAG_TESLA_PREAP_PEDAL_BUS_ZERO
+    if pedal_long:
+      flags |= Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL
   return flags

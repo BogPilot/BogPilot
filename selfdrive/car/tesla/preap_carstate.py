@@ -16,8 +16,16 @@ and panda agree on when lateral control is allowed:
              DISABLE_DISENGAGE_ON_GAS), or a FWD push (1) more than 600 ms
              after the engage pull (NAP CANCEL_ECHO_WINDOW_MS)
 
-Differences from NAP: no pedal longitudinal, no stock-CC spoofing, no double
-pull, and brakePressed is reported (NAP suppresses it to keep lateral on).
+Pedal longitudinal (only when the panda param has ENABLE_PEDAL, see
+preap_pedal.py): gas comes from the Comma Pedal GAS_SENSOR (0x552,
+tesla_preap_pedal.dbc BO_ 1362) like the panda, because DI_pedalPos then shows
+the pedal output, not the driver's foot. cruiseState.enabled reports stock cruise
+(DI_cruiseState, tesla_can.dbc VAL_ 872) so controlsd asks for a cancel; the
+latch goes to cs.preap_latch and interface.py turns it into buttonEnable /
+buttonCancel. Lever up/down become accelCruise/decelCruise for the set speed.
+
+Differences from NAP: no double pull, no VirtualDAS, and brakePressed is
+reported (NAP suppresses it to keep lateral on).
 
 All addresses are bus 0 (CANBUS.chassis) in opendbc/tesla_can.dbc:
 0x155 ESP_B, 0x108 DI_torque1, 0x118 DI_torque2, 0x20A BrakeMessage,
@@ -29,6 +37,9 @@ from cereal import car
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.realtime import DT_CTRL
 from panda import ALTERNATIVE_EXPERIENCE as PANDA_ALT_EXP
+from openpilot.selfdrive.car.tesla.preap_pedal import lever_buttons, stock_cc_active, stock_cc_cancelable
+
+ButtonType = car.CarState.ButtonEvent.Type
 
 GearShifter = car.CarState.GearShifter
 
@@ -109,9 +120,19 @@ def update_preap(cs, cp):
   ret.vEgo, ret.aEgo = cs.update_speed_kf(ret.vEgoRaw)
   ret.standstill = ret.vEgo < 0.1
 
-  # Same rule as the panda (DI_pedalPos byte != 0) so the two cannot disagree.
-  ret.gas = cp.vl["DI_torque1"]["DI_pedalPos"] / 100.0
-  ret.gasPressed = ret.gas > 0
+  pedal = getattr(cs, "pedal_sensor", None)
+  if pedal is not None:
+    # Same rule as the panda with ENABLE_PEDAL (interceptor > PREAP_PEDAL_GAS_PRESSED).
+    cp_pedal = getattr(cs, "cp_pedal", None)
+    pedal.update(dict(cp_pedal.vl["GAS_SENSOR"]) if cp_pedal is not None else {}, DT_CTRL)
+    ret.gas = cp.vl["DI_torque1"]["DI_pedalPos"] / 100.0
+    ret.gasPressed = pedal.gas_pressed
+    ret.accFaulted = pedal.faulted
+    cs.motor_torque = float(cp.vl["DI_torque1"]["DI_torqueMotor"])
+  else:
+    # Same rule as the panda (DI_pedalPos byte != 0) so the two cannot disagree.
+    ret.gas = cp.vl["DI_torque1"]["DI_pedalPos"] / 100.0
+    ret.gasPressed = ret.gas > 0
 
   di_brake = int(cp.vl["DI_torque2"]["DI_brakePedal"]) == 1
   msg_brake = int(cp.vl["BrakeMessage"]["driverBrakeStatus"]) == 2
@@ -161,4 +182,19 @@ def update_preap(cs, cp):
   ret.cruiseState.standstill = False
 
   cs.msg_stw_actn_req = dict(cp.vl["STW_ACTN_RQ"])
+  if pedal is not None:
+    di_cruise = int(cp.vl["DI_state"]["DI_cruiseState"])
+    cs.preap_latch = enabled
+    cs.stock_cc_active = stock_cc_active(di_cruise)
+    cs.stock_cc_cancelable = stock_cc_cancelable(di_cruise)
+    cs.stalk_fresh = cs.stalk_tracker.update(cs.msg_stw_actn_req, DT_CTRL).fresh
+    ret.cruiseState.enabled = cs.stock_cc_active
+    events = []
+    for kind, pressed in lever_buttons(lever, getattr(cs, "preap_lever_prev", 0)):
+      be = car.CarState.ButtonEvent.new_message()
+      be.type = ButtonType.accelCruise if kind == "accel" else ButtonType.decelCruise
+      be.pressed = pressed
+      events.append(be)
+    ret.buttonEvents = events
+    cs.preap_lever_prev = lever
   return ret
