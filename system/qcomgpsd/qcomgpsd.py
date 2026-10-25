@@ -91,9 +91,38 @@ measurementStatusGlonassFields = {
 def try_setup_logs(diag, logs):
   return setup_logs(diag, logs)
 
+# BogPilot: AGNOS 17+ keeps the modem AT port out of ModemManager, so `mmcli --command` can fail.
+# Fall back to AT commands straight on the port, as upstream openpilot does since AGNOS 17 (ad181ba50).
+AT_PORT = "/dev/modem_at0"
+
+def at_cmd_serial(cmd: str) -> str:
+  from serial import Serial
+  with Serial(AT_PORT, baudrate=115200, timeout=5) as ser:
+    ser.reset_input_buffer()
+    ser.write(f"{cmd}\r".encode())
+    lines = []
+    while True:
+      line = ser.readline()
+      if not line:
+        raise RuntimeError(f"AT command timeout: {cmd}")
+      line = line.decode('utf-8', errors='replace').strip()
+      if line == "OK":
+        break
+      if line == "ERROR" or line.startswith("+CME ERROR"):
+        raise RuntimeError(f"AT command failed: {cmd}: {line}")
+      if line and line != cmd:
+        lines.append(line)
+  return '\n'.join(lines)
+
 @retry(attempts=3, delay=1.0)
 def at_cmd(cmd: str) -> str | None:
-  return subprocess.check_output(f"mmcli -m any --timeout 30 --command='{cmd}'", shell=True, encoding='utf8')
+  try:
+    return subprocess.check_output(f"mmcli -m any --timeout 30 --command='{cmd}'", shell=True, encoding='utf8',
+                                   stderr=subprocess.DEVNULL)
+  except subprocess.CalledProcessError:
+    if not os.path.exists(AT_PORT):
+      raise
+    return at_cmd_serial(cmd)
 
 def gps_enabled() -> bool:
   return "QGPS: 1" in at_cmd("AT+QGPS?")
@@ -246,6 +275,12 @@ def wait_for_modem(cmd="AT+QGPS?", timeout: float | None = None) -> bool:
     ret = subprocess.call(f"mmcli -m any --timeout 10 --command=\"{cmd}\"", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
     if ret == 0:
       return True
+    if os.path.exists(AT_PORT):
+      try:
+        at_cmd_serial(cmd)
+        return True
+      except Exception:
+        pass
     if timeout is not None and time.monotonic() - t0 > timeout:
       cloudlog.warning("modem not back within timeout")
       return False

@@ -35,6 +35,9 @@ from openpilot.common.swaglog import cloudlog
 
 UFS_NAME = "UFS:xtra3grc.bin"
 DEFAULT_AT_PORTS = ["/dev/ttyUSB3", "/dev/ttyUSB2"]   # prefer USB3: ModemManager's primary AT is usually USB2
+# AGNOS 17+: udev names the AT port ModemManager leaves alone /dev/modem_at0; try it first when present
+if os.path.exists("/dev/modem_at0") and os.path.realpath("/dev/modem_at0") not in ("/dev/ttyUSB0", "/dev/ttyUSB1"):
+  DEFAULT_AT_PORTS.insert(0, "/dev/modem_at0")
 NEVER_PORTS = {"/dev/ttyUSB0", "/dev/ttyUSB1"}        # diag (qcomgpsd) and NMEA
 MAX_XTRA_BYTES = 200_000
 DEFAULT_BUDGET_S = 15.0
