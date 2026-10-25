@@ -7,6 +7,7 @@ from openpilot.selfdrive.car.tesla.blindspot import Ap1Blindspot, frames_from_vl
 from openpilot.selfdrive.car.tesla.cluster import CLUSTER_ADDRS, COUNTER_SIGNALS, MSG_NAMES
 from openpilot.selfdrive.car.tesla.hso import ap1_driver_input
 from openpilot.selfdrive.car.tesla.preap_carstate import PARSER_MESSAGES as PREAP_PARSER_MESSAGES, PreapEngagement, update_preap
+from openpilot.selfdrive.car.tesla.preap_pedal import PedalSensor, StalkTracker, preap_pedal_bus_from_cp
 from openpilot.selfdrive.car.tesla.stalk_follow import dtr_sample, follow_seconds, parse_stalk_raw
 from openpilot.selfdrive.car.tesla.stalk_pull_hold import PULL_HOLD_ENABLED, StalkPullHold
 from openpilot.selfdrive.car.tesla.stalk_fwd_hold import FWD_HOLD_ENABLED, StalkFwdHold
@@ -54,6 +55,17 @@ class CarState(CarStateBase):
     self.ap1_bsm = Ap1Blindspot()
     # Pre-AP only (preap_carstate.py). None on every other Tesla.
     self.preap_engagement = PreapEngagement() if CP.carFingerprint == CAR.TESLA_PREAP_MODELS else None
+    # Pre-AP pedal longitudinal (preap_pedal.py). Only with ENABLE_PEDAL in the
+    # safety param, which interface.py sets only when the pedal gate passed.
+    self.preap_pedal_bus = preap_pedal_bus_from_cp(CP)
+    self.pedal_sensor = PedalSensor() if self.preap_pedal_bus is not None else None
+    self.stalk_tracker = StalkTracker() if self.preap_pedal_bus is not None else None
+    self.cp_pedal = None
+    self.preap_latch = False
+    self.stock_cc_active = False
+    self.stock_cc_cancelable = False
+    self.stalk_fresh = False
+    self.motor_torque = 0.0
 
   def update(self, cp, cp_cam, frogpilot_toggles):
     if self.preap_engagement is not None:
@@ -287,6 +299,15 @@ class CarState(CarStateBase):
       messages.append(("GTW_ESP1", 0))
 
     return CANParser(DBC[CP.carFingerprint]['chassis'], messages, CANBUS.chassis)
+
+  @staticmethod
+  def get_body_can_parser(CP):
+    """Pre-AP pedal longitudinal only: GAS_SENSOR (tesla_preap_pedal.dbc BO_ 1362)
+    on the learned pedal bus. Frequency 0; PedalSensor and the panda judge health."""
+    bus = preap_pedal_bus_from_cp(CP)
+    if bus is None:
+      return None
+    return CANParser("tesla_preap_pedal", [("GAS_SENSOR", 0)], bus)
 
   @staticmethod
   def get_cam_can_parser(CP, FPCP):

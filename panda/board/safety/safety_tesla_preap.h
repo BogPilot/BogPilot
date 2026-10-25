@@ -23,6 +23,28 @@
 //   - Pedal calibration mode (flag 64) is not ported: init returns an empty
 //     TX list (silent) if it is requested.
 //   - Always-on lateral is ignored: angle control needs controls_allowed.
+//
+// Pedal longitudinal (flag 1, BogPilot nap-pedal). Ported from NotAutopilot
+// panda 282fae7 / napdbc f1a756d tesla_preap.h (650 raw gas threshold,
+// ENABLE=0 release rule) and Tinkla 0d99a1b (BogGyver/openpilot, MIT:
+// panda/board/pedal/main.c firmware protocol, safety_tesla.h stalk cancel).
+// Stricter than NAP, which checked neither the pedal checksum, the counter,
+// the command size nor the stock-cruise state:
+//   - 0x552 GAS_SENSOR only on the configured pedal bus, with RX checksum
+//     (byte 5 additive) and counter (byte 4 low nibble) checks.
+//   - 0x551 ENABLE=1 needs longitudinal allowed, no brake, a fresh (<100 ms)
+//     GAS_SENSOR with STATE 0 (NO_FAULT), stock cruise not engaged, a valid
+//     checksum, a sequential IDX, GAS_COMMAND <= a speed-dependent cap and
+//     GAS_COMMAND2 consistent with GAS_COMMAND.
+//   - 0x551 ENABLE=0 must carry zero gas (what the firmware needs to clear
+//     FAULT_INVALID); NAP allowed up to 500 raw.
+//   - 0x45 STW_ACTN_RQ, bus 0, only as a stock-cruise CANCEL (lever 1) that
+//     copies the last real stalk frame, with counter last+1 and a valid CRC,
+//     at most one per real stalk frame, only while stock cruise is engaged
+//     and openpilot is engaged. Every other 0x45 is blocked.
+// Addresses: 0x551 GAS_COMMAND / 0x552 GAS_SENSOR (BO_ 1361/1362 in Tinkla
+// opendbc/tesla_can.dbc and BogPilot opendbc/tesla_preap_pedal.dbc), 0x45
+// STW_ACTN_RQ (BO_ 69) and 0x368 DI_state (BO_ 872) in opendbc/tesla_can.dbc.
 
 #define PREAP_GET_BYTES_04(msg) ((msg)->data[0] | ((msg)->data[1] << 8) | ((msg)->data[2] << 16) | ((msg)->data[3] << 24))
 #define PREAP_GET_BYTES_48(msg) ((msg)->data[4] | ((msg)->data[5] << 8) | ((msg)->data[6] << 16) | ((msg)->data[7] << 24))
@@ -43,7 +65,16 @@ void can_set_checksum(CANPacket_t *packet);
 #define PREAP_CANCEL_ECHO_WINDOW_US 600000U
 #define PREAP_MAX_ANGLE 3600            // 0.1 deg; NAP: "360 deg, EPAS faults above this"
 #define PREAP_PEDAL_GAS_PRESSED 650     // NAP: raw threshold from Pre-AP drive data
-#define PREAP_PEDAL_RELEASE_MAX 500     // NAP: ENABLE=0 frames must be near zero
+#define PREAP_PEDAL_SENSOR_TIMEOUT_US 100000U  // 5 missed frames at 50 Hz
+#define PREAP_STALK_FRESH_US 250000U    // last real 0x45 must be this recent to copy it
+#define PREAP_PEDAL_CMD2_TOL 4          // |2*GAS_COMMAND2 - GAS_COMMAND| raw
+// GAS_COMMAND raw cap vs speed (m/s). raw = (phys + 22.85856576) / 0.0507968128;
+// phys 60/72/95 at 0/12/40 m/s, 5-10 above the host's NAP PEDAL_MAX_VALUES
+// (50..90 over 0..40 m/s) so the host limit always binds first.
+const struct lookup_t PREAP_PEDAL_MAX_GAS = {
+  {0., 12., 40.},
+  {1631., 1867., 2320.},
+};
 #define PREAP_KPH_TO_MS 0.277778f
 
 #define PREAP_RADAR_VIN_ADDR 0x560U     // host -> panda donor config (NAP / Tinkla 0.6.6)
@@ -74,6 +105,19 @@ static bool preap_steering_disengage = false;
 static bool preap_steering_disengage_prev = false;
 static bool preap_stalk_pull_prev = false;
 static uint32_t preap_last_stalk_engage_us = 0U;
+
+// pedal longitudinal state
+static int preap_pedal_state = 4;            // GAS_SENSOR STATE, 4 = FAULT_STARTUP
+static bool preap_pedal_seen = false;
+static uint32_t preap_pedal_last_us = 0U;
+static int preap_pedal_tx_idx_prev = -1;
+static int preap_di_cruise_state = 0;        // DI_state DI_cruiseState
+static bool preap_di_state_seen = false;
+static uint32_t preap_di_state_last_us = 0U;
+static uint8_t preap_stalk_last[8];          // last real STW_ACTN_RQ (bus 0)
+static bool preap_stalk_seen = false;
+static uint32_t preap_stalk_last_us = 0U;
+static bool preap_stalk_spoof_used = true;   // one cancel per real stalk frame
 
 static int preap_radar_epas_type = 0;
 static int preap_radar_position = 0;
@@ -296,6 +340,122 @@ static void tesla_preap_gtw_emulation(const CANPacket_t *to_fwd) {
   }
 }
 
+// Comma Pedal checksum (Tinkla 0d99a1b panda/board/pedal/main.c pedal_checksum,
+// NAP teslacan.py pedal_checksum): address bytes + data bytes 0-4, byte 5.
+static uint8_t preap_pedal_checksum(const CANPacket_t *msg) {
+  const int addr = GET_ADDR(msg);
+  int sum = (addr & 0xFF) + ((addr >> 8) & 0xFF);
+  for (int i = 0; i < 5; i++) {
+    sum += msg->data[i];
+  }
+  return (uint8_t)(sum & 0xFF);
+}
+
+static uint32_t tesla_preap_get_checksum(const CANPacket_t *to_push) {
+  return (uint32_t)to_push->data[5];
+}
+
+static uint32_t tesla_preap_compute_checksum(const CANPacket_t *to_push) {
+  return (uint32_t)preap_pedal_checksum(to_push);
+}
+
+static uint8_t tesla_preap_get_counter(const CANPacket_t *to_push) {
+  // GAS_SENSOR IDX 35|4 = byte 4 low nibble (firmware: dat[4] = (state << 4) | idx)
+  return (uint8_t)(to_push->data[4] & 0x0FU);
+}
+
+// DI_cruiseState (tesla_can.dbc VAL_ 872): 0 OFF, 1 STANDBY, 5 FAULT mean stock
+// cruise is not driving the car. Anything else (ENABLED, STANDSTILL, OVERRIDE,
+// PRE_FAULT, PRE_CANCEL, unknown) or no recent DI_state counts as engaged.
+static bool preap_stock_cruise_engaged(void) {
+  bool engaged = true;
+  uint32_t elapsed = get_ts_elapsed(microsecond_timer_get(), preap_di_state_last_us);
+  if (preap_di_state_seen && (elapsed < 500000U)) {
+    engaged = !((preap_di_cruise_state == 0) || (preap_di_cruise_state == 1) || (preap_di_cruise_state == 5));
+  }
+  return engaged;
+}
+
+// Cancel worth sending: ENABLED, STANDSTILL or OVERRIDE.
+static bool preap_stock_cruise_cancelable(void) {
+  uint32_t elapsed = get_ts_elapsed(microsecond_timer_get(), preap_di_state_last_us);
+  return preap_di_state_seen && (elapsed < 500000U) &&
+         (preap_di_cruise_state >= 2) && (preap_di_cruise_state <= 4);
+}
+
+static bool preap_pedal_healthy(void) {
+  uint32_t elapsed = get_ts_elapsed(microsecond_timer_get(), preap_pedal_last_us);
+  return preap_pedal_seen && (preap_pedal_state == 0) && (elapsed < PREAP_PEDAL_SENSOR_TIMEOUT_US);
+}
+
+static bool preap_pedal_cmd_allowed(const CANPacket_t *to_send) {
+  bool ok = true;
+  const int idx = to_send->data[4] & 0x0F;
+  const bool enable = (to_send->data[4] & 0x80U) != 0U;
+  const int raw1 = (to_send->data[0] << 8) | to_send->data[1];
+  const int raw2 = (to_send->data[2] << 8) | to_send->data[3];
+
+  // the firmware drops non-sequential IDX; track every attempt so a single
+  // blocked frame does not lock the stream out
+  if ((preap_pedal_tx_idx_prev >= 0) && (idx != ((preap_pedal_tx_idx_prev + 1) % 16))) {
+    ok = false;
+  }
+  preap_pedal_tx_idx_prev = idx;
+
+  if (to_send->data[5] != preap_pedal_checksum(to_send)) {
+    ok = false;
+  }
+  if ((to_send->data[4] & 0x70U) != 0U) {
+    ok = false;  // unused bits must be zero
+  }
+
+  if (enable) {
+    const int cap = (int)interpolate(PREAP_PEDAL_MAX_GAS, (float)vehicle_speed.min / VEHICLE_SPEED_FACTOR);
+    if (!get_longitudinal_allowed() || brake_pressed || preap_di_brake_pressed || preap_brake_message_pressed) {
+      ok = false;
+    }
+    if (!preap_pedal_healthy() || preap_stock_cruise_engaged()) {
+      ok = false;
+    }
+    if (raw1 > cap) {
+      ok = false;
+    }
+    if (ABS((2 * raw2) - raw1) > PREAP_PEDAL_CMD2_TOL) {
+      ok = false;
+    }
+  } else {
+    if ((raw1 != 0) || (raw2 != 0)) {
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+// Stock-cruise cancel spoof (Tinkla 0d99a1b safety_tesla.h fake stalk cancel,
+// NAP stock_cc_spoofer.py frame layout).
+static bool preap_stalk_cancel_allowed(const CANPacket_t *to_send) {
+  bool ok = preap_enable_pedal && controls_allowed && preap_stalk_seen && !preap_stalk_spoof_used;
+  ok = ok && (GET_BUS(to_send) == 0U) && (GET_LEN(to_send) == 8U);
+  ok = ok && (get_ts_elapsed(microsecond_timer_get(), preap_stalk_last_us) < PREAP_STALK_FRESH_US);
+  ok = ok && preap_stock_cruise_cancelable();
+  // byte 0: lever 1 (FWD / cancel), VSL_Enbl_Rq copied, SpdCtrlLvrStat_Inv 0 (NAP)
+  ok = ok && ((to_send->data[0] & 0x3FU) == 1U);
+  ok = ok && ((to_send->data[0] & 0x40U) == (preap_stalk_last[0] & 0x40U));
+  ok = ok && ((to_send->data[0] & 0x80U) == 0U);
+  // bytes 1-5 and byte 6 bits 0-3 (DTR, switches, wipers) copied unchanged
+  for (int i = 1; i < 6; i++) {
+    ok = ok && (to_send->data[i] == preap_stalk_last[i]);
+  }
+  ok = ok && ((to_send->data[6] & 0x0FU) == (preap_stalk_last[6] & 0x0FU));
+  // MC_STW_ACTN_RQ 52|4 = last real + 1
+  ok = ok && ((to_send->data[6] >> 4) == (((preap_stalk_last[6] >> 4) + 1U) & 0x0FU));
+  // CRC_STW_ACTN_RQ 56|8: CRC-8 poly 0x1D over bytes 0-6
+  uint32_t lo = PREAP_GET_BYTES_04(to_send);
+  uint32_t hi = PREAP_GET_BYTES_48(to_send);
+  ok = ok && (preap_compute_crc8(lo, hi, 7) == (int)to_send->data[7]);
+  return ok;
+}
+
 static void preap_disengage(void) {
   controls_allowed = false;
   cruise_engaged_prev = false;
@@ -305,10 +465,15 @@ static void tesla_preap_rx_hook(const CANPacket_t *to_push) {
   const int bus = GET_BUS(to_push);
   const int addr = GET_ADDR(to_push);
 
-  // Comma Pedal GAS_SENSOR 0x552 on bus 0 or 2 (NAP); only when the pedal flag is set
-  if (preap_enable_pedal && (addr == 0x552) && ((bus == 0) || (bus == 2))) {
+  // Comma Pedal GAS_SENSOR 0x552, only on the configured pedal bus and only when
+  // the pedal flag is set. Checksum and counter were checked by rx_msg_safety_check.
+  // INTERCEPTOR_GAS 7|16 is the driver's pedal ADC; STATE 39|4 = byte 4 high nibble.
+  if (preap_enable_pedal && (addr == 0x552) && (bus == (int)preap_pedal_bus) && (GET_LEN(to_push) == 6U)) {
     int pedal_val = (to_push->data[0] << 8) | to_push->data[1];
     gas_pressed = pedal_val > PREAP_PEDAL_GAS_PRESSED;
+    preap_pedal_state = to_push->data[4] >> 4;
+    preap_pedal_seen = true;
+    preap_pedal_last_us = microsecond_timer_get();
   }
 
   if (bus == 0) {
@@ -369,7 +534,22 @@ static void tesla_preap_rx_hook(const CANPacket_t *to_push) {
       }
     }
 
+    if (addr == 0x368) {
+      // DI_state DI_cruiseState 12|4@1+ (tesla_can.dbc BO_ 872)
+      preap_di_cruise_state = to_push->data[1] >> 4;
+      preap_di_state_seen = true;
+      preap_di_state_last_us = microsecond_timer_get();
+    }
+
     if (addr == 0x45) {
+      // keep the last real stalk frame for the cancel spoof check
+      for (int i = 0; i < 8; i++) {
+        preap_stalk_last[i] = to_push->data[i];
+      }
+      preap_stalk_seen = true;
+      preap_stalk_last_us = microsecond_timer_get();
+      preap_stalk_spoof_used = false;
+
       // STW_ACTN_RQ SpdCtrlLvr_Stat: 2 = pull (engage), 1 = push (cancel) (NAP)
       const int lever = to_push->data[0] & 0x3FU;
       const bool pull = lever == 2;
@@ -441,20 +621,22 @@ static bool tesla_preap_tx_hook(const CANPacket_t *to_send) {
   }
 
   if (addr == 0x551) {
-    // Comma Pedal GAS_COMMAND: GAS_COMMAND 7|16, ENABLE 39|1 (NAP)
-    if (!preap_enable_pedal || (GET_BUS(to_send) != preap_pedal_bus)) {
+    // Comma Pedal GAS_COMMAND: GAS_COMMAND 7|16, GAS_COMMAND2 23|16, ENABLE 39|1,
+    // IDX 35|4, CHECKSUM 47|8 (tesla_preap_pedal.dbc BO_ 1361)
+    if (!preap_enable_pedal || (GET_BUS(to_send) != preap_pedal_bus) || (GET_LEN(to_send) != 6U)) {
+      tx = false;
+    } else if (!preap_pedal_cmd_allowed(to_send)) {
       tx = false;
     } else {
-      const bool pedal_enable = (to_send->data[4] & 0x80U) != 0U;
-      const int raw_gas_cmd = (to_send->data[0] << 8) | to_send->data[1];
-      if (pedal_enable) {
-        if (!get_longitudinal_allowed() || preap_di_brake_pressed || preap_brake_message_pressed) {
-          tx = false;
-        }
-      } else if (raw_gas_cmd > PREAP_PEDAL_RELEASE_MAX) {
-        tx = false;
-      } else {
-      }
+    }
+  }
+
+  if (addr == 0x45) {
+    // STW_ACTN_RQ: stock-cruise cancel only (whitelisted on bus 0, len 8)
+    if (!preap_stalk_cancel_allowed(to_send)) {
+      tx = false;
+    } else {
+      preap_stalk_spoof_used = true;
     }
   }
 
@@ -475,6 +657,7 @@ static const CanMsg TESLA_PREAP_TX_MSGS[] = {
   {0x551, 0, 6},  // Comma Pedal GAS_COMMAND, bus 0 (flag-gated)
   {0x551, 2, 6},  // Comma Pedal GAS_COMMAND, bus 2 (flag-gated)
   {0x560, 0, 8},  // radar donor config to panda (consumed)
+  {0x45, 0, 8},   // STW_ACTN_RQ stock-cruise cancel (pedal flag + strict checks)
 };
 
 // RX checks: frequency only (NAP disables checksum/counter for Pre-AP EPAS).
@@ -489,17 +672,22 @@ static RxCheck tesla_preap_rx_checks[] = {
   {.msg = {{0x155, 0, 8, .frequency = 50U}, { 0 }, { 0 }}},   // ESP_B
 };
 
-static RxCheck tesla_preap_rx_checks_pedal[] = {
-  {.msg = {{0x370, 0, 8, .frequency = 25U}, { 0 }, { 0 }}},
-  {.msg = {{0x108, 0, 8, .frequency = 100U}, { 0 }, { 0 }}},
-  {.msg = {{0x118, 0, 6, .frequency = 100U}, { 0 }, { 0 }}},
-  {.msg = {{0x20a, 0, 8, .frequency = 50U}, { 0 }, { 0 }}},
-  {.msg = {{0x368, 0, 8, .frequency = 10U}, { 0 }, { 0 }}},
-  {.msg = {{0x318, 0, 8, .frequency = 10U}, { 0 }, { 0 }}},
-  {.msg = {{0x45, 0, 8, .frequency = 10U}, { 0 }, { 0 }}},
-  {.msg = {{0x155, 0, 8, .frequency = 50U}, { 0 }, { 0 }}},
-  {.msg = {{0x552, 0, 6, .frequency = 50U}, {0x552, 2, 6, .frequency = 50U}, { 0 }}},  // GAS_SENSOR
-};
+// GAS_SENSOR with checksum and counter (max_counter 15), one table per pedal bus
+// so a pedal frame on the other bus never satisfies the check.
+#define PREAP_RX_CHECKS_PEDAL(pedal_bus) {                                   \
+  {.msg = {{0x370, 0, 8, .frequency = 25U}, { 0 }, { 0 }}},                  \
+  {.msg = {{0x108, 0, 8, .frequency = 100U}, { 0 }, { 0 }}},                 \
+  {.msg = {{0x118, 0, 6, .frequency = 100U}, { 0 }, { 0 }}},                 \
+  {.msg = {{0x20a, 0, 8, .frequency = 50U}, { 0 }, { 0 }}},                  \
+  {.msg = {{0x368, 0, 8, .frequency = 10U}, { 0 }, { 0 }}},                  \
+  {.msg = {{0x318, 0, 8, .frequency = 10U}, { 0 }, { 0 }}},                  \
+  {.msg = {{0x45, 0, 8, .frequency = 10U}, { 0 }, { 0 }}},                   \
+  {.msg = {{0x155, 0, 8, .frequency = 50U}, { 0 }, { 0 }}},                  \
+  {.msg = {{0x552, (pedal_bus), 6, .check_checksum = true, .max_counter = 15U, .frequency = 50U}, { 0 }, { 0 }}}, \
+}
+
+static RxCheck tesla_preap_rx_checks_pedal_bus2[] = PREAP_RX_CHECKS_PEDAL(2);
+static RxCheck tesla_preap_rx_checks_pedal_bus0[] = PREAP_RX_CHECKS_PEDAL(0);
 
 static safety_config tesla_preap_init(uint16_t param) {
   preap_calibration_requested = GET_FLAG(param, PREAP_FLAG_PEDAL_CALIBRATION);
@@ -516,6 +704,19 @@ static safety_config tesla_preap_init(uint16_t param) {
   preap_steering_disengage_prev = false;
   preap_stalk_pull_prev = false;
   preap_last_stalk_engage_us = 0U;
+  preap_pedal_state = 4;
+  preap_pedal_seen = false;
+  preap_pedal_last_us = 0U;
+  preap_pedal_tx_idx_prev = -1;
+  preap_di_cruise_state = 0;
+  preap_di_state_seen = false;
+  preap_di_state_last_us = 0U;
+  preap_stalk_seen = false;
+  preap_stalk_last_us = 0U;
+  preap_stalk_spoof_used = true;
+  for (int i = 0; i < 8; i++) {
+    preap_stalk_last[i] = 0U;
+  }
   preap_radar_position = 0;
   preap_radar_epas_type = 0;
   preap_radar_vin_complete = 0U;
@@ -527,8 +728,10 @@ static safety_config tesla_preap_init(uint16_t param) {
   safety_config ret;
   if (preap_calibration_requested) {
     ret = (safety_config){NULL, 0, NULL, 0};  // not ported: silent
+  } else if (preap_enable_pedal && (preap_pedal_bus == 0U)) {
+    ret = BUILD_SAFETY_CFG(tesla_preap_rx_checks_pedal_bus0, TESLA_PREAP_TX_MSGS);
   } else if (preap_enable_pedal) {
-    ret = BUILD_SAFETY_CFG(tesla_preap_rx_checks_pedal, TESLA_PREAP_TX_MSGS);
+    ret = BUILD_SAFETY_CFG(tesla_preap_rx_checks_pedal_bus2, TESLA_PREAP_TX_MSGS);
   } else {
     ret = BUILD_SAFETY_CFG(tesla_preap_rx_checks, TESLA_PREAP_TX_MSGS);
   }
@@ -540,4 +743,7 @@ const safety_hooks tesla_preap_hooks = {
   .rx = tesla_preap_rx_hook,
   .tx = tesla_preap_tx_hook,
   .fwd = tesla_preap_fwd_hook,
+  .get_checksum = tesla_preap_get_checksum,
+  .compute_checksum = tesla_preap_compute_checksum,
+  .get_counter = tesla_preap_get_counter,
 };

@@ -138,7 +138,14 @@ def profile_status(platform, source, settings=None, can_reason=None, pedal_bus_l
     else:
       bus = pedal_bus_learned if pedal_bus_learned in (0, 2) else settings.get("pedal_can_bus", 2)
       how = "learned" if pedal_bus_learned in (0, 2) else "set"
-      pedal = f"on, bus {bus} ({how}); longitudinal not ported, stock cruise"
+      from openpilot.selfdrive.car.tesla.preap_pedal import pedal_calibration
+      if pedal_calibration(settings) is None:
+        long_txt = "calibration missing, stock cruise"
+      elif pedal_bus_learned not in (0, 2):
+        long_txt = "pedal not seen at fingerprint, stock cruise"
+      else:
+        long_txt = "openpilot longitudinal when the openpilot-long toggle is on (pedal, regen only)"
+      pedal = f"on, bus {bus} ({how}); {long_txt}"
     if not settings.get("radar_enabled"):
       radar = "off"
     else:
