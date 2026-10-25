@@ -321,6 +321,8 @@ Use the `bogpilot-tesla-notautopilot` branch. It copies your NotAutopilot (NAP) 
    Keep `/data/openpilot_nap`. It holds NAP and any EPAS backups NAP made, and it makes switching back easy.
 4. **Check.** Open Settings > BogPilot > Vehicle Settings > VEHICLE SETTINGS > Tesla Car Type & NotAutopilot. The **NotAutopilot Settings** row should say **Imported** with a count. Details are in `/data/params_bogpilot/NAPMigrationStatus`.
 
+**Pre-AP cars:** steering needs panda firmware with safety mode 37 (Tesla Pre-AP), which only DEBUG (`ALLOW_DEBUG`) builds have. BogPilot flashes its own panda firmware at boot, so there is nothing to install by hand. **Not ready yet:** the firmware shipped on this branch doesn't include mode 37, so Pre-AP cars won't steer until it is rebuilt. AP1 is not affected. Details: [Pre-AP needs the right panda firmware](docs/NOTAUTOPILOT.md#pre-ap-needs-the-right-panda-firmware).
+
 To go back to NAP, see [Switching back to NotAutopilot](docs/NOTAUTOPILOT.md#switching-back-to-notautopilot). For problems, see [Troubleshooting](docs/NOTAUTOPILOT.md#troubleshooting).
 
 🧰 How to Install

@@ -17,7 +17,7 @@ BogPilot. The `bogpilot-tesla-notautopilot` branch is `bogpilot-tesla` with a fe
   not on the comma device. Switching software does not undo it.
 - **Your radar setup stays.** A radar that learned your car's VIN keeps it. That also lives in the car.
 - **The panda gets reflashed automatically.** BogPilot puts its own panda firmware on at the first boot.
-  That is normal.
+  That is normal. See [Pre-AP needs the right panda firmware](#pre-ap-needs-the-right-panda-firmware).
 - **Write down your NAP settings** (pedal on or off, radar on or off, radar offset) in case you need to
   set them again by hand.
 - Do all of this parked, with the car off, and the device on Wi-Fi.
@@ -188,6 +188,23 @@ Leave it on **Auto** unless the "Detected Car Type" row is wrong. Pick **Pre-AP*
 Autopilot hardware that uses NAP's add-ons (patched steering, pedal, radar). The change applies the next
 time you turn the car on. The rows under it show which type BogPilot used, why, and whether it sees your
 pedal and radar.
+
+## Pre-AP needs the right panda firmware
+
+Pre-AP steering only works when the panda runs firmware that has **safety mode 37 (Tesla Pre-AP)**. That mode
+is only built into DEBUG panda firmware (`ALLOW_DEBUG`), the same kind NAP uses. AP1 needs DEBUG firmware too.
+
+**How you get it:** you don't do anything. BogPilot ships its panda firmware in `panda/board/obj/` and
+flashes it at boot whenever the panda's firmware doesn't match. NAP's panda firmware is replaced at the first
+boot.
+
+> **Not ready yet on this branch.** The panda firmware currently shipped here was built before mode 37 was
+> added, so it doesn't have it. Until a rebuilt firmware lands, a Pre-AP car will not steer: the panda falls
+> back to a no-output mode and BogPilot shows a "Controls Mismatch" error. AP1 cars are not affected. This note
+> will be removed once the rebuilt firmware is on the branch.
+
+To check which panda firmware BogPilot ships, over SSH: `cat /data/openpilot/panda/board/obj/version`. It should end in
+`-DEBUG`.
 
 ## Switching back to NotAutopilot
 
