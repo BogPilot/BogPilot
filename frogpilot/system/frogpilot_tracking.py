@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
+import datetime
 import json
+import os
+
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cereal import log
 from openpilot.common.conversions import Conversions as CV
@@ -15,6 +20,75 @@ from openpilot.frogpilot.controls.lib.weather_checker import WEATHER_CATEGORIES
 
 RANDOM_EVENT_START = FrogPilotEventName.accel30
 RANDOM_EVENT_END = FrogPilotEventName.youveGotMail
+
+# BogPilot: local per-day drive ledger for the home screen "PAST WEEK" (and "ALL TIME" fallback) rows, which
+# otherwise only fill from comma's /v1.1/devices/<dongle>/stats API. File-backed because the prebuilt
+# params_pyx.so cannot store new Params keys. Format: {"YYYY-MM-DD": {"routes": n, "meters": m, "seconds": s}},
+# keyed by the device's LOCAL calendar day (midnight to midnight in the zone timed.py set).
+#
+# Time zone rule (must match localTimeZone() in frogpilot/ui/qt/widgets/drive_stats.cc):
+#   1. Params "Timezone" (IANA name timed.py stores from GPS, and restores at boot)
+#   2. /data/etc/timezone (the name timed.py writes next to the /data/etc/localtime symlink)
+#   3. the process's system zone, then UTC
+# The name is read explicitly on every flush instead of trusting the process zone, because this process and
+# the UI start before timed sets the zone from GPS and may have cached the old one.
+DRIVE_HISTORY_PATH = Path("/data/params_bogpilot/DriveHistory")
+DRIVE_HISTORY_DAYS = 14
+TIMEZONE_NAME_PATH = Path("/data/etc/timezone")
+
+def bogpilot_timezone(params_get=None):
+  names = []
+  try:
+    if params_get is not None:
+      names.append(params_get("Timezone", encoding="utf8"))
+  except Exception:
+    pass
+  try:
+    names.append(TIMEZONE_NAME_PATH.read_text())
+  except Exception:
+    pass
+  for name in names:
+    name = (name or "").strip()
+    if name:
+      try:
+        return ZoneInfo(name)
+      except Exception:
+        pass
+  return datetime.datetime.now().astimezone().tzinfo or datetime.timezone.utc
+
+def local_day(now_utc, tz):
+  if now_utc.tzinfo is None:
+    now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
+  return now_utc.astimezone(tz).date()
+
+def add_drive_history(day, routes=0, meters=0.0, seconds=0.0):
+  try:
+    history = json.loads(DRIVE_HISTORY_PATH.read_text()) if DRIVE_HISTORY_PATH.exists() else {}
+  except Exception:
+    history = {}
+  if not isinstance(history, dict):
+    history = {}
+  try:
+    oldest = day - datetime.timedelta(days=DRIVE_HISTORY_DAYS)
+    kept = {}
+    for key, value in history.items():
+      try:
+        if datetime.date.fromisoformat(key) >= oldest and isinstance(value, dict):
+          kept[key] = value
+      except (TypeError, ValueError):
+        pass  # drop anything that isn't a YYYY-MM-DD key
+    key = day.isoformat()
+    bucket = kept.get(key, {})
+    bucket["routes"] = int(bucket.get("routes", 0)) + routes
+    bucket["meters"] = float(bucket.get("meters", 0)) + meters
+    bucket["seconds"] = float(bucket.get("seconds", 0)) + seconds
+    kept[key] = bucket
+    DRIVE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = DRIVE_HISTORY_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(kept, sort_keys=True))
+    os.replace(tmp, DRIVE_HISTORY_PATH)
+  except Exception as e:
+    print(f"DriveHistory write failed: {e}")
 
 class FrogPilotTracking:
   def __init__(self, frogpilot_planner, frogpilot_toggles):
@@ -52,6 +126,9 @@ class FrogPilotTracking:
     self.previously_enabled = False
 
     self.distance_since_override = 0
+    self.history_meters = 0
+    self.history_routes = 0
+    self.history_seconds = 0
     self.tracked_time = 0
 
     self.previous_random_events = set()
@@ -113,6 +190,7 @@ class FrogPilotTracking:
       self.frogpilot_stats["ExperimentalModeTime"] = self.frogpilot_stats.get("ExperimentalModeTime", 0) + DT_MDL
 
     self.frogpilot_stats["FrogPilotMeters"] = self.frogpilot_stats.get("FrogPilotMeters", 0) + distance_driven
+    self.history_meters += distance_driven
 
     if sm["frogpilotControlsState"].alertSound != self.previous_sound:
       if sm["frogpilotControlsState"].alertSound == FrogPilotAudibleAlert.goat:
@@ -194,9 +272,22 @@ class FrogPilotTracking:
 
       self.frogpilot_stats["TrackedTime"] = self.frogpilot_stats.get("TrackedTime", 0) + self.tracked_time
 
+      new_drive = not self.drive_added
+      # Same cadence and drive-credit rule as FrogPilotStats, so the two never disagree on what a "drive" is.
+      # Held back until the clock is valid (a 1970/stale date would land in the wrong day), then written to
+      # the device's local calendar day. now is aware UTC (frogpilot_process.py).
+      self.history_routes += int(new_drive)
+      self.history_seconds += self.tracked_time
+      if time_validated:
+        day = local_day(now, bogpilot_timezone(params.get))
+        add_drive_history(day, routes=self.history_routes, meters=self.history_meters, seconds=self.history_seconds)
+        self.history_meters = 0
+        self.history_routes = 0
+        self.history_seconds = 0
+
       self.tracked_time = 0
 
-      if not self.drive_added:
+      if new_drive:
         self.frogpilot_stats["FrogPilotDrives"] = self.frogpilot_stats.get("FrogPilotDrives", 0) + 1
         self.drive_added = True
 
