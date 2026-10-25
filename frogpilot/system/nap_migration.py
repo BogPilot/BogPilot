@@ -84,7 +84,7 @@ NOT_IMPORTED: dict[str, str] = {
 
 NAP_JSON_NOT_IMPORTED: dict[str, str] = {
   "double_pull_window_ms": "stalk double-pull timing; BogPilot never changes stalk behaviour",
-  "accel_profile": "see suggestions (FrogPilot Acceleration Profile is not changed automatically)",
+  "accel_profile": "see suggestions (BogPilot Acceleration Profile is not changed automatically)",
   "pedal_profile": "unused by NAP's code",
   "pedal_min": "raw ADC range, NAP-internal",
   "pedal_max": "raw ADC range, NAP-internal",
@@ -344,7 +344,7 @@ def suggestions(paths: Paths) -> dict[str, str]:
   nap_json = load_nap_json(paths) or {}
   profile = nap_json.get("accel_profile")
   if isinstance(profile, str) and profile in ACCEL_PROFILE_SUGGESTION:
-    out["AccelerationProfile"] = (f"NAP used the {profile} acceleration profile; the closest FrogPilot setting is "
+    out["AccelerationProfile"] = (f"NAP used the {profile} acceleration profile; the closest BogPilot setting is "
                                   f"{ACCEL_PROFILE_SUGGESTION[profile]} (Longitudinal settings). Not changed automatically.")
   return out
 

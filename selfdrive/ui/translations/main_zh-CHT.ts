@@ -4928,8 +4928,8 @@ Developer - 為資深愛好者提供高度自訂的設定</translation>
         <translation type="gpt-5-generated">地圖樣式</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Select the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai style&lt;br&gt;&lt;b&gt;FrogPilot&lt;/b&gt;: Official FrogPilot map style&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street-focused view&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Emphasizes outdoor and terrain features&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimalist, bright theme&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimalist, dark theme&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Optimized for daytime navigation&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Optimized for nighttime navigation&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Satellite imagery only&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Hybrid satellite imagery with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark theme emphasizing traffic conditions&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Customized hybrid satellite view</source>
-        <translation type="gpt-5-generated">&lt;b&gt;為「Navigate on openpilot」（NOO）選擇地圖樣式&lt;/b&gt;：&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;：預設 comma.ai 樣式&lt;br&gt;&lt;b&gt;FrogPilot&lt;/b&gt;：官方 FrogPilot 地圖樣式&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;：標準的街道導向視圖&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;：強調戶外與地形特徵&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;：極簡、明亮主題&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;：極簡、深色主題&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;：為日間導航最佳化&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;：為夜間導航最佳化&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;：僅衛星影像&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;：混合衛星影像與街道標籤&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;：強調交通狀況的深色主題&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;：自訂的混合衛星視圖</translation>
+        <source>&lt;b&gt;Select the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai style&lt;br&gt;&lt;b&gt;BogPilot&lt;/b&gt;: Official BogPilot map style&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street-focused view&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Emphasizes outdoor and terrain features&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimalist, bright theme&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimalist, dark theme&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Optimized for daytime navigation&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Optimized for nighttime navigation&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Satellite imagery only&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Hybrid satellite imagery with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark theme emphasizing traffic conditions&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Customized hybrid satellite view</source>
+        <translation type="gpt-5-generated">&lt;b&gt;為「Navigate on openpilot」（NOO）選擇地圖樣式&lt;/b&gt;：&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;：預設 comma.ai 樣式&lt;br&gt;&lt;b&gt;BogPilot&lt;/b&gt;：官方 BogPilot 地圖樣式&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;：標準的街道導向視圖&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;：強調戶外與地形特徵&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;：極簡、明亮主題&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;：極簡、深色主題&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;：為日間導航最佳化&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;：為夜間導航最佳化&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;：僅衛星影像&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;：混合衛星影像與街道標籤&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;：強調交通狀況的深色主題&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;：自訂的混合衛星視圖</translation>
     </message>
     <message>
         <source>Road Name</source>
@@ -5144,8 +5144,8 @@ Developer - 為資深愛好者提供高度自訂的設定</translation>
         <translation type="gpt-5-generated">原廠 openpilot</translation>
     </message>
     <message>
-        <source>FrogPilot</source>
-        <translation type="gpt-5-generated">FrogPilot</translation>
+        <source>BogPilot</source>
+        <translation type="gpt-5-generated">BogPilot</translation>
     </message>
     <message>
         <source>Mapbox Streets</source>
