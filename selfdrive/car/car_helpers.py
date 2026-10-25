@@ -68,7 +68,7 @@ interface_names = _get_interface_names()
 interfaces = load_interfaces(interface_names)
 
 
-def can_fingerprint(next_can: Callable) -> tuple[str | None, dict[int, dict]]:
+def can_fingerprint(next_can: Callable, observer=None) -> tuple[str | None, dict[int, dict]]:
   finger = gen_empty_fingerprint()
   candidate_cars = {i: all_legacy_fingerprint_cars() for i in [0, 1]}  # attempt fingerprint on both bus 0 and 1
   frame = 0
@@ -77,6 +77,8 @@ def can_fingerprint(next_can: Callable) -> tuple[str | None, dict[int, dict]]:
 
   while not done:
     a = next_can()
+    if observer is not None:
+      observer.update_can_msg(a)  # Tesla AP1/Pre-AP detection (tesla/preap_profile.py), read-only
 
     for can in a.can:
       # The fingerprint dict is generated for all buses, this way the car interface
@@ -109,7 +111,7 @@ def can_fingerprint(next_can: Callable) -> tuple[str | None, dict[int, dict]]:
 
 
 # **** for use live only ****
-def fingerprint(logcan, sendcan, num_pandas):
+def fingerprint(logcan, sendcan, num_pandas, observer=None):
   fixed_fingerprint = os.environ.get('FINGERPRINT', "")
   skip_fw_query = os.environ.get('SKIP_FW_QUERY', False)
   disable_fw_cache = os.environ.get('DISABLE_FW_CACHE', False)
@@ -162,7 +164,7 @@ def fingerprint(logcan, sendcan, num_pandas):
   # CAN fingerprint
   # drain CAN socket so we get the latest messages
   messaging.drain_sock_raw(logcan)
-  car_fingerprint, finger = can_fingerprint(lambda: get_one_can(logcan))
+  car_fingerprint, finger = can_fingerprint(lambda: get_one_can(logcan), observer)
 
   exact_match = True
   source = car.CarParams.FingerprintSource.can
@@ -184,15 +186,43 @@ def fingerprint(logcan, sendcan, num_pandas):
   return car_fingerprint, finger, vin, car_fw, source, exact_match
 
 
+def _tesla_observer():
+  try:
+    from openpilot.selfdrive.car.tesla.preap_profile import ApEcuObserver
+    return ApEcuObserver()
+  except Exception:
+    return None
+
+
 def get_car_interface(CP, FPCP):
   CarInterface, CarController, CarState = interfaces[CP.carFingerprint]
   return CarInterface(CP, FPCP, CarController, CarState)
 
 
 def get_car(logcan, sendcan, experimental_long_allowed, params, num_pandas=1, frogpilot_toggles=None):
-  candidate, fingerprints, vin, car_fw, source, exact_match = fingerprint(logcan, sendcan, num_pandas)
+  observer = _tesla_observer()
+  candidate, fingerprints, vin, car_fw, source, exact_match = fingerprint(logcan, sendcan, num_pandas, observer)
 
-  if candidate is None or frogpilot_toggles.force_fingerprint:
+  # Early Model S profile (AP1 / Pre-AP, tesla/preap_select.py). None keeps the
+  # original block below, which is what every configured device gets.
+  tesla_choice, tesla_source = None, "existing"
+  try:
+    from openpilot.selfdrive.car.tesla import preap_select
+    fixed = os.environ.get('FINGERPRINT', "")
+    car_model_param = preap_select.known_car_model(params.get("CarModel"), interfaces)
+    if preap_select.needs_more_observation(candidate, frogpilot_toggles.force_fingerprint, car_model_param, fixed, observer):
+      preap_select.observe_more(observer, lambda: get_one_can(logcan))
+    tesla_choice = preap_select.choose(candidate, frogpilot_toggles.force_fingerprint, frogpilot_toggles.car_model,
+                                       car_model_param, fixed, observer)
+    tesla_source = "fixed" if fixed else "existing"
+  except Exception:
+    cloudlog.exception("tesla profile selection failed")
+    tesla_choice = None
+
+  if tesla_choice is not None and tesla_choice[0] in interfaces:
+    candidate, tesla_source = tesla_choice  # never written to CarModel
+    cloudlog.event("tesla profile", candidate=candidate, source=tesla_source)
+  elif candidate is None or frogpilot_toggles.force_fingerprint:
     if frogpilot_toggles.car_model is not None:
       candidate = frogpilot_toggles.car_model
     else:
@@ -213,6 +243,12 @@ def get_car(logcan, sendcan, experimental_long_allowed, params, num_pandas=1, fr
   CP.carFw = car_fw
   CP.fingerprintSource = source
   CP.fuzzyFingerprint = not exact_match
+
+  try:
+    from openpilot.selfdrive.car.tesla.preap_select import write_status
+    write_status(candidate, tesla_source, fingerprints)  # TeslaProfileStatus, once per fingerprint
+  except Exception:
+    cloudlog.exception("tesla profile status failed")
 
   return get_car_interface(CP, FPCP), CP, FPCP
 
