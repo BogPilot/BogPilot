@@ -327,8 +327,6 @@ else:
   if arch == "larch64":
     qt_libs += ["GLESv2", "wayland-client"]
     qt_env.PrependENVPath('PATH', Dir("#third_party/qt5/larch64/bin/").abspath)
-    # Qt modules AGNOS 11+ doesn't ship (see third_party/qt5/larch64/README.md)
-    qt_dirs += [Dir("#third_party/qt5/larch64/include").abspath, Dir("#third_party/qt5/larch64/include/QtPositioning").abspath]
   elif arch != "Darwin":
     qt_libs += ["GL"]
 qt_env['QT3DIR'] = qt_env['QTDIR']
@@ -354,9 +352,6 @@ qt_flags = [
 qt_env['CXXFLAGS'] += qt_flags
 qt_env['LIBPATH'] += ['#selfdrive/ui', f"#third_party/maplibre-native-qt/{arch}/lib"]
 qt_env['RPATH'] += [Dir(f"#third_party/maplibre-native-qt/{arch}/lib").srcnode().abspath]
-if arch == "larch64":
-  qt_env['LIBPATH'] += ["#third_party/qt5/larch64/lib"]
-  qt_env['RPATH'] += [Dir("#third_party/qt5/larch64/lib").srcnode().abspath]
 qt_env['LIBS'] = qt_libs
 
 if GetOption("clazy"):

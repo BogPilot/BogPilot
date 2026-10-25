@@ -37,14 +37,6 @@ function agnos_init {
 # weston-ready are still installed but not enabled, so swap them in for this boot only.
 # A reboot brings magic back, so switching to a raylib fork (NotAutopilot) keeps working.
 function qt_display_init {
-  # Qt 5.12.8 modules AGNOS 11+ no longer ships (Qml, Quick, QuickWidgets, Positioning, Sql)
-  if [ -d "$DIR/third_party/qt5/larch64/lib" ]; then
-    export QML2_IMPORT_PATH="$DIR/third_party/qt5/larch64/qml"
-    export QT_PLUGIN_PATH="$DIR/third_party/qt5/larch64/plugins"
-    # RUNPATH is not transitive: libQMapLibre needs Qt5Sql, Qt5QuickWidgets needs Qt5Quick
-    export LD_LIBRARY_PATH="$DIR/third_party/qt5/larch64/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  fi
-
   if systemctl is-active --quiet weston-ready; then
     return
   fi
