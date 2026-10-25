@@ -1239,7 +1239,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;Automatically share anonymized driving data with FrogPilot to help improve it.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Only driving signals are shared: no video, no GPS or location, no VIN, and no identifiers. Turn this off to opt out.</source>
+        <source>&lt;b&gt;Help improve BogPilot&lt;/b&gt; by sharing a privacy-safe car fingerprint. BogPilot itself sends no data: this toggle does not upload anything. To share a fingerprint from your own logs, see github.com/BogPilot/bogpilot-fingerprint</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
