@@ -45,6 +45,15 @@ def manager_init() -> None:
 
   build_metadata = get_build_metadata()
 
+  # BogPilot: one-time import of NotAutopilot settings into /data/params_bogpilot (no-op on devices that never
+  # ran NAP). Must run before clear_all below, which deletes every unknown key (all NAP*), and before
+  # GitRemote/GitBranch are overwritten. Reads and copies raw files only; never raises.
+  try:
+    from openpilot.frogpilot.system.nap_migration import migrate_nap_once
+    migrate_nap_once()
+  except Exception:
+    pass
+
   # BogPilot: copy NotAutopilot (NAP*) settings to /data/params_bogpilot/NAPImport.json
   # before clear_all below deletes every non-BogPilot param file. One-shot (keeps
   # an existing snapshot), stdlib only, best-effort; never block boot.

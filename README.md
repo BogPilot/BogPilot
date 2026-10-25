@@ -84,6 +84,8 @@ The full stalk map is in `docs/tesla/STALK.md`. Every place this tree knowingly 
 
 The main branch includes the SLC / stalk cruise work, the milestone 4 longitudinal smoothing and the additions above. Longitudinal control needs the DEBUG panda firmware that this branch builds. Do not enter `frogpilot.download`, which installs upstream FrogPilot.
 
+**Coming from NotAutopilot?** Use `installer.comma.ai/BogPilot/bogpilot-tesla-notautopilot`, or switch over SSH to keep your NAP settings. See [docs/NOTAUTOPILOT.md](docs/NOTAUTOPILOT.md).
+
 A sister AP1 port built on sunnypilot lives on `BogPilot/sunnypilot` branch `sunny-tesla`. It has not been road-tested.
 
 ---
@@ -285,6 +287,7 @@ And lots more! From safety enhancements to personalization options, **FrogPilot*
 | Branch                     | Install&nbsp;URL          | Description                                            | Recommended&nbsp;For     |
 |----------------------------|---------------------------|--------------------------------------------------------|--------------------------|
 | bogpilot-tesla             | `installer.comma.ai/BogPilot/bogpilot-tesla` | Main BogPilot branch (AP1 milestone 4: SLC / stalk cruise work plus longitudinal smoothing). | AP1 research, maintainer-driven |
+| bogpilot-tesla-notautopilot | `installer.comma.ai/BogPilot/bogpilot-tesla-notautopilot` | bogpilot-tesla plus a one-time NotAutopilot settings import and a Tesla Car Type (Auto / AP1 / Pre-AP) page. See [docs/NOTAUTOPILOT.md](docs/NOTAUTOPILOT.md). | Owners switching from NotAutopilot |
 | bogpilot-tesla-slc-raise   | `installer.comma.ai/BogPilot/bogpilot-tesla-slc-raise` | Testing branch for the SLC / stalk cruise and longitudinal smoothing work, merged into bogpilot-tesla at milestone 4. Use main. | Not needed |
 | bogpilot-tesla-cluster     | `installer.comma.ai/BogPilot/bogpilot-tesla-cluster` | Older AP1 cluster work branch. Behind bogpilot-tesla; use main. | Not needed |
 | FrogPilot                  | upstream FrogPilot only   | Upstream FrogPilot release name. Still accepted here.  | Not this fork            |

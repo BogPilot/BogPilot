@@ -3,6 +3,7 @@
 
 #include "frogpilot/ui/qt/offroad/vehicle_settings.h"
 #include "frogpilot/ui/qt/widgets/bogpilot_file_toggle.h"
+#include "frogpilot/ui/qt/widgets/bogpilot_tesla_setup.h"
 
 QStringList getCarNames(const QString &carMake, QMap<QString, QString> &carModels) {
   static QMap<QString, QString> makeMap = {
@@ -154,6 +155,7 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
   FrogPilotListWidget *hondaList = new FrogPilotListWidget(this);
   FrogPilotListWidget *subaruList = new FrogPilotListWidget(this);
   FrogPilotListWidget *teslaList = new FrogPilotListWidget(this);
+  FrogPilotListWidget *teslaSetupList = new FrogPilotListWidget(this);
   FrogPilotListWidget *toyotaList = new FrogPilotListWidget(this);
   FrogPilotListWidget *vehicleInfoList = new FrogPilotListWidget(this);
 
@@ -162,6 +164,7 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
   ScrollView *hondaPanel = new ScrollView(hondaList, this);
   ScrollView *subaruPanel = new ScrollView(subaruList, this);
   ScrollView *teslaPanel = new ScrollView(teslaList, this);
+  ScrollView *teslaSetupPanel = new ScrollView(teslaSetupList, this);
   ScrollView *toyotaPanel = new ScrollView(toyotaList, this);
   ScrollView *vehicleInfoPanel = new ScrollView(vehicleInfoList, this);
 
@@ -170,6 +173,7 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
   vehiclesLayout->addWidget(hondaPanel);
   vehiclesLayout->addWidget(subaruPanel);
   vehiclesLayout->addWidget(teslaPanel);
+  vehiclesLayout->addWidget(teslaSetupPanel);
   vehiclesLayout->addWidget(toyotaPanel);
   vehiclesLayout->addWidget(vehicleInfoPanel);
 
@@ -190,6 +194,14 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
 
     {"SubaruToggles", tr("Subaru Settings"), tr("<b>BogPilot features for Subaru vehicles.</b>"), ""},
     {"SubaruSNG", tr("Stop and Go"), tr("Stop and go for supported Subaru vehicles."), ""},
+
+    {"TeslaCarSetup", tr("Tesla Car Type & NotAutopilot"), tr("<b>Choose AP1 or Pre-AP by hand</b>, and see which car type BogPilot detected, why, and what it brought over from NotAutopilot."), ""},
+    {"TeslaCarProfile", tr("Car Type"), QString("<b>%1</b><br><br>%2<br><br>%3").arg(tr("Auto lets BogPilot pick. Choose AP1 or Pre-AP only if Auto picks the wrong one.")).arg(tr("Pre-AP is for 2012-2014 Model S cars without Autopilot hardware that use the NotAutopilot add-ons (patched steering, pedal, radar).")).arg(tr("Applies the next time you turn the car on.")), ""},
+    {"TeslaDetectedProfile", tr("Detected Car Type"), tr("<b>The car type BogPilot used on the last drive.</b>"), ""},
+    {"TeslaProfileReason", tr("Why This Car Type"), tr("<b>Why BogPilot picked it.</b>"), ""},
+    {"TeslaNAPImport", tr("NotAutopilot Settings"), tr("<b>Whether settings were carried over from NotAutopilot.</b>"), ""},
+    {"TeslaPedalStatus", tr("Pedal"), tr("<b>Pedal interceptor status.</b>"), ""},
+    {"TeslaRadarStatus", tr("Radar"), tr("<b>Radar status.</b>"), ""},
 
     {"TeslaAP1Toggles", tr("Tesla AP1 Settings"), tr("<b>BogPilot features for Tesla Model S and X with Autopilot 1.</b>"), ""},
     {"EnableICIntegration", tr("Dash Cluster Integration"), QString("<b>%1</b><br><br>%2").arg(tr("Show openpilot on the Tesla dash cluster while engaged: the cluster set speed (including curve and speed limit targets), the Autosteer icon, hands-on reminders, and the path line.")).arg(tr("Turn off to leave the dash cluster completely stock. openpilot then sends no cluster messages. Driving is the same either way. Takes effect right away.")), ""},
@@ -255,6 +267,37 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
         vehiclesLayout->setCurrentWidget(teslaPanel);
       });
       vehicleToggle = teslaButton;
+    } else if (param == "TeslaCarSetup") {
+      ButtonControl *teslaSetupButton = new ButtonControl(title, tr("MANAGE"), desc);
+      QObject::connect(teslaSetupButton, &ButtonControl::clicked, [vehiclesLayout, teslaSetupPanel, this]() {
+        openDescriptions(forceOpenDescriptions, toggles);
+        updateTeslaSetup();
+        vehiclesLayout->setCurrentWidget(teslaSetupPanel);
+      });
+      vehicleToggle = teslaSetupButton;
+    } else if (param == "TeslaCarProfile") {
+      // File-backed: /data/params_bogpilot/TeslaCarProfile = auto / ap1 / preap (see bogpilot_tesla_setup.h).
+      std::vector<QString> carTypes{tr("Auto"), tr("AP1"), tr("Pre-AP")};
+      teslaCarTypeToggle = new FrogPilotButtonsControl(title, desc, icon, carTypes, true, true, 200);
+      teslaCarTypeToggle->setCheckedButton(bogpilot::teslaCarTypeIndex());
+      QObject::connect(teslaCarTypeToggle, &FrogPilotButtonsControl::buttonClicked, [this](int id) {
+        const int current = bogpilot::teslaCarTypeIndex();
+        if (id == current) {
+          return;
+        }
+        if (id == 2 && this->parent->isTeslaAP1 && !FrogPilotConfirmationDialog::yesorno(tr("The last drive was identified as AP1. Use Pre-AP anyway?"), this)) {
+          teslaCarTypeToggle->setCheckedButton(current);
+          return;
+        }
+        bogpilot::writeFileText("TeslaCarProfile", bogpilot::teslaCarTypeValue(id));
+        updateTeslaSetup();
+        if (started && FrogPilotConfirmationDialog::toggleReboot(this)) {
+          Hardware::reboot();
+        }
+      });
+      vehicleToggle = teslaCarTypeToggle;
+    } else if (teslaSetupKeys.contains(param)) {
+      vehicleToggle = new LabelControl(title, "", desc);
     } else if (teslaKeys.contains(param)) {
       // File-backed (see bogpilot_file_toggle.h). Absent file = on, the car code's default.
       vehicleToggle = new bogpilot::FileToggleControl(param, true, title, desc, icon);
@@ -311,6 +354,8 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
       subaruList->addItem(vehicleToggle);
     } else if (teslaKeys.contains(param)) {
       teslaList->addItem(vehicleToggle);
+    } else if (teslaSetupKeys.contains(param) || param == "TeslaCarProfile") {
+      teslaSetupList->addItem(vehicleToggle);
     } else if (toyotaKeys.contains(param)) {
       toyotaList->addItem(vehicleToggle);
     } else if (vehicleInfoKeys.contains(param)) {
@@ -394,7 +439,26 @@ void FrogPilotVehiclesPanel::showEvent(QShowEvent *event) {
   static_cast<LabelControl*>(toggles["SDSUSupport"])->setText(parent->canUseSDSU ? tr("Yes") : tr("No"));
   static_cast<LabelControl*>(toggles["SNGSupport"])->setText(parent->hasSNG ? tr("Yes") : tr("No"));
 
+  updateTeslaSetup();
   updateToggles();
+}
+
+void FrogPilotVehiclesPanel::updateTeslaSetup() {
+  teslaCarTypeToggle->setCheckedButton(bogpilot::teslaCarTypeIndex());
+
+  const bogpilot::TeslaSetupStatus status = bogpilot::readTeslaSetupStatus(parent->isTeslaAP1, parent->hasPedal, parent->hasRadar);
+  auto setRow = [this](const QString &key, const QString &value, const QString &desc) {
+    LabelControl *row = static_cast<LabelControl*>(toggles[key]);
+    row->setText(value);
+    if (!desc.isEmpty()) {
+      row->setDescription(desc);
+    }
+  };
+  setRow("TeslaDetectedProfile", status.profile, status.profileDesc);
+  setRow("TeslaProfileReason", status.reason, status.reasonDesc);
+  setRow("TeslaNAPImport", status.nap, status.napDesc);
+  setRow("TeslaPedalStatus", status.pedal, status.pedalDesc);
+  setRow("TeslaRadarStatus", status.radar, status.radarDesc);
 }
 
 void FrogPilotVehiclesPanel::updateState(const UIState &s) {
@@ -429,6 +493,11 @@ void FrogPilotVehiclesPanel::updateToggles() {
       setVisible &= parent->isSubaru;
     } else if (teslaKeys.contains(key)) {
       setVisible &= parent->isTeslaAP1;
+    } else if (teslaSetupKeys.contains(key) || key == "TeslaCarProfile") {
+      // Every Tesla, not only AP1: a Pre-AP car may not be identified yet, so also show it when a car type was
+      // chosen, NotAutopilot settings were found, or Tesla is the selected make.
+      setVisible = parent->isTesla || QString::fromStdString(params.get("CarMake")).toLower() == "tesla" ||
+                   bogpilot::teslaFileExists("TeslaCarProfile") || bogpilot::teslaFileExists("NAPMigrationStatus");
     } else if (toyotaKeys.contains(key)) {
       setVisible &= parent->isToyota;
     } else if (vehicleInfoKeys.contains(key)) {
@@ -484,6 +553,8 @@ void FrogPilotVehiclesPanel::updateToggles() {
         toggles["SubaruToggles"]->setVisible(true);
       } else if (teslaKeys.contains(key)) {
         toggles["TeslaAP1Toggles"]->setVisible(true);
+      } else if (teslaSetupKeys.contains(key) || key == "TeslaCarProfile") {
+        toggles["TeslaCarSetup"]->setVisible(true);
       } else if (toyotaKeys.contains(key)) {
         toggles["ToyotaToggles"]->setVisible(true);
       } else if (vehicleInfoKeys.contains(key)) {
