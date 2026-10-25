@@ -613,6 +613,14 @@ struct CarParams {
     volkswagenMqbEvo @29;
     chryslerCusw @30;
     psa @31;
+    # 32-37 match NotAutopilot/opendbc cc39c7f car/car.capnp (MIT) so a NAP
+    # CarParams and BogPilot agree on the numbers. Only teslaPreap is used here.
+    fcaGiorgio @32;
+    rivian @33;
+    volkswagenMeb @34;
+    mg @35;
+    teslaLegacy @36;
+    teslaPreap @37;
   }
 
   enum SteerControlType {
