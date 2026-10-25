@@ -319,6 +319,7 @@ Use the `bogpilot-tesla-notautopilot` branch. It copies your NotAutopilot (NAP) 
    sudo reboot
    ```
    Keep `/data/openpilot_nap`. It holds NAP and any EPAS backups NAP made, and it makes switching back easy.
+   The first boot flashes AGNOS 10.1, which is a downgrade from NAP's 17.2. It takes about 10 minutes, so keep the device powered.
 4. **Check.** Open Settings > BogPilot > Vehicle Settings > VEHICLE SETTINGS > Tesla Car Type & NotAutopilot. The **NotAutopilot Settings** row should say **Imported** with a count. Details are in `/data/params_bogpilot/NAPMigrationStatus`.
 
 **Pre-AP cars:** steering needs panda firmware with safety mode 37 (Tesla Pre-AP), which only DEBUG (`ALLOW_DEBUG`) builds have. BogPilot flashes its own panda firmware at boot, so there is nothing to install by hand. **Not ready yet:** the firmware shipped on this branch doesn't include mode 37, so Pre-AP cars won't steer until it is rebuilt. AP1 is not affected. Details: [Pre-AP needs the right panda firmware](docs/NOTAUTOPILOT.md#pre-ap-needs-the-right-panda-firmware).

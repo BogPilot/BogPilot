@@ -101,6 +101,13 @@ sudo reboot
 - Wait until the `git clone` line finishes without an error before you reboot. If it fails, see
   [Troubleshooting](#troubleshooting).
 - The first boot can take several minutes while it builds.
+- **The first boot also changes the device's operating system (AGNOS).** BogPilot runs on AGNOS 10.1.
+  NotAutopilot (openpilot 0.11.x) uses AGNOS 17.2, and 0.10.x forks also use newer versions. If
+  `cat /VERSION` shows anything other than 10.1, the first boot flashes AGNOS 10.1. That's a downgrade
+  for most people coming from NotAutopilot or a 0.10.x/0.11.x fork. The screen shows progress and it
+  takes about 10 minutes. **Keep the device powered and don't unplug it.** Your `/data` folder,
+  including your settings and `openpilot_nap`, is kept. This downgrade hasn't been tested on every
+  comma 3X board yet; if it fails or the device won't boot afterwards, report it in an issue.
 - Your NAP folder stays as `/data/openpilot_nap`. **Keep it.** If NAP flashed your EPAS, that folder holds
   NAP's stock EPAS backup, and it makes switching back easy.
 - On the first boot, before anything else runs, BogPilot copies every NAP setting file to
@@ -207,6 +214,9 @@ To check which panda firmware BogPilot ships, over SSH: `cat /data/openpilot/pan
 `-DEBUG`.
 
 ## Switching back to NotAutopilot
+
+When NAP boots again it flashes its own AGNOS version (17.2 for nap-release) back.
+That takes about 10 minutes, so keep the device powered.
 
 On the device (over SSH):
 
