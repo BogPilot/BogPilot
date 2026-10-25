@@ -1268,7 +1268,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;After the offroad screen timeout, bounce the upload readout instead of turning the screen off.&lt;/b&gt;&lt;br&gt;&lt;br&gt;While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says "Up to date", it bounces the BogPilot logo with those words.&lt;br&gt;&lt;br&gt;Off until enabled. File &lt;b&gt;/data/params_bogpilot/OffroadScreensaver&lt;/b&gt; (1 on, 0 off). The prebuilt params store cannot take a new key.</source>
+        <source>&lt;b&gt;After the offroad screen timeout, bounce the upload readout instead of turning the screen off.&lt;/b&gt;&lt;br&gt;&lt;br&gt;While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says "Up to date", it bounces the BogPilot logo with those words.&lt;br&gt;&lt;br&gt;On by default. File &lt;b&gt;/data/params_bogpilot/OffroadScreensaver&lt;/b&gt; (1 on, 0 off). The prebuilt params store cannot take a new key.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

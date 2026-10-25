@@ -39,7 +39,7 @@ bool cardSaysUpToDate(const bogpilot_uprate::Sample &sample, qint64 age) {
 }
 
 bool enabled() {
-  return bogpilot::readFileToggle(QString::fromLatin1(bogpilot_screensaver::TOGGLE_KEY), false);
+  return bogpilot::readFileToggle(QString::fromLatin1(bogpilot_screensaver::TOGGLE_KEY), bogpilot_screensaver::TOGGLE_DEFAULT);
 }
 
 }  // namespace

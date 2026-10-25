@@ -7,8 +7,9 @@
 #include "frogpilot/ui/qt/onroad/upload_rate.h"
 
 // Offroad idle face, shown when the offroad screen timeout fires.
-// Default off. File toggle /data/params_bogpilot/OffroadScreensaver
-// ("1"/"true"/"on" enables; missing file, "0", "false", or "off" leaves the screen blank).
+// Default ON. File toggle /data/params_bogpilot/OffroadScreensaver
+// ("0"/"false"/"off" leaves the screen blank; "1"/"true"/"on", a missing file, or anything else
+// shows the screensaver). An explicit "0" written by the settings switch keeps it off.
 // July's prebuilt params_pyx.so rejects new Params keys, so this is not a Params key.
 //
 // Pending uploads bounce the same realdata speed (Mbps) and PENDING backlog the offroad
@@ -18,6 +19,7 @@
 
 namespace bogpilot_screensaver {
 constexpr const char TOGGLE_KEY[] = "OffroadScreensaver";
+constexpr bool TOGGLE_DEFAULT = true;  // missing/unknown file = on; must match device_settings.cc
 }
 
 class OffroadScreensaver : public QWidget {

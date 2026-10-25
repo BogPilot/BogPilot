@@ -52,7 +52,7 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : Fr
     {"ScreenBrightnessOnroad", tr("Screen Brightness (Onroad)"), tr("<b>The screen brightness while driving.</b>"), ""},
     {"ScreenRecorder", tr("Screen Recorder"), tr("<b>Add a button to the driving screen to record the display.</b>"), ""},
     {"ScreenTimeout", tr("Screen Timeout (Offroad)"), tr("<b>How long the screen stays on after being tapped while not driving.</b>"), ""},
-    {"OffroadScreensaver", tr("Offroad Screensaver"), tr("<b>After the offroad screen timeout, bounce the upload readout instead of turning the screen off.</b><br><br>While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says \"Up to date\", it bounces the BogPilot logo with those words.<br><br>Off until enabled. File <b>/data/params_bogpilot/OffroadScreensaver</b> (1 on, 0 off). The prebuilt params store cannot take a new key."), ""},
+    {"OffroadScreensaver", tr("Offroad Screensaver"), tr("<b>After the offroad screen timeout, bounce the upload readout instead of turning the screen off.</b><br><br>While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says \"Up to date\", it bounces the BogPilot logo with those words.<br><br>On by default. File <b>/data/params_bogpilot/OffroadScreensaver</b> (1 on, 0 off). The prebuilt params store cannot take a new key."), ""},
     {"ScreenTimeoutOnroad", tr("Screen Timeout (Onroad)"), tr("<b>How long the screen stays on after being tapped while driving.</b>"), ""},
     {"StandbyMode", tr("Standby Mode"), tr("<b>Turn the screen off while driving and automatically wake it up for alerts or engagement state changes.</b>"), ""}
   };
@@ -124,8 +124,9 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : Fr
     } else if (param == "ScreenTimeout" || param == "ScreenTimeoutOnroad") {
       deviceToggle = new FrogPilotParamValueControl(param, title, desc, icon, 5, 60, tr(" seconds"), {}, 5);
     } else if (param == "OffroadScreensaver") {
-      // File-backed (/data/params_bogpilot/OffroadScreensaver, default off). Not a Params key.
-      deviceToggle = new bogpilot::FileToggleControl(param, false, title, desc, icon);
+      // File-backed (/data/params_bogpilot/OffroadScreensaver, default ON: no file = on, an explicit
+      // "0" = off). The fallback must match bogpilot_screensaver::TOGGLE_DEFAULT. Not a Params key.
+      deviceToggle = new bogpilot::FileToggleControl(param, bogpilot_screensaver::TOGGLE_DEFAULT, title, desc, icon);
 
     } else {
       deviceToggle = new ParamControl(param, title, desc, icon);
