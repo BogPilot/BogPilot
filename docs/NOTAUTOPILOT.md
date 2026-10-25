@@ -108,6 +108,8 @@ sudo reboot
   takes about 10 minutes. **Keep the device powered and don't unplug it.** Your `/data` folder,
   including your settings and `openpilot_nap`, is kept. This downgrade hasn't been tested on every
   comma 3X board yet; if it fails or the device won't boot afterwards, report it in an issue.
+  To skip this downgrade, a 17.2-pinned version is being built and tested now; until it's ready, expect
+  the 10.1 flash.
 - Your NAP folder stays as `/data/openpilot_nap`. **Keep it.** If NAP flashed your EPAS, that folder holds
   NAP's stock EPAS backup, and it makes switching back easy.
 - On the first boot, before anything else runs, BogPilot copies every NAP setting file to
