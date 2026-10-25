@@ -17,6 +17,7 @@ from openpilot.selfdrive.car.tesla.cluster import (
 )
 from openpilot.selfdrive.car.tesla.engage_ramp import Ap1EngageSteerRamp
 from openpilot.selfdrive.car.tesla.hso import AP1_HANDS_ON_LEVEL, Ap1DriverYield, ap1_lat_active, ap1_steering_pressed
+from openpilot.selfdrive.car.tesla.preap_carcontroller import PreapController, preap_radar_config
 from openpilot.selfdrive.car.tesla.long_smooth import Ap1AccelSmoother, Ap1JerkLimit, ap1_brake_urgent, ap1_fcw
 from openpilot.selfdrive.car.tesla.steer_counter import Ap1SteerCounterSync
 from openpilot.selfdrive.car.tesla.teslacan import TeslaCAN
@@ -64,9 +65,20 @@ class CarController(CarControllerBase):
     configs = list(getattr(CP, "safetyConfigs", []) or [])
     self.ap1_standstill = (CP.carFingerprint == CAR.TESLA_AP1_MODELS and len(configs) > 0 and
                            bool(int(getattr(configs[0], "safetyParam", 0)) & Panda.FLAG_TESLA_AP1_STANDSTILL))
+    # Pre-AP only (preap_carcontroller.py). None on every other Tesla.
+    self.preap = None
+    if CP.carFingerprint == CAR.TESLA_PREAP_MODELS:
+      self.preap = PreapController(self.tesla_can, preap_radar_config(CP))
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
     actuators = CC.actuators
+    if self.preap is not None:
+      can_sends = self.preap.update(CC, CS, self.frame)
+      self.apply_angle_last = self.preap.apply_angle_last
+      new_actuators = actuators.as_builder()
+      new_actuators.steeringAngleDeg = self.apply_angle_last
+      self.frame += 1
+      return new_actuators, can_sends
 
     # Model 3/Y still cancels cruise when HANDS_ON and hands_on_level >= 3.
     # AP1 does not. Tinkla HSO pauses lateral and leaves long engaged.

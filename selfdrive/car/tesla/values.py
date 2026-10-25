@@ -26,6 +26,15 @@ class CAR(Platforms):
     TESLA_AP1_MODELS.specs,
     dbc_dict('tesla_powertrain', 'tesla_radar_continental_generated', chassis_dbc='tesla_can')
   )
+  # Pre-AP (2012-2014) Model S, no AP ECU. Ported from NotAutopilot
+  # (github.com/NotAutopilot/openpilot, opendbc cc39c7f) and Tinkla/BogGyver.
+  # Same chassis DBC and specs as AP1. Selected by preap_profile.py, never by
+  # CAN or FW fingerprint. Actuation needs SAFETY_TESLA_PREAP (37).
+  TESLA_PREAP_MODELS = PlatformConfig(
+    [CarDocs("Tesla Pre-AP Model S", "All")],
+    TESLA_AP1_MODELS.specs,
+    TESLA_AP1_MODELS.dbc_dict
+  )
 
 class TeslaPlatform(StrEnum):
   """Early-Tesla platforms. Recognition only; actuation is a later layer.

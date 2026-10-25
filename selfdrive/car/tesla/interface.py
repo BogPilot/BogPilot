@@ -13,6 +13,9 @@ class CarInterface(CarInterfaceBase):
   def _get_params(ret, candidate, fingerprint, car_fw, experimental_long, docs, frogpilot_toggles):
     ret.carName = "tesla"
 
+    if candidate == CAR.TESLA_PREAP_MODELS:
+      return CarInterface._get_params_preap(ret, fingerprint)
+
     # There is no safe way to do steer blending with user torque,
     # so the steering behaves like autopilot. This is not
     # how openpilot should be, hence dashcamOnly.
@@ -53,6 +56,34 @@ class CarInterface(CarInterfaceBase):
     # carState.left/rightBlindspot. Other Teslas keep enableBsm False.
     ret.enableBsm = candidate == CAR.TESLA_AP1_MODELS
 
+    ret.steerLimitTimer = 1.0
+    ret.steerActuatorDelay = 0.25
+    return ret
+
+  @staticmethod
+  def _get_params_preap(ret, fingerprint):
+    """Pre-AP Model S: lateral only on SAFETY_TESLA_PREAP, stock cruise.
+
+    Ported from NotAutopilot (opendbc cc39c7f interface.py Pre-AP branch), MIT.
+    Settings come from /data/params_bogpilot (preap_settings.py), no user input.
+    """
+    from openpilot.selfdrive.car.tesla.preap_settings import load_preap_settings
+    from openpilot.selfdrive.car.tesla.safety_flags import learn_pedal_bus, preap_safety_param
+    try:
+      settings, _ = load_preap_settings()
+    except Exception:
+      settings = {}
+    param = preap_safety_param(settings, learn_pedal_bus(fingerprint))
+    ret.safetyConfigs = [get_safety_config(car.CarParams.SafetyModel.teslaPreap, param)]
+    ret.dashcamOnly = False
+    ret.steerControlType = car.CarParams.SteerControlType.angle
+    ret.openpilotLongitudinalControl = False
+    ret.pcmCruise = True
+    ret.radarUnavailable = not bool(settings.get("radar_enabled"))
+    ret.radarTimeStep = (1.0 / 8)
+    ret.longitudinalActuatorDelay = 0.5
+    ret.enableBsm = False
+    ret.minEnableSpeed = -1.
     ret.steerLimitTimer = 1.0
     ret.steerActuatorDelay = 0.25
     return ret

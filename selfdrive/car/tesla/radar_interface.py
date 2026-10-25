@@ -10,6 +10,11 @@ class RadarInterface(RadarInterfaceBase):
     super().__init__(CP)
     self.CP = CP
 
+    if CP.carFingerprint == CAR.TESLA_PREAP_MODELS and CP.radarUnavailable:
+      # Pre-AP without radar emulation: no radar on bus 1.
+      self.rcp = None
+      return
+
     if CP.carFingerprint == CAR.TESLA_MODELS_RAVEN:
       messages = [('RadarStatus', 16)]
       self.num_points = 40

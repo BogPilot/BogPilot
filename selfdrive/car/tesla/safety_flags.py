@@ -63,3 +63,41 @@ def dashcam_only_for_candidate(candidate):
   is the interface param, and it does not require 0x2bf.
   """
   return candidate != CAR.TESLA_AP1_MODELS
+
+
+# ---- Pre-AP (CAR.TESLA_PREAP_MODELS, SAFETY_TESLA_PREAP) -------------------
+# Ported from NotAutopilot (NAP panda 282fae7 safety/modes/tesla_preap.h flag
+# bits and opendbc cc39c7f interface.py), MIT. Never used for AP1.
+
+# Comma Pedal GAS_SENSOR, NAP opendbc dbc/tesla_preap.dbc "BO_ 1362 GAS_SENSOR".
+PEDAL_SENSOR_ADDR = 0x552
+PEDAL_BUSES = (0, 2)
+
+
+def learn_pedal_bus(fingerprint):
+  """Bus (0 or 2) the pedal sensor was seen on during fingerprinting, else None.
+
+  None when it was seen on neither or on both (ambiguous: keep the setting).
+  NAP learns the pedal bus from the first GAS_SENSOR frame the same way.
+  """
+  seen = [bus for bus in PEDAL_BUSES if PEDAL_SENSOR_ADDR in (fingerprint.get(bus) or {})]
+  return seen[0] if len(seen) == 1 else None
+
+
+def preap_safety_param(settings, pedal_bus_learned=None):
+  """SAFETY_TESLA_PREAP param from load_preap_settings() values.
+
+  ENABLE_PEDAL is never set: pedal longitudinal is not ported, so the panda
+  keeps 0x551 blocked. PEDAL_BUS_ZERO only records the bus for that later
+  work. CALIBRATION is never set from the host.
+  """
+  flags = 0
+  if settings.get("radar_enabled"):
+    flags |= Panda.FLAG_TESLA_PREAP_RADAR_EMULATION
+    if settings.get("radar_behind_nosecone"):
+      flags |= Panda.FLAG_TESLA_PREAP_RADAR_BEHIND_NOSECONE
+  if settings.get("pedal_enabled"):
+    bus = pedal_bus_learned if pedal_bus_learned in PEDAL_BUSES else settings.get("pedal_can_bus", 2)
+    if bus == 0:
+      flags |= Panda.FLAG_TESLA_PREAP_PEDAL_BUS_ZERO
+  return flags

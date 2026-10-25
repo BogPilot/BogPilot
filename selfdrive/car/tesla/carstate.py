@@ -6,6 +6,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.car.tesla.blindspot import Ap1Blindspot, frames_from_vl_all
 from openpilot.selfdrive.car.tesla.cluster import CLUSTER_ADDRS, COUNTER_SIGNALS, MSG_NAMES
 from openpilot.selfdrive.car.tesla.hso import ap1_driver_input
+from openpilot.selfdrive.car.tesla.preap_carstate import PARSER_MESSAGES as PREAP_PARSER_MESSAGES, PreapEngagement, update_preap
 from openpilot.selfdrive.car.tesla.stalk_follow import dtr_sample, follow_seconds, parse_stalk_raw
 from openpilot.selfdrive.car.tesla.stalk_pull_hold import PULL_HOLD_ENABLED, StalkPullHold
 from openpilot.selfdrive.car.tesla.stalk_fwd_hold import FWD_HOLD_ENABLED, StalkFwdHold
@@ -51,8 +52,13 @@ class CarState(CarStateBase):
     self.epb_eac_revoked = False
     # AP1 only. Stock 0x399 blind-spot fields with a per-side hold (blindspot.py).
     self.ap1_bsm = Ap1Blindspot()
+    # Pre-AP only (preap_carstate.py). None on every other Tesla.
+    self.preap_engagement = PreapEngagement() if CP.carFingerprint == CAR.TESLA_PREAP_MODELS else None
 
   def update(self, cp, cp_cam, frogpilot_toggles):
+    if self.preap_engagement is not None:
+      return update_preap(self, cp), custom.FrogPilotCarState.new_message()
+
     ret = car.CarState.new_message()
     fp_ret = custom.FrogPilotCarState.new_message()
 
@@ -249,6 +255,9 @@ class CarState(CarStateBase):
 
   @staticmethod
   def get_can_parser(CP, FPCP):
+    if CP.carFingerprint == CAR.TESLA_PREAP_MODELS:
+      return CANParser(DBC[CP.carFingerprint]['chassis'], PREAP_PARSER_MESSAGES, CANBUS.chassis)
+
     messages = [
       # sig_address, frequency
       ("ESP_B", 50),
@@ -281,6 +290,10 @@ class CarState(CarStateBase):
 
   @staticmethod
   def get_cam_can_parser(CP, FPCP):
+    if CP.carFingerprint == CAR.TESLA_PREAP_MODELS:
+      # No AP ECU on Pre-AP: nothing to read on bus 2.
+      return CANParser(DBC[CP.carFingerprint]['chassis'], [], CANBUS.autopilot_chassis)
+
     messages = [
       # sig_address, frequency
       ("DAS_control", 40),
