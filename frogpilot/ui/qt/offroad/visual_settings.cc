@@ -92,7 +92,7 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
     {"AccelerationPath", tr("Acceleration Path"), tr("<b>Color the driving path by planned acceleration and braking.</b>"), ""},
     {"AdjacentPath", tr("Adjacent Lanes"), tr("<b>Show the driving paths for the left and right lanes.</b>"), ""},
     {"BlindSpotPath", tr("Blind Spot Path"), tr("<b>Show a red path when a vehicle is in that lane's blind spot.</b>"), ""},
-    {"BSMFlameTracks", tr("88 mph Flame Tracks"), tr("<b>When the red blind spot path turns off and the car in that lane is going faster than 88 mph, burn two DeLorean-style flame tire tracks down that lane for 3 seconds.</b><br><br>Uses the radar's adjacent lead speed. Display only. It doesn't change how openpilot drives.<br><br>Off until enabled. File <b>/data/params_bogpilot/BSMFlameTracks</b> (1 on, 0 off). The prebuilt params store cannot take a new key."), ""},
+    {"BSMFlameTracks", tr("Bog to the Future"), tr("<b>Show flame trails behind fast-passing cars on the blind-spot display.</b><br><br>When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds. This test build triggers above 25 mph.<br><br>Display only. It doesn't change how openpilot drives.<br><br>Off until enabled. Saved in <b>/data/params_bogpilot/BSMFlameTracks</b> (1 on, 0 off), the same file the flames read."), ""},
     {"Compass", tr("Compass"), tr("<b>Show the current driving direction</b> with a simple on-screen compass."), ""},
     {"OnroadDistanceButton", tr("Driving Personality Button"), tr("<b>Control and view the current driving personality</b> via a driving screen widget."), ""},
     {"PedalsOnUI", tr("Gas / Brake Pedal Indicators"), tr("<b>On-screen gas and brake indicators.</b><br><br><b>Dynamic</b>: Opacity changes according to how much openpilot is accelerating or braking<br><b>Static</b>: Full when active, dim when not"), ""},
@@ -168,7 +168,10 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
       borderMetricsButton = new FrogPilotButtonToggleControl(param, title, desc, icon, borderToggles, borderToggleNames);
       visualToggle = borderMetricsButton;
     } else if (param == "BSMFlameTracks") {
-      // File-backed (/data/params_bogpilot/BSMFlameTracks, default off). Not a Params key.
+      // "Bog to the Future" (Appearance > Driving Screen Widgets). File-backed
+      // (/data/params_bogpilot/BSMFlameTracks, default off), the same file bsm_flame_tracks.h re-reads
+      // every 2 s, so `echo 1 > /data/params_bogpilot/BSMFlameTracks` and this switch stay in sync.
+      // Not a Params key: the prebuilt params store cannot take a new key.
       visualToggle = new bogpilot::FileToggleControl(param, false, title, desc, icon);
     } else if (param == "DeveloperHUD") {
       // File-backed (/data/params_bogpilot/DeveloperHUD): the prebuilt params_pyx.so cannot store new Params keys
