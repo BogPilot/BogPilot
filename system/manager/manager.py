@@ -43,6 +43,15 @@ def manager_init() -> None:
 
   save_bootlog()
 
+  # BogPilot: copy NotAutopilot (NAP*) settings to /data/params_bogpilot/NAPImport.json
+  # before clear_all below deletes every non-BogPilot param file. One-shot (keeps
+  # an existing snapshot), stdlib only, best-effort; never block boot.
+  try:
+    from openpilot.selfdrive.car.tesla.nap_import import snapshot_nap_params
+    snapshot_nap_params(Params().get_param_path())
+  except Exception:
+    pass
+
   build_metadata = get_build_metadata()
 
   params = Params()
