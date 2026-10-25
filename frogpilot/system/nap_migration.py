@@ -24,7 +24,7 @@ Rules (tests in frogpilot/system/tests/test_nap_migration.py enforce them):
     already set wins.
   - No Params writes at all (no CarModel, no ForceFingerprint, no FrogPilot toggles).
   - The car type is never forced. NAP's NAPCarType / NAPForcePreAP is recorded in the status file only;
-    the TeslaCarProfile override file belongs to the owner (Settings > Vehicles) and the Tesla car code
+    the TeslaCarProfile override file belongs to the owner (Settings > BogPilot > Vehicle Settings) and the Tesla car code
     decides AP1 vs Pre-AP itself, so an AP1 car that once ran nap-release is not pinned to Pre-AP.
   - Never touch set speed, top speed, cruise, stalk or stalk-pull behaviour (NAPFollowDistance and
     double_pull_window_ms are deliberately not imported), and never turn on OccViz or YOLO.
@@ -479,7 +479,7 @@ def migrate(paths: Paths | None = None, now: str | None = None) -> dict:
   nap_car_type, car_type_why = choose_car_type(paths)
   if nap_car_type is not None:
     log(f"NAP car type was {nap_car_type} ({car_type_why}); not forced. BogPilot picks AP1 or Pre-AP itself. "
-        f"To force it, use Settings > Vehicles > Tesla Car Type & NotAutopilot.")
+        f"To force it, use Settings > BogPilot > Vehicle Settings > Tesla Car Type & NotAutopilot.")
 
   status = {
     "version": STATUS_VERSION,
