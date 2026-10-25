@@ -110,7 +110,11 @@ def select_candidate(candidate, force_fingerprint, toggles_car_model, car_model_
   """
   if fixed_fingerprint:
     return fixed_fingerprint, "fixed"
-  if override in _PROFILE_TO_PLATFORM:
+  # The override only applies to a Tesla: a matched non-Tesla fingerprint, or a non-Tesla saved
+  # CarModel, keeps the original path (e.g. a device moved to another car with the file left over).
+  other_make = any(str(m).split("_")[0] not in ("", "None", "MOCK", "TESLA")
+                   for m in (candidate, car_model_param) if m is not None)
+  if override in _PROFILE_TO_PLATFORM and not other_make:
     return _PROFILE_TO_PLATFORM[override], "override"
 
   if candidate is None or force_fingerprint:
