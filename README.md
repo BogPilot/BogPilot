@@ -84,7 +84,7 @@ The full stalk map is in `docs/tesla/STALK.md`. Every place this tree knowingly 
 
 The main branch includes the SLC / stalk cruise work, the milestone 4 longitudinal smoothing and the additions above. Longitudinal control needs the DEBUG panda firmware that this branch builds. Do not enter `frogpilot.download`, which installs upstream FrogPilot.
 
-**Coming from NotAutopilot?** Use `installer.comma.ai/BogPilot/bogpilot-tesla-notautopilot`, or switch over SSH to keep your NAP settings. See [docs/NOTAUTOPILOT.md](docs/NOTAUTOPILOT.md).
+**Coming from NotAutopilot?** Switch over SSH to keep your NAP settings. Don't use NAP's Uninstall button, which wipes them. See [Coming from NotAutopilot](#coming-from-notautopilot) below and the full guide in [docs/NOTAUTOPILOT.md](docs/NOTAUTOPILOT.md).
 
 A sister AP1 port built on sunnypilot lives on `BogPilot/sunnypilot` branch `sunny-tesla`. It has not been road-tested.
 
@@ -295,6 +295,33 @@ And lots more! From safety enhancements to personalization options, **FrogPilot*
 | FrogPilot&#8209;Testing    | upstream FrogPilot only   | Upstream alpha. Not a BogPilot channel.                | Not this fork            |
 | FrogPilot&#8209;Development| No                        | Upstream development. Do not use.                      | Not this fork            |
 | MAKE&#8209;PRS&#8209;HERE  | No                        | Workspace for pull requests. Do not use.               | Contributors             |
+
+### Coming from NotAutopilot
+
+Use the `bogpilot-tesla-notautopilot` branch. It copies your NotAutopilot (NAP) pedal and radar settings over on the first boot. **Don't use NAP's Uninstall button**: it wipes `/data`, including your NAP settings. Switch over SSH instead. Full guide: [docs/NOTAUTOPILOT.md](docs/NOTAUTOPILOT.md).
+
+1. **Connect over SSH.** In NAP, open Settings > Developer, turn on Enable SSH, and add your GitHub username under SSH Keys. Then run `ssh comma@<comma-ip>` from your computer. comma's guide: [docs.comma.ai/how-to/connect-to-comma](https://docs.comma.ai/how-to/connect-to-comma/).
+2. **Back up your NAP settings to your computer.** On the device:
+   ```
+   cd /data
+   FILES="params/d/NAP*"
+   [ -f nap_params.json ] && FILES="$FILES nap_params.json"
+   [ -d openpilot/scripts/nap/firmware ] && FILES="$FILES openpilot/scripts/nap/firmware"
+   tar czf /data/nap_settings_backup.tar.gz $FILES
+   ```
+   Then, on your computer: `scp comma@<comma-ip>:/data/nap_settings_backup.tar.gz .`
+   **Keep this file private.** It can contain your car's VIN.
+3. **Switch.** On the device:
+   ```
+   cd /data
+   mv openpilot openpilot_nap
+   git clone --recurse-submodules --depth 1 -b bogpilot-tesla-notautopilot https://github.com/BogPilot/openpilot.git openpilot
+   sudo reboot
+   ```
+   Keep `/data/openpilot_nap`. It holds NAP and any EPAS backups NAP made, and it makes switching back easy.
+4. **Check.** Open Settings > BogPilot > Vehicle Settings > VEHICLE SETTINGS > Tesla Car Type & NotAutopilot. The **NotAutopilot Settings** row should say **Imported** with a count. Details are in `/data/params_bogpilot/NAPMigrationStatus`.
+
+To go back to NAP, see [Switching back to NotAutopilot](docs/NOTAUTOPILOT.md#switching-back-to-notautopilot). For problems, see [Troubleshooting](docs/NOTAUTOPILOT.md#troubleshooting).
 
 🧰 How to Install
 ------
