@@ -16,12 +16,15 @@ public:
   explicit DriveStats(QWidget *parent = 0);
 
 private:
-  void addStatsLayouts(const QString &title, StatsLabels &labels, bool FrogPilot = false);
+  QLabel *addStatsLayouts(const QString &title, StatsLabels &labels, bool FrogPilot = false);
+  QJsonObject localAllTime();
+  QJsonObject localPastWeek();
   void showEvent(QShowEvent *event) override;
   void updateFrogPilotStatsForLabel(StatsLabels &labels);
   void updateStats();
   void updateStatsForLabel(const QJsonObject &obj, StatsLabels &labels);
 
+  bool apiHasData = false;
   bool isMetric;
   bool konik;
 
@@ -32,6 +35,9 @@ private:
   StatsLabels all;
   StatsLabels frogPilot;
   StatsLabels week;
+
+  QLabel *allTitle;
+  QLabel *weekTitle;
 
 private slots:
   void parseResponse(const QString &response, bool success);
