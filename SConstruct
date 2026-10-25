@@ -3,6 +3,7 @@ import subprocess
 import sys
 import sysconfig
 import platform
+import importlib
 import numpy as np
 
 import SCons.Errors
@@ -94,6 +95,21 @@ lenv = {
 }
 
 rpath = lenv["LD_LIBRARY_PATH"].copy()
+
+# BogPilot: AGNOS 17+ dropped the system capnproto/zeromq/ffmpeg/... dev packages. They come as
+# vendored pip packages (commaai/dependencies) in /usr/local/venv instead, same as openpilot 0.11.
+# Older AGNOS (10.1) and PCs without them fall back to the system paths.
+vendor_pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd']
+vendor_pkgs = []
+for _name in vendor_pkg_names:
+  try:
+    _pkg = importlib.import_module(_name)
+    if hasattr(_pkg, 'INCLUDE_DIR') and hasattr(_pkg, 'LIB_DIR'):
+      vendor_pkgs.append(_pkg)
+  except ImportError:
+    pass
+vendor_cpppath = [p.INCLUDE_DIR for p in vendor_pkgs]
+vendor_libpath = [p.LIB_DIR for p in vendor_pkgs]
 
 if arch == "larch64":
   cpppath = [
@@ -196,7 +212,7 @@ env = Environment(
     "-Wno-vla-cxx-extension",
   ] + cflags + ccflags,
 
-  CPPPATH=cpppath + [
+  CPPPATH=cpppath + vendor_cpppath + [
     "#",
     "#third_party/acados/include",
     "#third_party/acados/include/blasfeo/include",
@@ -223,7 +239,7 @@ env = Environment(
 
   CFLAGS=["-std=gnu11"] + cflags,
   CXXFLAGS=["-std=c++1z"] + cxxflags,
-  LIBPATH=libpath + [
+  LIBPATH=vendor_libpath + libpath + [
     "#msgq_repo",
     "#third_party",
     "#selfdrive/pandad",
@@ -262,6 +278,10 @@ if os.environ.get('SCONS_PROGRESS'):
 
 # Cython build environment
 py_include = sysconfig.get_paths()['include']
+try:
+  py_include = importlib.import_module('python3_dev').INCLUDE_DIR
+except (ImportError, AttributeError):
+  pass
 envCython = env.Clone()
 envCython["CPPPATH"] += [py_include, np.get_include()]
 envCython["CCFLAGS"] += ["-Wno-#warnings", "-Wno-shadow", "-Wno-deprecated-declarations"]
@@ -307,6 +327,8 @@ else:
   if arch == "larch64":
     qt_libs += ["GLESv2", "wayland-client"]
     qt_env.PrependENVPath('PATH', Dir("#third_party/qt5/larch64/bin/").abspath)
+    # Qt modules AGNOS 11+ doesn't ship (see third_party/qt5/larch64/README.md)
+    qt_dirs += [Dir("#third_party/qt5/larch64/include").abspath, Dir("#third_party/qt5/larch64/include/QtPositioning").abspath]
   elif arch != "Darwin":
     qt_libs += ["GL"]
 qt_env['QT3DIR'] = qt_env['QTDIR']
@@ -332,6 +354,9 @@ qt_flags = [
 qt_env['CXXFLAGS'] += qt_flags
 qt_env['LIBPATH'] += ['#selfdrive/ui', f"#third_party/maplibre-native-qt/{arch}/lib"]
 qt_env['RPATH'] += [Dir(f"#third_party/maplibre-native-qt/{arch}/lib").srcnode().abspath]
+if arch == "larch64":
+  qt_env['LIBPATH'] += ["#third_party/qt5/larch64/lib"]
+  qt_env['RPATH'] += [Dir("#third_party/qt5/larch64/lib").srcnode().abspath]
 qt_env['LIBS'] = qt_libs
 
 if GetOption("clazy"):
