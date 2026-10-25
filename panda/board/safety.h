@@ -6,6 +6,7 @@
 #include "safety/safety_honda.h"
 #include "safety/safety_toyota.h"
 #include "safety/safety_tesla.h"
+#include "safety/safety_tesla_preap.h"
 #include "safety/safety_gm.h"
 #include "safety/safety_ford.h"
 #include "safety/safety_hyundai.h"
@@ -318,6 +319,7 @@ const safety_hook_config safety_hook_registry[] = {
 #endif
 #ifdef ALLOW_DEBUG
   {SAFETY_TESLA, &tesla_hooks},
+  {SAFETY_TESLA_PREAP, &tesla_preap_hooks},
   {SAFETY_SUBARU_PREGLOBAL, &subaru_preglobal_hooks},
   {SAFETY_VOLKSWAGEN_PQ, &volkswagen_pq_hooks},
   {SAFETY_ALLOUTPUT, &alloutput_hooks},
