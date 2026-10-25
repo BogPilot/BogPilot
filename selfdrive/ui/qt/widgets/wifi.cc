@@ -5,6 +5,12 @@
 #include <QPixmap>
 #include <QPushButton>
 
+#if BOGPILOT_UPLOAD_RATE
+#include <QDateTime>
+
+#include <algorithm>
+#endif
+
 WiFiPromptWidget::WiFiPromptWidget(QWidget *parent) : QFrame(parent) {
   stack = new QStackedLayout(this);
 
@@ -110,6 +116,16 @@ WiFiPromptWidget::WiFiPromptWidget(QWidget *parent) : QFrame(parent) {
   }
   stack->addWidget(notUploading);
 
+#if BOGPILOT_UPLOAD_RATE
+  // Realdata rlogsync upload (page 4)
+  realdataPage = buildRealdataPage();
+  stack->addWidget(realdataPage);
+
+  rdTimer = new QTimer(this);
+  QObject::connect(rdTimer, &QTimer::timeout, this, &WiFiPromptWidget::readRealdata);
+  rdTimer->start(bogpilot_uprate::READ_INTERVAL_MS);
+#endif
+
   setStyleSheet(R"(
     WiFiPromptWidget {
       background-color: #333333;
@@ -128,5 +144,191 @@ void WiFiPromptWidget::updateState(const UIState &s, const FrogPilotUIState &fs)
   auto network_type = sm["deviceState"].getDeviceState().getNetworkType();
   auto uploading = network_type == cereal::DeviceState::NetworkType::WIFI ||
       network_type == cereal::DeviceState::NetworkType::ETHERNET;
-  stack->setCurrentIndex(fs.frogpilot_toggles.value("no_uploads").toBool() ? 2 : uploading ? 1 : 0);
+  const bool no_uploads = fs.frogpilot_toggles.value("no_uploads").toBool();
+#if BOGPILOT_UPLOAD_RATE
+  // "Turn Off Data Uploads" only stops comma uploads; the realdata rsync is separate, so its card wins while it is
+  // fresh and notes the toggle in its footer. No fresh rate file (or ShowUploadRate off): the stock pages.
+  if (rdCommaUploadsOff != no_uploads) {
+    rdCommaUploadsOff = no_uploads;
+    refreshRealdata();
+  }
+  if (realdataShown) {
+    stack->setCurrentWidget(realdataPage);
+    return;
+  }
+#endif
+  stack->setCurrentIndex(no_uploads ? 2 : uploading ? 1 : 0);
 }
+
+#if BOGPILOT_UPLOAD_RATE
+// Labels start empty and their text is set at runtime (untranslated, like the onroad readout), so the UI's
+// "all strings wrapped" test and the .ts files are unaffected.
+QWidget *WiFiPromptWidget::buildRealdataPage() {
+  QWidget *page = new QWidget;
+  QVBoxLayout *layout = new QVBoxLayout(page);
+  layout->setContentsMargins(64, 56, 64, 56);
+  layout->setSpacing(0);
+
+  QHBoxLayout *title_layout = new QHBoxLayout;
+  rdTitle = new QLabel;
+  rdTitle->setStyleSheet("font-size: 64px; font-weight: 600;");
+  title_layout->addWidget(rdTitle);
+  title_layout->addStretch();
+  rdUploadingIcon = QPixmap("../assets/offroad/icon_wifi_uploading.svg").scaledToWidth(120, Qt::SmoothTransformation);
+  rdDoneIcon = QPixmap("../assets/img_circled_check.svg").scaledToWidth(100, Qt::SmoothTransformation);
+  rdIcon = new QLabel;
+  rdIcon->setPixmap(rdUploadingIcon);
+  title_layout->addWidget(rdIcon);
+  layout->addLayout(title_layout);
+  layout->addSpacing(28);
+
+  const QString small_style = "color: #AAAAAA; font-size: 36px; font-weight: 600;";
+  const QString status_style = "color: #AAAAAA; font-size: 38px; font-weight: 400;";
+
+  rdUpLabel = new QLabel;
+  rdUpLabel->setStyleSheet(small_style);
+  layout->addWidget(rdUpLabel);
+
+  QHBoxLayout *up_layout = new QHBoxLayout;
+  up_layout->setSpacing(16);
+  rdUpValue = new QLabel;
+  rdUpValue->setStyleSheet("font-size: 96px; font-weight: bold;");
+  up_layout->addWidget(rdUpValue);
+  rdUpArrow = new QLabel;
+  rdUpArrow->setStyleSheet("font-size: 96px; font-weight: bold;");
+  up_layout->addWidget(rdUpArrow);
+  up_layout->addStretch();
+  layout->addLayout(up_layout);
+
+  rdStatus = new QLabel;   // "no update for N s" while stale
+  rdStatus->setStyleSheet(status_style);
+  layout->addWidget(rdStatus);
+  layout->addSpacing(30);
+
+  rdPendLabel = new QLabel;
+  rdPendLabel->setStyleSheet(small_style);
+  layout->addWidget(rdPendLabel);
+  rdPendValue = new QLabel;
+  rdPendValue->setStyleSheet("font-size: 96px; font-weight: bold;");
+  layout->addWidget(rdPendValue);
+  rdPendSub = new QLabel;   // ETA / growing / seg count / all sent, coloured per state
+  rdPendSub->setStyleSheet("font-size: 42px; font-weight: 600;");
+  layout->addWidget(rdPendSub);
+  layout->addSpacing(22);
+
+  rdFooter = new QLabel;
+  rdFooter->setStyleSheet(status_style);
+  layout->addWidget(rdFooter);
+  layout->addStretch();
+
+  page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);   // no say in the card size until it is shown
+  return page;
+}
+
+void WiFiPromptWidget::showEvent(QShowEvent *event) {
+  QFrame::showEvent(event);
+
+  // Minimum height = the tallest state (sub-line + footer; the stale line replaces the sub-line), so the card keeps
+  // its size as the state changes. Measured once, after the stylesheets have been applied.
+  if (rdMinHeight == 0) {
+    realdataPage->ensurePolished();
+    rdTitle->setText("Uploading");
+    rdUpLabel->setText("REALDATA UPLOAD");
+    rdUpValue->setText("88.8 Mbps");
+    rdUpArrow->setText(QString::fromUtf8("↑"));
+    rdStatus->setVisible(false);
+    rdPendLabel->setText("PENDING");
+    rdPendValue->setText("88 GB");
+    rdPendSub->setText("ETA 1 h 25 min");
+    rdFooter->setText("comma uploads: off");
+    rdStatus->setText("no update for 88 s");
+    for (QLabel *l : {rdPendLabel, rdPendValue, rdPendSub, rdFooter}) l->setVisible(true);
+    const int fresh_h = realdataPage->layout()->sizeHint().height();
+    rdPendSub->setVisible(false);
+    rdStatus->setVisible(true);
+    const int stale_h = realdataPage->layout()->sizeHint().height();
+    rdMinHeight = std::max(fresh_h, stale_h);
+    realdataPage->setMinimumHeight(realdataShown ? rdMinHeight : 0);
+    for (QLabel *l : {rdTitle, rdUpLabel, rdUpValue, rdUpArrow, rdStatus, rdPendLabel, rdPendValue, rdPendSub, rdFooter}) l->clear();
+  }
+
+  readRealdata();
+}
+
+void WiFiPromptWidget::readRealdata() {
+  if (!isVisible()) {
+    return;
+  }
+  if (rdToggleCountdown-- <= 0) {
+    rdEnabled = bogpilot_uprate::toggleEnabled();
+    rdToggleCountdown = 1;   // every 2nd tick = 2 s
+  }
+  rdSample = rdEnabled ? bogpilot_uprate::readFile() : bogpilot_uprate::Sample();
+  refreshRealdata();
+  if (realdataShown) {
+    stack->setCurrentWidget(realdataPage);
+  } else if (stack->currentWidget() == realdataPage) {
+    stack->setCurrentIndex(rdCommaUploadsOff ? 2 : 1);   // stock page until the next uiUpdate picks the exact one
+  }
+}
+
+void WiFiPromptWidget::refreshRealdata() {
+  using namespace bogpilot_uprate;
+  const qint64 age = QDateTime::currentSecsSinceEpoch() - rdSample.epoch;
+  const bool shown = rdEnabled && fresh(rdSample, age);
+  if (shown != realdataShown) {
+    realdataShown = shown;
+    // the stack sizes to its largest page, so page 4 only takes part (size and minimum) while it is shown
+    realdataPage->setSizePolicy(shown ? QSizePolicy::Preferred : QSizePolicy::Ignored, shown ? QSizePolicy::Preferred : QSizePolicy::Ignored);
+    realdataPage->setMinimumHeight(shown ? rdMinHeight : 0);
+    updateGeometry();
+  }
+  if (!shown) {
+    return;
+  }
+
+  const bool stale = age > STALE_S;
+  const Backlog backlog = backlogState(rdSample);
+  const bool done = !stale && backlog == Backlog::CaughtUp;
+
+  rdTitle->setText(done ? "Up to date" : "Uploading");
+  rdIcon->setPixmap(done ? rdDoneIcon : rdUploadingIcon);
+
+  rdUpLabel->setText("REALDATA UPLOAD");
+  rdUpValue->setText(stale ? QString::fromUtf8("— Mbps") : mbps(rdSample.total) + " Mbps");
+  rdUpArrow->setText(QString::fromUtf8("↑"));
+  const QString arrow_style = QString("font-size: 96px; font-weight: bold; color: %1;").arg(stale || rdSample.total <= 0 ? "#777777" : "rgb(61, 220, 151)");
+  if (arrow_style != rdArrowStyle) {
+    rdArrowStyle = arrow_style;
+    rdUpArrow->setStyleSheet(arrow_style);
+  }
+
+  rdStatus->setText(QString("no update for %1 s").arg(age));
+  rdStatus->setVisible(stale);
+
+  // rlogsync v3.1 (5-field line): speed only
+  rdPendLabel->setVisible(rdSample.has_pending);
+  rdPendValue->setVisible(rdSample.has_pending);
+  rdPendSub->setVisible(rdSample.has_pending && !stale);
+  if (rdSample.has_pending) {
+    rdPendLabel->setText("PENDING");
+    rdPendValue->setText(stale ? QString::fromUtf8("— GB") : (rdSample.pending_bytes == 0 ? QString("0 MB") : sizeText(rdSample.pending_bytes)));
+    QColor color;
+    rdPendSub->setText(pendingSubLine(rdSample, &color));
+    const QString sub_style = QString("font-size: 42px; font-weight: 600; color: rgba(%1, %2, %3, %4);").arg(color.red()).arg(color.green()).arg(color.blue()).arg(color.alpha());
+    if (sub_style != rdSubStyle) {
+      rdSubStyle = sub_style;
+      rdPendSub->setStyleSheet(sub_style);
+    }
+  }
+
+  rdFooter->setText(rdCommaUploadsOff ? "comma uploads: off" : "");
+
+  // never shrink: if real text ever needs more than the measured minimum, keep the larger height from then on
+  const int h = realdataPage->layout()->sizeHint().height();
+  if (h > rdMinHeight) {
+    rdMinHeight = h;
+    realdataPage->setMinimumHeight(h);
+  }
+}
+#endif

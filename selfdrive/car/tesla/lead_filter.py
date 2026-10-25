@@ -16,6 +16,15 @@ Rules, per lead slot, at the radard rate (Tesla 20 Hz):
   frame. If the next frame agrees with the new lead, it is accepted, so a real
   cut-in is delayed by at most one frame.
 - A lead appearing (no lead -> lead) or disappearing is never delayed.
+- Close radar-only point under a confident camera lead (route 000000a5
+  20:44:38.2 ET): at 4 mph behind a stopped car the camera lead was at 9.5 m
+  (prob 1.00) and a stationary radar-only track at 2.06 m (modelProb 0) won
+  radard's low-speed override for 2 radar frames after the 1-frame hold above,
+  stepping the plan -0.47 -> -1.47 m/s^2 into the regen -> friction handoff
+  (brake pedal thunk). A radar-only lead closer than CLOSE_RADAR_ONLY_M that is
+  more than CONTRADICT_GAP_M short of a camera lead with prob >=
+  CONTRADICT_PROB, while the previous output was a lead, is held for up to
+  CONTRADICT_HOLD_FRAMES frames; still there after that, it is accepted.
 Pure Python. No CAN, no panda change.
 """
 
@@ -25,6 +34,9 @@ JUMP_V_MS = 3.0
 CONFIRM_D_M = 4.0
 CONFIRM_D_FRAC = 0.15
 CONFIRM_V_MS = 3.0
+CONTRADICT_PROB = 0.9
+CONTRADICT_GAP_M = 4.0
+CONTRADICT_HOLD_FRAMES = 4
 
 
 def camera_confirms(lead, model_prob, model_x, model_v, prob_threshold):
@@ -35,6 +47,12 @@ def camera_confirms(lead, model_prob, model_x, model_v, prob_threshold):
   d = lead['dRel']
   return (abs(d - model_x) <= max(CONFIRM_D_M, CONFIRM_D_FRAC * d) and
           abs(lead['vLead'] - model_v) <= CONFIRM_V_MS)
+
+
+def camera_contradicts(lead, model_prob, model_x):
+  """A close radar-only lead well short of a confident camera lead."""
+  return (bool(lead.get('status')) and bool(lead.get('radar', False)) and lead['dRel'] < CLOSE_RADAR_ONLY_M and
+          model_prob >= CONTRADICT_PROB and model_x - lead['dRel'] > CONTRADICT_GAP_M)
 
 
 def _jumped(a, b, dt):
@@ -49,8 +67,25 @@ class Ap1LeadGlitchFilter:
     self.pending = None   # candidate held back for one frame
     self.last_held = False
     self.held = 0         # count of glitch frames held (for logging/tests)
+    self.contradict = 0   # consecutive frames a camera-contradicted close point was held
 
   def update(self, lead, model_prob, model_x, model_v, prob_threshold):
+    if camera_contradicts(lead, model_prob, model_x):
+      self.contradict += 1
+      if self.prev is not None and self.contradict <= CONTRADICT_HOLD_FRAMES:
+        out = self._hold()
+        self.pending = None
+        self.last_held = True
+        self.prev = dict(out) if out.get('status') else None
+        return out
+      if self.contradict > CONTRADICT_HOLD_FRAMES:
+        # Held long enough and still there: accept it as a real close object.
+        self.pending = None
+        self.last_held = False
+        self.prev = dict(lead)
+        return lead
+    else:
+      self.contradict = 0
     out = lead
     suspect = False
     if lead.get('status') and not camera_confirms(lead, model_prob, model_x, model_v, prob_threshold):

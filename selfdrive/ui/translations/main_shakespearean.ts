@@ -1263,6 +1263,14 @@
         <source>Tesla's browser blocks private addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x), so connect the comma through a router that hands out a non-private range.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Offroad Screensaver</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;After the offroad screen timeout, bounce the upload readout instead of turning the screen off.&lt;/b&gt;&lt;br&gt;&lt;br&gt;While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says "Up to date", it bounces the BogPilot logo with those words.&lt;br&gt;&lt;br&gt;Off until enabled. File &lt;b&gt;/data/params_bogpilot/OffroadScreensaver&lt;/b&gt; (1 on, 0 off). The prebuilt params store cannot take a new key.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>FrogPilotDriveSummary</name>
@@ -5280,6 +5288,22 @@ Developer - Most customizable settings for well-tried enthusiasts</translation>
     </message>
     <message>
         <source>Right</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Accel Graph on Top</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Swap the top-left stack&lt;/b&gt;: the acceleration request graph sits on top and the speed row (MAX, speed, limit) sits below it.&lt;br&gt;&lt;br&gt;Display only. Takes effect on the driving screen within 2 seconds.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bog to the Future</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Show flame trails behind fast-passing cars on the blind-spot display.&lt;/b&gt;&lt;br&gt;&lt;br&gt;When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds.&lt;br&gt;&lt;br&gt;Display only. It doesn't change how openpilot drives.&lt;br&gt;&lt;br&gt;On by default. Saved in &lt;b&gt;/data/params_bogpilot/BSMFlameTracks&lt;/b&gt; (1 on, 0 off), the same file the flames read.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

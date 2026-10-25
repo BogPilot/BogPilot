@@ -23,6 +23,10 @@ void OnroadAlerts::updateState(const UIState &s, const FrogPilotUIState &fs) {
   sidebarsOpen = fs.frogpilot_scene.sidebars_open;
 }
 
+bool OnroadAlerts::lkasFaultShowing() const {
+  return alertShowing() && bogpilot::isLkasFaultAlert(alert.type, alert.text1, alert.text2);
+}
+
 void OnroadAlerts::clear() {
   alertHeight = 0;
 

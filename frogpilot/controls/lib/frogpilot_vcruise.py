@@ -6,6 +6,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import COMFO
 from openpilot.frogpilot.common.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME
 from openpilot.frogpilot.controls.lib.curve_speed_controller import CurveSpeedController
 from openpilot.frogpilot.controls.lib.speed_limit_controller import SpeedLimitController
+from openpilot.selfdrive.car.tesla.curve_speed import TESLA_CSC_MAX_LAT_ACCEL
 
 class FrogPilotVCruise:
   def __init__(self, FrogPilotPlanner):
@@ -47,6 +48,9 @@ class FrogPilotVCruise:
 
     v_ego_cluster = max(sm["carState"].vEgoCluster, v_ego)
     v_ego_diff = v_ego_cluster - v_ego
+
+    if frogpilot_toggles.car_make == "tesla":
+      self.csc.max_lateral_acceleration = TESLA_CSC_MAX_LAT_ACCEL
 
     # FrogsGoMoo's Curve Speed Controller
     if v_ego > CRUISING_SPEED and sm["controlsState"].enabled and self.frogpilot_planner.road_curvature_detected and frogpilot_toggles.curve_speed_controller:

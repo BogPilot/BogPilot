@@ -341,26 +341,41 @@ QRectF paintLabelPill(QPainter &p, qreal cx, qreal cy, qreal h, qreal pad, const
 
 }  // namespace
 
+qreal leadTagHudOverlap(const QRectF &r) {
+  constexpr qreal M = 8;
+  const QRectF row = QRectF(EDGE, speedRowTop(), SPEED_ROW_MIN_RIGHT - EDGE, SPEED_ROW_HEIGHT).adjusted(-M, -M, M, M);
+  const QRectF graph = accelGraphRect().adjusted(-M, -M, M, M);
+  auto area = [&](const QRectF &k) {
+    const QRectF i = r.intersected(k);
+    return i.isEmpty() ? 0.0 : i.width() * i.height();
+  };
+  return area(row) + area(graph);
+}
+
 bool paintLeadLabels(QPainter &p, const QRectF &box, const LeadLabels &l, const QRectF &view, qreal keepout_top) {
   constexpr qreal GAP = 8 + 14;          // bracket thickness + spacing, as for the old distance pill
-  constexpr qreal SPEED_H = 62, TAG_H = 46, STACK_GAP = 8;
-  const qreal cx = box.center().x();
-  const QColor speed_color = l.vision_only ? QColor(255, 255, 255, 150) : QColor(255, 255, 255);
-  const bool stacked = box.bottom() + GAP + TAG_H > keepout_top;
+  constexpr qreal TAG_H = 46;
+
+  paintLeadSpeedInBox(p, box, l.speed, l.vision_only, l.accent);
+  if (l.dist.isEmpty()) return false;
+
+  // Tag geometry for both sides (same width; x clamping does not change the vertical choice)
+  const qreal tag_w = QFontMetricsF(font(30, QFont::Bold)).horizontalAdvance(l.dist) +
+                      QFontMetricsF(font(22, QFont::DemiBold)).horizontalAdvance(" " + l.dist_unit) + 2 * 18;
+  const qreal cx = std::clamp(box.center().x(), view.left() + 8 + tag_w / 2, view.right() - 8 - tag_w / 2);
+  const QRectF below(cx - tag_w / 2, box.bottom() + GAP, tag_w, TAG_H);
+  const QRectF above(cx - tag_w / 2, box.top() - GAP - TAG_H, tag_w, TAG_H);
+  // Cost of each side: area hidden under the speed row / accel graph, plus any reach into the steering arc's area
+  const qreal below_cost = leadTagHudOverlap(below) + std::max<qreal>(0, below.bottom() - keepout_top) * tag_w;
+  const qreal above_cost = leadTagHudOverlap(above) + std::max<qreal>(0, view.top() + 8 - above.top()) * tag_w;
+  const bool put_above = below_cost > 0 && above_cost < below_cost;
 
   p.save();
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
-  if (stacked) {
-    const qreal tag_cy = box.top() - GAP - TAG_H / 2;
-    paintLabelPill(p, cx, tag_cy, TAG_H, 18, l.dist, 30, QColor(255, 255, 255), l.dist_unit, 22, view);
-    const qreal speed_cy = tag_cy - TAG_H / 2 - STACK_GAP - SPEED_H / 2;
-    paintLabelPill(p, cx, speed_cy, SPEED_H, 22, l.speed, 40, speed_color, l.speed_unit, 26, view, l.accent);
-  } else {
-    paintLabelPill(p, cx, box.top() - GAP - SPEED_H / 2, SPEED_H, 22, l.speed, 40, speed_color, l.speed_unit, 26, view, l.accent);
-    paintLabelPill(p, cx, box.bottom() + GAP + TAG_H / 2, TAG_H, 18, l.dist, 30, QColor(255, 255, 255), l.dist_unit, 22, view);
-  }
+  const qreal tag_cy = put_above ? above.center().y() : below.center().y();
+  paintLabelPill(p, box.center().x(), tag_cy, TAG_H, 18, l.dist, 30, QColor(255, 255, 255), l.dist_unit, 22, view);
   p.restore();
-  return stacked;
+  return put_above;
 }
 
 void paintLeadLock(QPainter &p, const QRectF &box, const QString &dist, const QColor &color) {
@@ -410,35 +425,152 @@ void paintLeadLock(QPainter &p, const QRectF &box, const QString &dist, const QC
   p.restore();
 }
 
-void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color) {
-  if (speed.isEmpty()) return;
+namespace {
+
+// Number pill centred in a lock-on box: 0.42 x box height (24-64 px), shrunk until it fits inside the corner brackets
+// (41 px on the smallest box, 97 px tall; 112 on the smallest box: 37 px).
+struct InBoxPill {
+  QRectF rect;
+  int px = 0;
+};
+
+InBoxPill inBoxPill(const QRectF &box, const QString &text) {
   constexpr qreal BRACKET = 8 + 6;                  // corner bracket thickness + breathing room, each side
+  InBoxPill out;
   const qreal avail_w = box.width() - 2 * BRACKET, avail_h = box.height() - 2 * BRACKET;
-  if (avail_w <= 0 || avail_h <= 0) return;
-  // 0.42 x box height: 41 px on the smallest box (97 px), 55 px at ~20 m, 64 px cap on the largest
+  if (avail_w <= 0 || avail_h <= 0 || text.isEmpty()) return out;
   int px = std::clamp(qRound(box.height() * 0.42), 24, 64);
-  qreal pad = 0, w = 0, h = 0;
-  for (int i = 0; i < 8; ++i) {                     // shrink until the pill fits inside the brackets
-    pad = px * 0.32;
-    w = QFontMetricsF(font(px, QFont::Bold)).horizontalAdvance(speed) + 2 * pad;
+  qreal w = 0, h = 0;
+  for (int i = 0; i < 8; ++i) {
+    const qreal pad = px * 0.32;
+    w = QFontMetricsF(font(px, QFont::Bold)).horizontalAdvance(text) + 2 * pad;
     h = px * 1.28;
     const qreal k = std::min(avail_w / w, avail_h / h);
     if (k >= 1.0 || px <= 18) break;
     px = std::max(18, int(std::floor(px * k)));
   }
   const QPointF c = box.center();
-  const QRectF pill(c.x() - w / 2, c.y() - h / 2, w, h);
+  out.rect = QRectF(c.x() - w / 2, c.y() - h / 2, w, h);
+  out.px = px;
+  return out;
+}
+
+}  // namespace
+
+QVector<QRectF> bottomCornerKeepout(qreal widget_w, bool rhd, bool map_button, bool pedals, const QVector<QRectF> &status_icons) {
+  auto mirrored = [&](const QRectF &r) { return rhd ? QRectF(widget_w - r.x() - r.width(), r.y(), r.width(), r.height()) : r; };
+  QVector<QRectF> k;
+  k.append(mirrored(QRectF(REC_CX - REC_HIT / 2, REC_CY - REC_HIT / 2, REC_HIT, REC_HIT)));
+  k.append(mirrored(QRectF(NOGPS_CX - REC_DIAMETER / 2, NOGPS_CY - REC_DIAMETER / 2, REC_DIAMETER, REC_DIAMETER)));
+  const qreal cluster_w = PILL_W + CLUSTER_GAP + CLUSTER_D + (map_button ? CLUSTER_GAP + CLUSTER_D : 0);
+  k.append(mirrored(QRectF(CLUSTER_LEFT, CLUSTER_CY - CLUSTER_D / 2 - PILL_LABEL_SPACE, cluster_w, CLUSTER_D + PILL_LABEL_SPACE)));
+  if (pedals) {
+    k.append(mirrored(QRectF(EDGE, STACK_BOTTOM + PEDAL_GAP, 2 * PEDAL_W, PEDAL_H)));
+  }
+  k += status_icons;
+  return k;
+}
+
+AdjacentSpeedPlacement placeAdjacentSpeed(const QRectF &box, const QString &speed, const QVector<QRectF> &keepout,
+                                          bool rhd, const QRectF &view) {
+  AdjacentSpeedPlacement out;
+  const InBoxPill pill = inBoxPill(box, speed);
+  out.rect = pill.rect;
+  out.px = pill.px;
+  if (pill.px == 0 || keepout.isEmpty()) return out;
+
+  const qreal m = ADJ_LABEL_MARGIN;
+  auto hits = [&](const QRectF &r) {
+    QVector<QRectF> h;
+    const QRectF grown = r.adjusted(-m, -m, m, m);
+    for (const QRectF &k : keepout) {
+      if (grown.intersects(k)) h.append(k);
+    }
+    return h;
+  };
+  if (hits(pill.rect).isEmpty()) return out;   // clear of the icons: stays in the box
+
+  const qreal w = pill.rect.width(), h = pill.rect.height();
+  const qreal cy = box.center().y();
+  QRectF r(rhd ? box.left() - ADJ_LABEL_OUTSIDE - w : box.right() + ADJ_LABEL_OUTSIDE, cy - h / 2, w, h);
+  for (int pass = 0; pass < 8; ++pass) {
+    const QVector<QRectF> hs = hits(r);
+    if (hs.isEmpty()) break;
+    qreal edge = rhd ? hs.first().left() : hs.first().right();
+    for (const QRectF &k : hs) edge = rhd ? std::min(edge, k.left()) : std::max(edge, k.right());
+    r.moveLeft(rhd ? edge - m - ADJ_LABEL_SLIDE_GAP - w : edge + m + ADJ_LABEL_SLIDE_GAP);
+  }
+  if (view.isValid()) {
+    r.moveLeft(std::clamp(r.left(), view.left() + 8, std::max(view.left() + 8, view.right() - 8 - w)));
+  }
+  out.rect = r;
+  out.outside = true;
+  const qreal gap = rhd ? box.left() - r.right() : r.left() - box.right();
+  if (gap > ADJ_LABEL_LEADER_MIN) {
+    out.leader = true;
+    out.leader_line = rhd ? QLineF(box.left() - ADJ_LABEL_BRACKET, cy, r.right(), cy)
+                          : QLineF(box.right() + ADJ_LABEL_BRACKET, cy, r.left(), cy);
+  }
+  return out;
+}
+
+void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color,
+                        const QVector<QRectF> &keepout, bool rhd, const QRectF &view) {
+  const AdjacentSpeedPlacement place = placeAdjacentSpeed(box, speed, keepout, rhd, view);
+  if (place.px == 0) return;
+  const QRectF &r = place.rect;
   const QColor ink(std::min(255, box_color.red() + 70), std::min(255, box_color.green() + 70),
                    std::min(255, box_color.blue() + 70), 240);
   p.save();
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+  if (place.leader) {
+    QColor lc = box_color;
+    lc.setAlpha(150);
+    p.setPen(QPen(lc, 3, Qt::SolidLine, Qt::RoundCap));
+    p.drawLine(place.leader_line);
+  }
   p.setPen(Qt::NoPen);
   p.setBrush(QColor(20, 22, 26, 165));
-  p.drawRoundedRect(pill, h / 2, h / 2);
-  p.setFont(font(px, QFont::Bold));
+  p.drawRoundedRect(r, r.height() / 2, r.height() / 2);
+  p.setFont(font(place.px, QFont::Bold));
   p.setPen(ink);
-  p.drawText(pill, Qt::AlignCenter, speed);
+  p.drawText(r, Qt::AlignCenter, speed);
   p.restore();
+}
+
+void paintLeadSpeedInBox(QPainter &p, const QRectF &box, const QString &speed, bool vision_only, const QColor &accent) {
+  const InBoxPill pill = inBoxPill(box, speed);
+  if (pill.px == 0) return;
+  const QRectF &r = pill.rect;
+  const QFont f = font(pill.px, QFont::Bold);
+  p.save();
+  p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+  p.setPen(Qt::NoPen);
+  p.setBrush(QColor(20, 22, 26, 190));              // a little darker than the adjacent pill (165)
+  p.drawRoundedRect(r, r.height() / 2, r.height() / 2);
+  if (accent.isValid()) {
+    const qreal tw = QFontMetricsF(f).horizontalAdvance(speed);
+    const qreal bar_h = std::max<qreal>(3, r.height() * 0.06);
+    p.setBrush(accent);
+    p.drawRoundedRect(QRectF(r.center().x() - tw / 2, r.bottom() - std::max<qreal>(5, r.height() * 0.10), tw, bar_h), 2, 2);
+  }
+  p.setFont(f);
+  // camera-only leads keep near-white ink (the "~" marks them) so the number stays readable on the 3X screen
+  p.setPen(vision_only ? QColor(255, 255, 255, 230) : QColor(255, 255, 255));
+  p.drawText(r, Qt::AlignCenter, speed);
+  p.restore();
+}
+
+// ---------------- LKAS Fault border ----------------
+
+bool isLkasFaultAlert(const QString &alert_type, const QString &text1, const QString &text2) {
+  return alert_type.startsWith("steerUnavailable/") || text1.contains("LKAS Fault", Qt::CaseInsensitive) ||
+         text2.contains("LKAS Fault", Qt::CaseInsensitive);
+}
+
+QColor lkasFaultBorderColor(double millis) {
+  const long long phase = (long long)std::floor(std::max(0.0, millis) / LKAS_FAULT_FLASH_MS);
+  return (phase % 2 == 0) ? LKAS_FAULT_RED : LKAS_FAULT_ORANGE;
 }
 
 // ---------------- round buttons ----------------

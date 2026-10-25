@@ -609,6 +609,31 @@ void AnnotatedCameraWidget::drawLaneLines(QPainter &painter, const UIState *s, c
   } else if ((sm["carState"].getCarState().getLeftBlindspot() || sm["carState"].getCarState().getRightBlindspot()) && frogpilot_toggles.value("blind_spot_path").toBool()) {
     frogpilot_nvg->paintBlindSpotPath(painter, sm["carState"].getCarState(), frogpilot_scene);
   }
+
+  // BogPilot 88 mph flame tire tracks: after the red BSM fill on a side turns off, if that side's
+  // adjacent radar lead is faster than 88 mph, burn two tire tracks down that lane for 3 s.
+  // Display only; red_fill_shown mirrors exactly when the two branches above draw the red fill.
+  {
+    const auto car_state = sm["carState"].getCarState();
+    const bool adjacent_ui = frogpilot_toggles.value("adjacent_path_metrics").toBool() || frogpilot_toggles.value("adjacent_paths").toBool();
+    const bool bs_path = frogpilot_toggles.value("blind_spot_path").toBool();
+    const double min_width = frogpilot_toggles.value("lane_detection_width").toDouble();
+    const bool blindspot[2] = {car_state.getLeftBlindspot(), car_state.getRightBlindspot()};
+    const float lane_width[2] = {frogpilot_scene.lane_width_left, frogpilot_scene.lane_width_right};
+    const bool radar_fresh = sm.rcv_frame("radarState") > scene.started_frame;
+    const auto fp_radar = fpsm["frogpilotRadarState"].getFrogpilotRadarState();
+    const auto lead_left = fp_radar.getLeadLeft();
+    const auto lead_right = fp_radar.getLeadRight();
+    bogpilot_flames::FlameSideInput flame_in[2];
+    for (int i = 0; i < 2; ++i) {
+      const bool lane_ok = adjacent_ui ? lane_width[i] >= min_width : lane_width[i] != 0;
+      flame_in[i].red_fill_shown = bs_path && blindspot[i] && lane_ok;
+      const auto &lead = i == 0 ? lead_left : lead_right;
+      flame_in[i].lead_status = radar_fresh && lead.getStatus();
+      flame_in[i].lead_v = lead.getVLead();
+    }
+    flameTracks.updateAndPaint(painter, flame_in, frogpilot_scene.track_adjacent_vertices);
+  }
   frogpilot_nvg->paintPathEdges(painter, fpsm["navInstruction"].getNavInstruction(), scene, frogpilot_scene, sm);
 
   painter.restore();
@@ -705,8 +730,9 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
   fillAlpha = std::clamp(fillAlpha, 0.f, 255.f);
 
   if (redesign) {
-    // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: lead speed pill above
-    // the box and a distance tag below (option A2); adjacent leads get the box plus their speed inside it (option A).
+    // BogPilot lead lock-on box v3 (replaces the chevron and the lead metrics text line). Main lead: speed number inside
+    // the box and a distance tag below it, flipped above for close leads (option B, v6); adjacent leads get the box plus
+    // their speed inside it (option A).
     const QRectF box = bogpilot::leadLockBox(vd, d_rel, width(), height());
     // v5: colour by time gap at the car's speed (primary white -> orange -> red, adjacent muted grey -> orange -> red)
     const QColor color = bogpilot::leadDistanceColor(lead_data.getDRel(), adjacent, (*uiState()->sm)["carState"].getCarState().getVEgo());
@@ -715,7 +741,10 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
       // Adjacent-lane lead: absolute speed (number only) inside the box; hidden below 5 so roadside returns stay unlabelled.
       const int adj_speed = qRound(std::max(0.0f, lead_data.getVLead()) * frogpilot_nvg->speedConversion);
       if (adj_speed >= bogpilot::ADJ_SPEED_MIN) {
-        bogpilot::paintAdjacentSpeed(painter, box, QString::number(adj_speed), color);
+        // moved outside the box when the lower-left icons would cover it (keepout from the last frame: the icons
+        // paint after the leads)
+        bogpilot::paintAdjacentSpeed(painter, box, QString::number(adj_speed), color, frogpilot_nvg->leadLabelKeepout,
+                                     rightHandDM, QRectF(rect()));
       }
     } else {
       frogpilot_nvg->leadTextRect = QRect();
@@ -723,7 +752,6 @@ void AnnotatedCameraWidget::drawLead(QPainter &painter, const cereal::RadarState
       labels.vision_only = !lead_data.getRadar();
       const int lead_speed = qRound(std::max(0.0f, lead_data.getVLead()) * frogpilot_nvg->speedConversion);
       labels.speed = (labels.vision_only ? "~" : "") + QString::number(lead_speed);
-      labels.speed_unit = speedUnit;
       labels.dist = QString::number(qRound(d_rel * frogpilot_nvg->distanceConversion));
       labels.dist_unit = frogpilot_nvg->distanceConversion == 1.0f ? "m" : "ft";
       if (v_rel < -4.4704f) {

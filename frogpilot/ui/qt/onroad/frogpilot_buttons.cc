@@ -2,6 +2,8 @@
 
 #include <QMouseEvent>
 
+#include <cmath>
+
 #include "frogpilot/ui/qt/onroad/bogpilot_redesign.h"
 
 DistanceButton::DistanceButton(QWidget *parent) : QPushButton(parent) {
@@ -90,6 +92,37 @@ void DistanceButton::updateTheme() {
   icon_map.insert(3, qMakePair(relaxed_img, relaxed_gif));
 }
 
+// AP1 stalk: the follow banner reads carState.cruiseState.speedOffset (stalk follow seconds) directly, while
+// controlsState.personality only changes after frogpilot_card writes LongitudinalPersonality and controlsd re-reads
+// it. A quick flick can leave that param path behind (icon stuck on Relaxed while the banner shows 1.25 s), so when
+// the stalk lands on a named detent the icon shows that personality until controlsState changes (catches up or a tap).
+int DistanceButton::livePersonality(const UIScene &scene) {
+  const int cs_personality = static_cast<int>(scene.personality);
+  const SubMaster &sm = *(uiState()->sm);
+  if (sm.rcv_frame("carParams") > 0 && sm["carParams"].getCarParams().getCarFingerprint() == "TESLA_AP1_MODELS") {
+    const float follow_s = sm["carState"].getCarState().getCruiseState().getSpeedOffset();
+    if (std::abs(follow_s - stalk_follow_s) > 1e-3) {
+      stalk_follow_s = follow_s;
+      // Stalk default seconds per named detent (selfdrive/car/tesla/stalk_follow.py); in-between detents keep the icon
+      static const float named_s[3] = {1.25f, 1.45f, 1.75f};  // Aggressive, Standard, Relaxed
+      for (int i = 0; i < 3; i++) {
+        if (std::abs(follow_s - named_s[i]) < 1e-3) {
+          stalk_personality = i;
+          stalk_cs_personality = cs_personality;
+        }
+      }
+    }
+  }
+  if (stalk_personality >= 0) {
+    if (cs_personality == stalk_personality || cs_personality != stalk_cs_personality) {
+      stalk_personality = -1;  // controlsd agrees, or it moved (screen tap / param landed): it is the source again
+    } else {
+      return stalk_personality;
+    }
+  }
+  return cs_personality;
+}
+
 void DistanceButton::updateState(const UIScene &scene, const FrogPilotUIScene &frogpilot_scene) {
   // Hold a tapped selection until controlsd reports it (or 1.5 s pass) so the pill does not flick back
   if (pending_personality >= 0) {
@@ -99,14 +132,16 @@ void DistanceButton::updateState(const UIScene &scene, const FrogPilotUIScene &f
     pending_personality = -1;
   }
 
+  const int live_personality = livePersonality(scene);
+
   bool state_changed = (traffic_mode_active != frogpilot_scene.traffic_mode_enabled) ||
-                       (personality != static_cast<int>(scene.personality) + 1 && !traffic_mode_active);
+                       (personality != live_personality + 1 && !traffic_mode_active);
 
   if (!state_changed) {
     return;
   }
 
-  personality = static_cast<int>(scene.personality) + 1;
+  personality = live_personality + 1;
   traffic_mode_active = frogpilot_scene.traffic_mode_enabled;
 
   update();

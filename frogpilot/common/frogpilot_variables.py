@@ -46,7 +46,6 @@ THRESHOLD = 0.63                          # Requires the condition to be true fo
 
 NON_DRIVING_GEARS = [GearShifter.neutral, GearShifter.park, GearShifter.reverse, GearShifter.unknown]
 
-FROGPILOT_API = "https://frogpilot.com/api"
 
 # BogPilot startup alert. The old FrogPilot defaults may already be stored on a device from an earlier
 # install, so they are treated as unset and replaced with the BogPilot text. Custom strings are kept.
@@ -79,7 +78,6 @@ def migrate_startup_messages(*stores):
 RESOURCES_REPO = "FrogAi/FrogPilot-Resources"
 
 ACTIVE_THEME_PATH = Path(__file__).parents[1] / "assets/active_theme"
-CITY_LOOKUP_PATH = Path(BASEDIR) / "frogpilot/assets/city_lookup.sqlite"
 METADATAS_PATH = Path(__file__).parents[1] / "assets/model_metadata"
 MODELS_PATH = Path("/data/models")
 RANDOM_EVENTS_PATH = Path(__file__).parents[1] / "assets/random_events"
@@ -375,7 +373,9 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("ForceTorqueController", "0", 3, "0"),
   ("FPSCounter", "1", 3, "0"),
   ("FrogPilotStats", "", 0, ""),
-  ("FrogPilotTelemetry", "1", 0, "1"),
+  # BogPilot: FrogPilot telemetry, stats and device registration are removed. Kept as an inert key
+  # (the prebuilt UI still has the toggle); tuning level 4 is above Developer (3), so it is hidden.
+  ("FrogPilotTelemetry", "0", 4, "0"),
   ("FrogsGoMoosTweak", "1", 2, "0"),
   ("FullMap", "0", 2, "0"),
   ("GasRegenCmd", "1", 2, "0"),
@@ -954,7 +954,7 @@ class FrogPilotVariables:
 
     toggle.force_fingerprint = (params.get_bool("ForceFingerprint") if toggle.tuning_level >= level["ForceFingerprint"] else default.get_bool("ForceFingerprint")) and toggle.car_model is not None
 
-    toggle.frogpilot_telemetry = params.get_bool("FrogPilotTelemetry") if toggle.tuning_level >= level["FrogPilotTelemetry"] else default.get_bool("FrogPilotTelemetry")
+    toggle.frogpilot_telemetry = False  # BogPilot: telemetry removed
 
     toggle.frogsgomoo_tweak = toggle.openpilot_longitudinal and toggle.car_make == "toyota" and (params.get_bool("FrogsGoMoosTweak") if toggle.tuning_level >= level["FrogsGoMoosTweak"] else default.get_bool("FrogsGoMoosTweak"))
     toggle.stoppingDecelRate = 0.01 if toggle.frogsgomoo_tweak else toggle.stoppingDecelRate

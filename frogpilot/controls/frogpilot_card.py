@@ -5,10 +5,13 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CRUISE_LONG_PRESS
 from openpilot.selfdrive.controls.lib.events import ET
 
 from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, GearShifter, NON_DRIVING_GEARS, params, params_memory
-from openpilot.selfdrive.car.tesla.stalk_follow import ap1_stalk_commands
+from openpilot.selfdrive.car.tesla.stalk_follow import ap1_stalk_commands, crossed_personality
 from openpilot.selfdrive.car.tesla.values import CAR
 
 ButtonType = car.CarState.ButtonEvent.Type
+
+AP1_PERSONALITY_RETRY_FRAMES = 10  # card runs at 100 Hz: re-check the stalk personality write every 0.1 s
+AP1_PERSONALITY_MAX_FRAMES = 300   # stop retrying after 3 s
 FrogPilotButtonType = custom.FrogPilotCarState.ButtonEvent.Type
 
 def handle_experimental_mode(conditional_experimental_mode):
@@ -38,6 +41,9 @@ class FrogPilotCard:
     self.prev_distance_button = False
     self.traffic_mode_enabled = False
     self._ap1_stalk_personality = None
+    self._ap1_stalk_detent = None
+    self._ap1_personality_target = None
+    self._ap1_personality_frames = 0
 
     self.gap_counter = 0
     self.onroad_press_start = None
@@ -125,14 +131,50 @@ class FrogPilotCard:
     if self.car.CP.carFingerprint != CAR.TESLA_AP1_MODELS:
       return
     cs = getattr(getattr(self.car, "CI", None), "CS", None)
-    traffic, personality = ap1_stalk_commands(getattr(cs, "stalk_follow", None))
+    decision = getattr(cs, "stalk_follow", None)
+    traffic, personality = ap1_stalk_commands(decision)
     if traffic is None:
       return
     self.traffic_mode_enabled = traffic
-    if personality is None or personality == self._ap1_stalk_personality:
+    # A move onto a named detent sets the target, even if it matches the cached personality: the cache goes
+    # stale after a screen tap or Settings change, and a quick flick (e.g. via an in-between detent) would be skipped.
+    detent = getattr(decision, "detent", None)
+    if personality is None:
+      # Landing on 1, 2, 4 or 6 after a quick twist that skipped a named detent on CAN (e.g. 7 -> 2 reported as
+      # 200, 166, 100, 33): apply the last named detent passed over, same as a slow twist through it.
+      personality = crossed_personality(self._ap1_stalk_detent, detent)
+    if personality is not None and (personality != self._ap1_stalk_personality or detent != self._ap1_stalk_detent):
+      self._ap1_personality_target = personality
+      self._ap1_personality_frames = 0
+    self._ap1_stalk_detent = detent
+    self._sync_ap1_personality()
+
+  def _sync_ap1_personality(self):
+    """Write the stalk's LongitudinalPersonality and re-check the stored value until it matches.
+
+    A put_nonblocking can be lost (Params async writer race) or overtaken, so the param is read back every
+    AP1_PERSONALITY_RETRY_FRAMES and rewritten while it differs. Gives up after AP1_PERSONALITY_MAX_FRAMES so a
+    later screen tap is never fought. Only the personality param is touched; follow time comes from the stalk.
+    """
+    target = self._ap1_personality_target
+    if target is None:
       return
-    params.put_nonblocking("LongitudinalPersonality", str(personality))
-    self._ap1_stalk_personality = personality
+    frames = self._ap1_personality_frames
+    self._ap1_personality_frames += 1
+    if frames == 0:
+      params.put_nonblocking("LongitudinalPersonality", str(target))
+      self._ap1_stalk_personality = target
+      return
+    if frames % AP1_PERSONALITY_RETRY_FRAMES:
+      return
+    try:
+      stored = int(params.get("LongitudinalPersonality"))
+    except (TypeError, ValueError):
+      stored = None
+    if stored == target or frames >= AP1_PERSONALITY_MAX_FRAMES:
+      self._ap1_personality_target = None
+      return
+    params.put_nonblocking("LongitudinalPersonality", str(target))
 
   def _apply_ap1_pull_hold(self):
     """AP1 long RWD stalk pull (~2 s) toggles Experimental Mode once.
@@ -164,13 +206,15 @@ class FrogPilotCard:
     handle_experimental_mode(self.car.frogpilot_toggles.conditional_experimental_mode)
 
   def update(self, carState, frogpilotCarState, sm):
+    # Upstream FrogPilot-Staging d83b149b: &= (was |=). With |=, AOL turned on whenever cruise was
+    # engaged even with the Always On Lateral toggle off, and ignored the LKAS/main condition when on.
     self.always_on_lateral_enabled = self.car.frogpilot_toggles.always_on_lateral_set
 
     if self.car.frogpilot_toggles.use_lkas_for_aol:
-      self.always_on_lateral_enabled |= self.car.frogpilot_toggles.always_on_lateral_lkas or carState.cruiseState.enabled
+      self.always_on_lateral_enabled &= self.car.frogpilot_toggles.always_on_lateral_lkas or carState.cruiseState.enabled
       self.always_on_lateral_enabled &= frogpilotCarState.alwaysOnLateralAllowed
     else:
-      self.always_on_lateral_enabled |= self.car.frogpilot_toggles.always_on_lateral_main or carState.cruiseState.enabled
+      self.always_on_lateral_enabled &= self.car.frogpilot_toggles.always_on_lateral_main or carState.cruiseState.enabled
       self.always_on_lateral_enabled &= carState.cruiseState.available
 
     self.always_on_lateral_enabled &= carState.gearShifter not in NON_DRIVING_GEARS
