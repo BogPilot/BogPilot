@@ -25,6 +25,9 @@ constexpr float TRIGGER_SPEED_MS = 25.0f * MPH_TO_MS;  // TEST BUILD: 25 mph (11
 constexpr int64_t DURATION_MS = 3000;                  // flames on screen
 constexpr int64_t GRACE_MS = 500;                      // lead may cross 88 mph up to 0.5 s after the fill turns off
 constexpr int64_t TOGGLE_RECHECK_MS = 2000;
+// Flame tongue height multiplier. 1.0 = the original tall tongues; 0.55 = low flames licking along the
+// tire track. Track width, geometry and timing do not depend on it.
+constexpr float FLAME_HEIGHT_SCALE = 0.55f;
 constexpr const char *TOGGLE_KEY = "BSMFlameTracks";
 
 struct FlameSideInput {
@@ -158,7 +161,7 @@ inline void paintTracks(QPainter &p, const QPolygonF &lane, float t, int64_t now
 
       // flame tongues licking up from the track
       if (i % 2 == 0 && fade > 0.05f) {
-        const float h = w * (2.5f + 1.5f * flick) * (1.0f - 0.5f * far);
+        const float h = FLAME_HEIGHT_SCALE * w * (2.5f + 1.5f * flick) * (1.0f - 0.5f * far);
         QPainterPath tongue;
         tongue.moveTo(a + QPointF(-w * 0.6f, 0));
         tongue.quadTo(a + QPointF(-w * 0.2f, -h * 0.6f), a + QPointF(w * 0.15f * flick, -h));
