@@ -89,12 +89,57 @@ def epas_control(mode):
   return pkt(0x214, dat)
 
 
-def pedal_cmd(raw_gas, enable, bus=2):
+def pedal_checksum(addr, dat):
+  # Comma Pedal: address bytes + data bytes 0-4 (Tinkla pedal/main.c, NAP teslacan.py)
+  return ((addr & 0xFF) + ((addr >> 8) & 0xFF) + sum(dat[:5])) & 0xFF
+
+
+def pedal_cmd(raw_gas, enable, bus=2, idx=0, raw2=None, bad_checksum=False):
+  # GAS_COMMAND 0x551 (tesla_preap_pedal.dbc BO_ 1361)
+  raw2 = (raw_gas // 2) if raw2 is None else raw2
   dat = bytearray(6)
-  dat[0] = (raw_gas >> 8) & 0xFF
-  dat[1] = raw_gas & 0xFF
-  dat[4] = 0x80 if enable else 0
+  dat[0], dat[1] = (raw_gas >> 8) & 0xFF, raw_gas & 0xFF
+  dat[2], dat[3] = (raw2 >> 8) & 0xFF, raw2 & 0xFF
+  dat[4] = (0x80 if enable else 0) | (idx & 0x0F)
+  dat[5] = pedal_checksum(0x551, dat) ^ (0xFF if bad_checksum else 0)
   return pkt(0x551, dat, bus)
+
+
+def gas_sensor(raw_gas, state=0, idx=0, bus=2, bad_checksum=False):
+  # GAS_SENSOR 0x552 (BO_ 1362): STATE 39|4 high nibble, IDX 35|4 low nibble of byte 4
+  dat = bytearray(6)
+  dat[0], dat[1] = (raw_gas >> 8) & 0xFF, raw_gas & 0xFF
+  dat[2], dat[3] = ((raw_gas // 2) >> 8) & 0xFF, (raw_gas // 2) & 0xFF
+  dat[4] = ((state & 0x0F) << 4) | (idx & 0x0F)
+  dat[5] = pedal_checksum(0x552, dat) ^ (0xFF if bad_checksum else 0)
+  return pkt(0x552, dat, bus)
+
+
+def di_state(cruise_state):
+  # DI_state 0x368 DI_cruiseState 12|4@1+ (tesla_can.dbc BO_ 872)
+  dat = bytearray(8)
+  dat[1] = (cruise_state & 0x0F) << 4
+  return pkt(0x368, dat)
+
+
+def crc8_stw(data):
+  # CRC-8 poly 0x1D, init 0xFF, xorout 0xFF (NAP crcmod 0x11d initCrc 0 xorOut 0xff)
+  crc = 0xFF
+  for b in data:
+    crc ^= b
+    for _ in range(8):
+      crc = ((crc << 1) ^ 0x1D) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
+  return crc ^ 0xFF
+
+
+def stalk_frame(lever, rest=(0x00, 0x00, 0x00, 0x00, 0x00), wiper=0, counter=0, vsl=1, inv=0):
+  # STW_ACTN_RQ 0x45 (tesla_can.dbc BO_ 69) with a valid CRC
+  dat = bytearray(8)
+  dat[0] = (lever & 0x3F) | (vsl << 6) | (inv << 7)
+  dat[1:6] = bytes(rest)
+  dat[6] = ((counter & 0x0F) << 4) | (wiper & 0x0F)
+  dat[7] = crc8_stw(dat[:7])
+  return dat
 
 
 def radar_cfg(rec, use_radar=True, position=0, epas_type=0, vin=" " * 17):
@@ -425,38 +470,74 @@ class TestTeslaPreapRadar(TestTeslaPreapSafety):
 
 
 class TestTeslaPreapPedal(unittest.TestCase):
+  """Pedal longitudinal (flag 1). Stricter than NAP f1a756d: checksum, counter,
+  sensor state and freshness, max gas, stock-cruise interlock, cancel spoof."""
+  PARAM = Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL
+  BUS = 2
+
+  def setUp(self):
+    self._setup(self.PARAM)
+
   def _setup(self, param):
     l.set_alternative_experience(0)
     self.assertEqual(l.set_safety_hooks(Panda.SAFETY_TESLA_PREAP, param), 0)
     l.init_tests()
+    self.t = 0
+    l.set_timer(0)
+    self.tx_idx = 0
+    self.rx_idx = 0
     l.safety_rx_hook(di_torque2(GEAR_D))
     l.safety_rx_hook(doors(False))
     l.safety_rx_hook(epas_status(0.0))
+    l.safety_rx_hook(di_state(1))  # stock cruise STANDBY
 
+  def _tick(self, us=10000):
+    self.t += us
+    l.set_timer(self.t)
+
+  def _sensor(self, raw=0, state=0, bus=None, **kw):
+    bus = self.BUS if bus is None else bus
+    ok = l.safety_rx_hook(gas_sensor(raw, state, self.rx_idx, bus, **kw))
+    self.rx_idx = (self.rx_idx + 1) % 16
+    return ok
+
+  def _cmd(self, raw, enable, bus=None, **kw):
+    bus = self.BUS if bus is None else bus
+    kw.setdefault("idx", self.tx_idx)
+    ok = l.safety_tx_hook(pedal_cmd(raw, enable, bus, **kw))
+    self.tx_idx = (kw["idx"] + 1) % 16
+    return ok
+
+  def _speed(self, kph):
+    for _ in range(6):
+      l.safety_rx_hook(esp_b(kph))
+
+  def _engaged_healthy(self):
+    self._sensor(0)
+    l.safety_rx_hook(stalk(LEVER_IDLE))
+    l.safety_rx_hook(stalk(LEVER_PULL))
+    l.safety_rx_hook(stalk(LEVER_IDLE))
+    self.assertTrue(l.get_controls_allowed())
+
+  # --- flag and bus gating ---
   def test_pedal_bus_selection(self):
-    self._setup(Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL)
-    self.assertTrue(l.safety_tx_hook(pedal_cmd(0, False, bus=2)))
-    self.assertFalse(l.safety_tx_hook(pedal_cmd(0, False, bus=0)))
+    self.assertTrue(self._cmd(0, False, bus=2))
+    self.assertFalse(self._cmd(0, False, bus=0))
     self._setup(Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL | Panda.FLAG_TESLA_PREAP_PEDAL_BUS_ZERO)
-    self.assertTrue(l.safety_tx_hook(pedal_cmd(0, False, bus=0)))
-    self.assertFalse(l.safety_tx_hook(pedal_cmd(0, False, bus=2)))
+    self.assertTrue(self._cmd(0, False, bus=0))
+    self.assertFalse(self._cmd(0, False, bus=2))
 
-  def test_pedal_enable_needs_controls_and_no_brake(self):
-    self._setup(Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL)
-    self.assertFalse(l.safety_tx_hook(pedal_cmd(800, True)))
-    l.safety_rx_hook(stalk(LEVER_PULL))
+  def test_sensor_only_on_configured_bus(self):
+    self._engaged_healthy()
+    l.safety_rx_hook(gas_sensor(2000, 0, 0, bus=0))  # driver gas on the wrong bus: ignored
     self.assertTrue(l.get_controls_allowed())
-    self.assertTrue(l.safety_tx_hook(pedal_cmd(800, True)))
-    self.assertFalse(l.safety_tx_hook(pedal_cmd(501, False)))
-    self.assertTrue(l.safety_tx_hook(pedal_cmd(500, False)))
+    self.assertTrue(self._cmd(1000, True))
 
-  def test_pedal_sensor_gas_threshold(self):
-    self._setup(Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL)
+  def test_no_pedal_without_flag(self):
+    self._setup(0)
     l.safety_rx_hook(stalk(LEVER_PULL))
-    l.safety_rx_hook(pkt(0x552, bytes((0x02, 0x8A, 0, 0, 0, 0)), bus=2))  # 650: not pressed
-    self.assertTrue(l.get_controls_allowed())
-    l.safety_rx_hook(pkt(0x552, bytes((0x02, 0x8B, 0, 0, 0, 0)), bus=2))  # 651: pressed
-    self.assertFalse(l.get_controls_allowed())
+    self.assertFalse(self._cmd(0, False))
+    self.assertFalse(self._cmd(800, True))
 
   def test_calibration_flag_is_silent(self):
     self._setup(Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL | Panda.FLAG_TESLA_PREAP_PEDAL_CALIBRATION)
@@ -464,7 +545,221 @@ class TestTeslaPreapPedal(unittest.TestCase):
     self.assertFalse(l.get_controls_allowed())
     self.assertFalse(l.safety_tx_hook(epas_control(1)))
     self.assertFalse(l.safety_tx_hook(steer(0.0, False)))
-    self.assertFalse(l.safety_tx_hook(pedal_cmd(0, False)))
+    self.assertFalse(self._cmd(0, False))
+
+  # --- ENABLE=1 preconditions ---
+  def test_enable_needs_controls(self):
+    self._sensor(0)
+    self.assertFalse(self._cmd(800, True))
+    self._engaged_healthy()
+    self.assertTrue(self._cmd(800, True))
+
+  def test_enable_blocked_while_braking(self):
+    self._engaged_healthy()
+    l.safety_rx_hook(brake_message(True))
+    self.assertFalse(l.get_controls_allowed())
+    self.assertFalse(self._cmd(800, True))
+    self.assertTrue(self._cmd(0, False))
+
+  def test_enable_needs_fresh_healthy_sensor(self):
+    l.safety_rx_hook(stalk(LEVER_PULL))
+    self.assertTrue(l.get_controls_allowed())
+    self.assertFalse(self._cmd(800, True))  # never seen
+    self._sensor(0, state=4)                # FAULT_STARTUP
+    self.assertFalse(self._cmd(800, True))
+    self._sensor(0, state=5)                # FAULT_TIMEOUT
+    self.assertFalse(self._cmd(800, True))
+    self._sensor(0, state=0)
+    self.assertTrue(self._cmd(800, True))
+    self._tick(99000)
+    self.assertTrue(self._cmd(800, True))
+    self._tick(2000)                        # > 100 ms since last GAS_SENSOR
+    self.assertFalse(self._cmd(800, True))
+    self._sensor(0)
+    self.assertTrue(self._cmd(800, True))
+
+  def test_sensor_bad_checksum_and_counter(self):
+    self._engaged_healthy()
+    self.assertFalse(self._sensor(0, bad_checksum=True))
+    self.assertFalse(l.get_controls_allowed())
+    self.assertFalse(self._cmd(800, True))
+    self._setup(self.PARAM)
+    self._engaged_healthy()
+    for _ in range(6):  # counter stuck: wrong_counters reaches the limit
+      l.safety_rx_hook(gas_sensor(0, 0, 3, self.BUS))
+    self.assertFalse(l.get_controls_allowed())
+
+  def test_sensor_gas_threshold(self):
+    self._engaged_healthy()
+    self._sensor(650)  # NAP: <= 650 raw is resting noise
+    self.assertTrue(l.get_controls_allowed())
+    self.assertTrue(self._cmd(800, True))
+    self._sensor(651)
+    self.assertFalse(l.get_controls_allowed())
+    self.assertFalse(self._cmd(800, True))
+
+  def test_gas_override_without_disengage(self):
+    l.set_alternative_experience(ALT_EXP_DISABLE_DISENGAGE_ON_GAS)
+    self._engaged_healthy()
+    self._sensor(900)
+    self.assertTrue(l.get_controls_allowed())
+    self.assertFalse(self._cmd(800, True))  # longitudinal not allowed while gas pressed
+    self.assertTrue(self._cmd(0, False))
+    self._sensor(0)
+    self._sensor(0)
+    self.assertTrue(self._cmd(800, True))
+
+  def test_di_torque1_ignored_in_pedal_mode(self):
+    # DI_pedalPos reflects the pedal output, so it must not count as driver gas
+    self._engaged_healthy()
+    l.safety_rx_hook(di_torque1(80))
+    self.assertTrue(l.get_controls_allowed())
+
+  def test_stock_cruise_interlock(self):
+    self._engaged_healthy()
+    for cs in (2, 3, 4, 6, 7):
+      l.safety_rx_hook(di_state(cs))
+      self.assertFalse(self._cmd(800, True), cs)
+      self.assertTrue(self._cmd(0, False), cs)
+    for cs in (0, 1, 5):
+      l.safety_rx_hook(di_state(cs))
+      self.assertTrue(self._cmd(800, True), cs)
+
+  def test_stale_di_state_blocks_enable(self):
+    self._engaged_healthy()
+    self.assertTrue(self._cmd(800, True))
+    self._tick(500000)
+    self._sensor(0)
+    self.assertFalse(self._cmd(800, True))
+    l.safety_rx_hook(di_state(1))
+    self.assertTrue(self._cmd(800, True))
+
+  # --- command contents ---
+  def test_max_gas_cap_vs_speed(self):
+    self._engaged_healthy()
+    for kph, cap in ((0, 1631), (12 * 3.6, 1867), (40 * 3.6, 2320), (60 * 3.6, 2320)):
+      self._speed(kph)
+      self._sensor(0)
+      self.assertTrue(self._cmd(cap - 1, True), kph)
+      self.assertFalse(self._cmd(cap + 2, True), kph)
+
+  def test_cmd2_must_match(self):
+    self._engaged_healthy()
+    self.assertTrue(self._cmd(1000, True, raw2=500))
+    self.assertTrue(self._cmd(1001, True, raw2=500))
+    self.assertFalse(self._cmd(1000, True, raw2=520))
+    self.assertFalse(self._cmd(1000, True, raw2=0))
+
+  def test_disabled_cmd_must_be_zero(self):
+    self.assertTrue(self._cmd(0, False))
+    self.assertFalse(self._cmd(1, False, raw2=0))
+    self.assertFalse(self._cmd(0, False, raw2=1))
+    self.assertFalse(self._cmd(500, False))  # NAP allowed this; the firmware faults on it
+
+  def test_checksum_required(self):
+    self._engaged_healthy()
+    self.assertFalse(self._cmd(0, False, bad_checksum=True))
+    self.assertFalse(self._cmd(800, True, bad_checksum=True))
+    self.assertTrue(self._cmd(800, True))
+
+  def test_idx_must_be_sequential(self):
+    self._engaged_healthy()
+    self.assertTrue(self._cmd(800, True, idx=5))
+    self.assertTrue(self._cmd(800, True, idx=6))
+    self.assertFalse(self._cmd(800, True, idx=8))   # skipped 7
+    self.assertTrue(self._cmd(800, True, idx=9))    # resyncs on the attempted value
+    self.assertTrue(self._cmd(800, True, idx=10))
+    for i in range(11, 40):
+      self.assertTrue(self._cmd(800, True, idx=i % 16))
+    self.assertTrue(self._cmd(800, True, idx=8))    # wraps: 7 -> 8
+    self.assertFalse(self._cmd(800, True, idx=8))   # repeated IDX
+
+  def test_unused_bits_must_be_zero(self):
+    self._engaged_healthy()
+    p = pedal_cmd(800, True, self.BUS, idx=0)
+    p.data[4] |= 0x10
+    p.data[5] = pedal_checksum(0x551, bytes(p.data[0:6]))
+    self.assertFalse(l.safety_tx_hook(p))
+
+  # --- stock-cruise cancel spoof (0x45) ---
+  def _cancel_setup(self, rest=(0x12, 0x34, 0x00, 0x80, 0x01), wiper=3, counter=7):
+    self._engaged_healthy()
+    l.safety_rx_hook(di_state(2))  # stock cruise ENABLED
+    live = stalk_frame(LEVER_IDLE, rest, wiper, counter)
+    l.safety_rx_hook(pkt(0x45, live))
+    return rest, wiper, counter
+
+  def test_cancel_spoof_allowed(self):
+    rest, wiper, counter = self._cancel_setup()
+    self.assertTrue(l.safety_tx_hook(pkt(0x45, stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1))))
+
+  def test_cancel_spoof_once_per_real_frame(self):
+    rest, wiper, counter = self._cancel_setup()
+    frame = pkt(0x45, stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1))
+    self.assertTrue(l.safety_tx_hook(frame))
+    self.assertFalse(l.safety_tx_hook(frame))
+
+  def test_cancel_spoof_must_copy_live_frame(self):
+    rest, wiper, counter = self._cancel_setup()
+    bad = [
+      stalk_frame(LEVER_PULL, rest, wiper, counter + 1),            # engage
+      stalk_frame(16, rest, wiper, counter + 1),                    # UP_1ST
+      stalk_frame(LEVER_IDLE, rest, wiper, counter + 1),
+      stalk_frame(LEVER_CANCEL, (0x13, 0x34, 0, 0x80, 1), wiper, counter + 1),  # DTR changed
+      stalk_frame(LEVER_CANCEL, (0x12, 0x34, 0x01, 0x80, 1), wiper, counter + 1),  # switch pressed
+      stalk_frame(LEVER_CANCEL, rest, 0, counter + 1),              # wiper changed
+      stalk_frame(LEVER_CANCEL, rest, wiper, counter),              # counter not advanced
+      stalk_frame(LEVER_CANCEL, rest, wiper, counter + 2),
+      stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1, vsl=0),
+      stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1, inv=1),
+    ]
+    for dat in bad:
+      self.assertFalse(l.safety_tx_hook(pkt(0x45, dat)), dat.hex())
+    good = stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1)
+    good[7] ^= 0x01
+    self.assertFalse(l.safety_tx_hook(pkt(0x45, good)))  # bad CRC
+    self.assertFalse(l.safety_tx_hook(pkt(0x45, stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1), bus=2)))
+
+  def test_cancel_spoof_needs_stock_cruise_engaged(self):
+    rest, wiper, counter = self._cancel_setup()
+    for cs in (0, 1, 5, 6, 7):
+      l.safety_rx_hook(di_state(cs))
+      self.assertFalse(l.safety_tx_hook(pkt(0x45, stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1))), cs)
+
+  def test_cancel_spoof_needs_controls(self):
+    rest, wiper, counter = self._cancel_setup()
+    l.safety_rx_hook(doors(True))
+    self.assertFalse(l.get_controls_allowed())
+    self.assertFalse(l.safety_tx_hook(pkt(0x45, stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1))))
+
+  def test_cancel_spoof_needs_recent_stalk(self):
+    rest, wiper, counter = self._cancel_setup()
+    self._tick(260000)
+    self._sensor(0)
+    l.safety_rx_hook(di_state(2))
+    self.assertFalse(l.safety_tx_hook(pkt(0x45, stalk_frame(LEVER_CANCEL, rest, wiper, counter + 1))))
+
+  def test_cancel_spoof_blocked_without_pedal_flag(self):
+    self._setup(0)
+    l.safety_rx_hook(stalk(LEVER_PULL))
+    l.safety_rx_hook(di_state(2))
+    l.safety_rx_hook(pkt(0x45, stalk_frame(LEVER_IDLE, counter=1)))
+    self.assertFalse(l.safety_tx_hook(pkt(0x45, stalk_frame(LEVER_CANCEL, counter=2))))
+
+
+class TestTeslaPreapPedalBus0(TestTeslaPreapPedal):
+  PARAM = Panda.FLAG_TESLA_PREAP_ENABLE_PEDAL | Panda.FLAG_TESLA_PREAP_PEDAL_BUS_ZERO
+  BUS = 0
+
+  def test_pedal_bus_selection(self):
+    self.assertTrue(self._cmd(0, False, bus=0))
+    self.assertFalse(self._cmd(0, False, bus=2))
+
+  def test_sensor_only_on_configured_bus(self):
+    self._engaged_healthy()
+    l.safety_rx_hook(gas_sensor(2000, 0, 0, bus=2))
+    self.assertTrue(l.get_controls_allowed())
+    self.assertTrue(self._cmd(1000, True))
 
 
 class TestTeslaPreapMapping(unittest.TestCase):
