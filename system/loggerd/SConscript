@@ -1,8 +1,10 @@
 Import('env', 'arch', 'messaging', 'common', 'visionipc')
 
 libs = [common, messaging, visionipc,
-        'z', 'avformat', 'avcodec', 'swscale',
-        'avutil', 'yuv', 'OpenCL', 'pthread']
+        'avformat', 'avcodec', 'avutil', 'x264', 'z',
+        'yuv', 'OpenCL', 'pthread']
+# BogPilot: swscale is unused (and not in the AGNOS 17 vendored ffmpeg, which is static,
+# so avformat must come before avcodec and avutil, and x264 + zlib after them)
 
 src = ['logger.cc', 'video_writer.cc', 'encoder/encoder.cc', 'encoder/v4l_encoder.cc']
 if arch != "larch64":
