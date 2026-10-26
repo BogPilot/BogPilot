@@ -15,9 +15,15 @@ void setMainWindow(QWidget *w) {
 
 #ifdef QCOM2
   QPlatformNativeInterface *native = QGuiApplication::platformNativeInterface();
-  wl_surface *s = reinterpret_cast<wl_surface*>(native->nativeResourceForWindow("surface", w->windowHandle()));
-  wl_surface_set_buffer_transform(s, WL_OUTPUT_TRANSFORM_270);
-  wl_surface_commit(s);
+  // BogPilot: on AGNOS 17.2 the UI runs on eglfs (no weston), which has no wl_surface;
+  // the rotation is done by QT_QPA_EGLFS_ROTATION there.
+  if (QGuiApplication::platformName().startsWith("wayland")) {
+    wl_surface *s = reinterpret_cast<wl_surface*>(native->nativeResourceForWindow("surface", w->windowHandle()));
+    if (s != nullptr) {
+      wl_surface_set_buffer_transform(s, WL_OUTPUT_TRANSFORM_270);
+      wl_surface_commit(s);
+    }
+  }
 
   w->setWindowState(Qt::WindowFullScreen);
   w->setVisible(true);

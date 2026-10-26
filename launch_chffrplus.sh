@@ -10,6 +10,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 # BogPilot: AGNOS downgrade helpers (staged-update guard, on-screen error)
 source "$DIR/system/hardware/tici/bogpilot_agnos.sh"
+# BogPilot: Qt UI on AGNOS 17+ (eglfs on DRM, no weston)
+source "$DIR/system/hardware/tici/bogpilot_qt_eglfs.sh"
 
 function agnos_init {
   # TODO: move this to agnos
@@ -39,11 +41,14 @@ function agnos_init {
   fi
 }
 
-# BogPilot: the Qt UI needs weston. From AGNOS 14 the "magic" service owns the display
-# (DRM master, raylib) and only fakes the weston socket for the old updater. weston and
-# weston-ready are still installed but not enabled, so swap them in for this boot only.
-# A reboot brings magic back, so switching to a raylib fork (NotAutopilot) keeps working.
+# BogPilot: on AGNOS builds without magic the Qt UI and the Qt build spinner use weston.
+# With magic (AGNOS 14+, incl. 17.2) the build screen is raylib under magic and the UI runs on
+# eglfs (see bogpilot_qt_eglfs.sh), because weston finds no outputs there. magic is only
+# stopped for this boot, so switching to a raylib fork (NotAutopilot) keeps working.
 function qt_display_init {
+  if bogpilot_magic_display; then
+    return
+  fi
   if systemctl is-active --quiet weston-ready; then
     return
   fi
@@ -129,6 +134,9 @@ function launch {
   cd system/manager
   if [ ! -f $DIR/prebuilt ]; then
     ./build.py
+  fi
+  if [ -f /AGNOS ] && bogpilot_magic_display; then
+    bogpilot_qt_eglfs_init "$DIR"
   fi
   ./manager.py
 
