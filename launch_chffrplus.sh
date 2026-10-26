@@ -8,6 +8,9 @@ source "$BASEDIR/launch_env.sh"
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
+# BogPilot: AGNOS downgrade helpers (staged-update guard, on-screen error)
+source "$DIR/system/hardware/tici/bogpilot_agnos.sh"
+
 function agnos_init {
   # TODO: move this to agnos
   sudo rm -f /data/etc/NetworkManager/system-connections/*.nmmeta
@@ -25,10 +28,14 @@ function agnos_init {
   if [ $(< /VERSION) != "$AGNOS_VERSION" ]; then
     AGNOS_PY="$DIR/system/hardware/tici/agnos.py"
     MANIFEST="$DIR/system/hardware/tici/agnos.json"
-    if $AGNOS_PY --verify $MANIFEST; then
-      sudo reboot
+    # BogPilot: log everything to $BOGPILOT_AGNOS_LOG. If the downgrade fails (for example from
+    # AGNOS 19.9), show the reason on screen and stop here instead of starting a black screen.
+    bogpilot_log "AGNOS $(< /VERSION) installed, this branch needs AGNOS $AGNOS_VERSION"
+    if $AGNOS_PY --verify $MANIFEST >> "$BOGPILOT_AGNOS_LOG" 2>&1; then
+      sudo reboot && sleep 600
     fi
-    $DIR/system/hardware/tici/updater $AGNOS_PY $MANIFEST
+    $DIR/system/hardware/tici/bogpilot_updater $AGNOS_PY $MANIFEST
+    bogpilot_agnos_failed "$DIR/launch_chffrplus.sh"
   fi
 }
 
@@ -62,12 +69,17 @@ function launch {
   # 2. The FINALIZED consistent file has to exist, indicating there's an update
   #    that completed successfully and synced to disk.
 
+  # BogPilot: never swap in a staged update from another fork (e.g. a stock openpilot update
+  # left in /data/safe_staging). It is moved to /data/safe_staging_foreign_<time>, not deleted.
+  bogpilot_staging_guard "$BASEDIR" "$STAGING_ROOT"
+  BOGPILOT_STAGING_OK=$?
+
   if [ -f "${BASEDIR}/.overlay_init" ]; then
     find ${BASEDIR}/.git -newer ${BASEDIR}/.overlay_init | grep -q '.' 2> /dev/null
     if [ $? -eq 0 ]; then
       echo "${BASEDIR} has been modified, skipping overlay update installation"
     else
-      if [ -f "${STAGING_ROOT}/finalized/.overlay_consistent" ]; then
+      if [ "$BOGPILOT_STAGING_OK" -eq 0 ] && [ -f "${STAGING_ROOT}/finalized/.overlay_consistent" ]; then
         if [ ! -d /data/safe_staging/old_openpilot ]; then
           echo "Valid overlay update found, installing"
           LAUNCHER_LOCATION="${BASH_SOURCE[0]}"
