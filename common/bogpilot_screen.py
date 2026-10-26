@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import select
+import struct
 import subprocess
 import sys
 import time
@@ -97,6 +98,145 @@ def wrap(text: str, width: float, measure) -> list[str]:
       cur = cur[n:]
     out.append(cur)
   return out
+
+
+# --- BogPilot: direct touch input (evdev) -------------------------------------------------------
+# raylib's own touch input has not always worked under magic, which left the error screen with a
+# Reboot button nobody could press. Read the touchscreen directly as well. The comma 3X panel
+# reports portrait coordinates (x 0..1080, y 0..2160); the screen is landscape 2160x1080.
+EV_KEY, EV_ABS = 0x01, 0x03
+BTN_TOUCH = 0x14a
+ABS_X, ABS_Y, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID = 0x00, 0x01, 0x35, 0x36, 0x39
+INPUT_EVENT = struct.Struct("llHHi")  # struct input_event on 64-bit Linux
+LONG_PRESS_S, LONG_PRESS_SLOP = 3.0, 120.0
+IDLE_FPS, ACTIVE_FPS, ACTIVE_HOLD_S = 8, 30, 2.0
+
+
+def map_touch(rx: float, ry: float, max_x: float = 1080, max_y: float = 2160, rotation: int = 90) -> tuple[float, float]:
+  """raw panel (portrait) -> 2160x1080 landscape screen coordinates. BOGPILOT_TOUCH_ROTATION picks 0/90/180/270."""
+  nx, ny = rx / max(max_x, 1), ry / max(max_y, 1)
+  rotation %= 360
+  if rotation == 90:
+    return ny * W, (1 - nx) * H
+  if rotation == 270:
+    return (1 - ny) * W, nx * H
+  if rotation == 180:
+    return (1 - nx) * W, (1 - ny) * H
+  return nx * W, ny * H
+
+
+class TouchState:
+  """Folds evdev events into press / release with a position. Feed it (type, code, value) tuples."""
+  def __init__(self, max_x: float = 1080, max_y: float = 2160, rotation: int = 90):
+    self.max_x, self.max_y, self.rotation = max_x, max_y, rotation
+    self.rx = self.ry = 0.0
+    self.down = False
+    self.pending: bool | None = None  # touch state change waiting for the SYN
+
+  def feed(self, etype: int, code: int, value: int) -> list[tuple[str, float, float]]:
+    out: list[tuple[str, float, float]] = []
+    if etype == EV_ABS and code in (ABS_MT_POSITION_X, ABS_X):
+      self.rx = value
+    elif etype == EV_ABS and code in (ABS_MT_POSITION_Y, ABS_Y):
+      self.ry = value
+    elif etype == EV_ABS and code == ABS_MT_TRACKING_ID:
+      self.pending = value != -1
+    elif etype == EV_KEY and code == BTN_TOUCH:
+      self.pending = value != 0
+    elif etype == 0:  # EV_SYN: the frame is complete
+      if self.pending is not None and self.pending != self.down:
+        self.down = self.pending
+        x, y = self.pos()
+        out.append(("down" if self.down else "up", x, y))
+      self.pending = None
+    return out
+
+  def pos(self) -> tuple[float, float]:
+    return map_touch(self.rx, self.ry, self.max_x, self.max_y, self.rotation)
+
+
+def find_touchscreen(sys_input: str = "/sys/class/input") -> str | None:
+  try:
+    names = sorted(n for n in os.listdir(sys_input) if n.startswith("event"))
+  except OSError:
+    return None
+  for n in names:
+    try:
+      with open(os.path.join(sys_input, n, "device", "name")) as f:
+        if "touch" in f.read().lower():
+          return os.path.join("/dev/input", n)
+    except OSError:
+      continue
+  return None
+
+
+class EvdevTouch:
+  def __init__(self, path: str | None = None):
+    rot = int(os.getenv("BOGPILOT_TOUCH_ROTATION", "90") or 90)
+    self.state = TouchState(rotation=rot)
+    self.fd = None
+    self.buf = b""
+    path = path or find_touchscreen()
+    if path:
+      try:
+        self.fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        self._ranges()
+      except OSError:
+        self.fd = None
+
+  def _ranges(self) -> None:
+    import fcntl
+    for code, attr in ((ABS_MT_POSITION_X, "max_x"), (ABS_MT_POSITION_Y, "max_y")):
+      buf = bytearray(24)
+      try:
+        fcntl.ioctl(self.fd, 0x80184540 + code, buf)  # EVIOCGABS(code)
+        mx = struct.unpack("6i", buf)[2]
+        if mx > 0:
+          setattr(self.state, attr, mx)
+      except OSError:
+        pass
+
+  def poll(self) -> list[tuple[str, float, float]]:
+    if self.fd is None:
+      return []
+    try:
+      while True:
+        chunk = os.read(self.fd, INPUT_EVENT.size * 64)
+        if not chunk:
+          break
+        self.buf += chunk
+    except BlockingIOError:
+      pass
+    except OSError:
+      return []
+    out = []
+    n = len(self.buf) // INPUT_EVENT.size
+    for i in range(n):
+      _, _, etype, code, value = INPUT_EVENT.unpack_from(self.buf, i * INPUT_EVENT.size)
+      out += self.state.feed(etype, code, value)
+    self.buf = self.buf[n * INPUT_EVENT.size:]
+    return out
+
+
+class LongPress:
+  """True once a touch has been held LONG_PRESS_S without moving more than LONG_PRESS_SLOP."""
+  def __init__(self, hold_s: float = LONG_PRESS_S, slop: float = LONG_PRESS_SLOP):
+    self.hold_s, self.slop = hold_s, slop
+    self.start: tuple[float, float, float] | None = None
+
+  def update(self, down: bool, x: float, y: float, now: float) -> bool:
+    if not down:
+      self.start = None
+      return False
+    if self.start is None or abs(x - self.start[1]) > self.slop or abs(y - self.start[2]) > self.slop:
+      self.start = (now, x, y)
+      return False
+    return now - self.start[0] >= self.hold_s
+
+
+def pick_fps(now: float, last_input: float) -> int:
+  """Full frame rate right after input; otherwise a slow redraw that keeps the CPU free."""
+  return ACTIVE_FPS if now - last_input < ACTIVE_HOLD_S else IDLE_FPS
 
 
 class Screen:
@@ -268,25 +408,59 @@ def run_text(message: str) -> int:
   scroll = 0.0  # build.py puts the error summary first
   drag_y = None
   hit = rl.Rectangle(btn.x - 120, btn.y - 120, btn.width + 120 + pad, btn.height + 120 + pad)  # generous tap area
+  touch_dev = os.getenv("BOGPILOT_TOUCH_DEV")
+  ev = EvdevTouch(touch_dev) if (touch_dev or os.path.isfile("/AGNOS")) else None
+  log(f"evdev touch {'on' if ev is not None and ev.fd is not None else 'off'}")
+  hold = LongPress()
+  last_input = time.monotonic()
+  fps = ACTIVE_FPS
   while not rl.window_should_close():
-    if deadline is not None and time.monotonic() > deadline:
+    now = time.monotonic()
+    if deadline is not None and now > deadline:
       log("auto reboot timeout")
       do_reboot(log)
       return EXIT_BUTTON
     p = scr.touch()
+    rl_down = rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT)
     if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
       log(f"press {p.x:.0f},{p.y:.0f}")
       drag_y = p.y
-    elif rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and drag_y is not None:
+      last_input = now
+    elif rl_down and drag_y is not None:
       scroll = max(0.0, min(float(max_scroll), scroll - (p.y - drag_y)))
       drag_y = p.y
+      last_input = now
     if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
       drag_y = None
+      last_input = now
       on_btn = rl.check_collision_point_rec(p, hit)
       log(f"release {p.x:.0f},{p.y:.0f} button={'yes' if on_btn else 'no'}")
       if on_btn:
         do_reboot(log)
         return EXIT_BUTTON
+    # direct touchscreen: a tap on Reboot, and a long press anywhere, reboot even if raylib sees nothing
+    ev_down = False
+    if ev is not None:
+      for kind, x, y in ev.poll():
+        last_input = now
+        on_btn = rl.check_collision_point_rec(rl.Vector2(x, y), hit)
+        log(f"evdev {kind} {x:.0f},{y:.0f} button={'yes' if on_btn else 'no'}")
+        if kind == "up" and on_btn:
+          do_reboot(log)
+          return EXIT_BUTTON
+      ev_down = ev.state.down
+    if ev_down:
+      hx, hy = ev.state.pos()
+    else:
+      hx, hy = p.x, p.y
+    if hold.update(ev_down or rl_down, hx, hy, now):
+      log("long press")
+      do_reboot(log)
+      return EXIT_BUTTON
+    want = pick_fps(now, last_input)
+    if want != fps:
+      fps = want
+      rl.set_target_fps(fps)
     scr.begin()
     y = pad - scroll
     for ln in lines:
@@ -306,7 +480,10 @@ def run_text(message: str) -> int:
     if deadline is not None:
       left = max(0, int(deadline - time.monotonic()))
       note = f"Rebooting by itself in {left // 60}:{left % 60:02d}"
-      scr.text(note, btn.x - 40 - scr.measure(note, 44), btn.y + 52, 44, rl.Color(170, 170, 170, 255))
+      scr.text(note, btn.x - 40 - scr.measure(note, 44), btn.y + 22, 44, rl.Color(170, 170, 170, 255))
+    if os.path.isfile("/AGNOS"):
+      note = "or hold anywhere for 3 seconds"
+      scr.text(note, btn.x - 40 - scr.measure(note, 36), btn.y + 92, 36, rl.Color(150, 150, 150, 255))
     scr.text(label, btn.x + (btn.width - scr.measure(label, 64, "Inter-SemiBold.ttf")) / 2, btn.y + 40, 64, rl.WHITE,
              "Inter-SemiBold.ttf")
     scr.end()
@@ -319,7 +496,7 @@ def main(argv: list[str]) -> int:
     return 2
   try:
     import pyray  # noqa: F401
-  except Exception as e:  # noqa: BLE001
+  except Exception as e:
     print(f"bogpilot_screen: pyray unavailable: {e}", file=sys.stderr)
     return EXIT_NO_PYRAY
   if magic_available() and not ensure_magic():
