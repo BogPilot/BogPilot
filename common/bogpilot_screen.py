@@ -351,7 +351,7 @@ def run_spinner() -> int:
       rl.draw_texture(comma, int(W / 2 - size / 2), int(cy - size / 2), rl.WHITE)
     y = cy + size / 2 + 70
     title = "BogPilot"
-    scr.text(title, W / 2 - scr.measure(title, 70, "Inter-SemiBold.ttf") / 2, 40, 70, rl.Color(255, 255, 255, 200),
+    scr.text(title, W / 2 - scr.measure(title, 88, "Inter-SemiBold.ttf") / 2, 36, 88, rl.Color(255, 255, 255, 200),
              "Inter-SemiBold.ttf")
     if progress is not None:
       bw, bh = 1000, 24
