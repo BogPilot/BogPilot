@@ -24,6 +24,22 @@ build_projects["body"] = {
   ],
 }
 
+# BogPilot: the comma body firmware is only used with the comma body robot. The arm-none-eabi
+# toolchain in the AGNOS 17.2 venv only ships the cortex-m7 (v7e-m+dp) multilib, so linking
+# the cortex-m4 body fails with "cannot find -lgcc". Skip it in that case instead of failing
+# the whole on-device build (upstream ships body firmware prebuilt and does not build it on device).
+def _have_libgcc(flags):
+  try:
+    out = subprocess.check_output([PREFIX + "gcc", "-mthumb", *flags, "-print-libgcc-file-name"],
+                                  encoding="utf8", stderr=subprocess.DEVNULL).strip()
+  except (OSError, subprocess.CalledProcessError):
+    return False
+  return os.path.isabs(out) and os.path.isfile(out)
+
+if not _have_libgcc([f for f in build_projects["body"]["PROJECT_FLAGS"] if f.startswith(("-mcpu", "-mfpu", "-mhard", "-mfloat"))]):
+  print("BogPilot: no cortex-m4 libgcc in the arm-none-eabi toolchain, skipping body firmware")
+  Return()
+
 if os.getenv("RELEASE"):
   BUILD_TYPE = "RELEASE"
   cert_fn = os.getenv("CERT")
