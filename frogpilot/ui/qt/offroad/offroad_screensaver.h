@@ -57,6 +57,7 @@ private:
   bogpilot_uprate::Sample sample;
   qint64 ageS = 0;
   bool caughtUp = false;
+  bool upToDateText = false;  // BogPilot: caption only when the card says "Up to date"
   bool rateShown = false;
   bool showPending = false;
   bool stale = false;

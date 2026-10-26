@@ -47,7 +47,10 @@ bool enabled() {
 OffroadScreensaver::OffroadScreensaver(QWidget *parent) : QWidget(parent) {
   setAttribute(Qt::WA_AcceptTouchEvents);
   setAttribute(Qt::WA_OpaquePaintEvent);
-  logo = QPixmap(QStringLiteral("../../frogpilot/assets/bogpilot_theme/logo.png"));
+  logo = QPixmap(QStringLiteral("../assets/img_spinner_comma.png"));  // BogPilot road mark (same as the spinner)
+  if (logo.isNull()) {
+    logo = QPixmap(QStringLiteral("../../frogpilot/assets/bogpilot_theme/logo.png"));
+  }
 
   sampleTimer = new QTimer(this);
   QObject::connect(sampleTimer, &QTimer::timeout, this, [this]() { refreshSample(); });
@@ -112,9 +115,14 @@ bool OffroadScreensaver::refreshSample() {
   const bool shown = bogpilot_uprate::fresh(sample, ageS);
   const bool nextStale = shown && ageS > bogpilot_uprate::STALE_S;
   const bool nextCaught = cardSaysUpToDate(sample, ageS);
-  const bool nextPending = shown && sample.has_pending && !nextCaught;
-  const bool layoutChanged = nextCaught != caughtUp || nextPending != showPending || nextStale != stale || shown != rateShown;
-  caughtUp = nextCaught;
+  const bool nextUploading = shown && !nextStale && sample.has_pending && sample.pending_bytes > 0;
+  const bool nextPending = nextUploading;
+  // BogPilot: anything other than real data left to upload (caught up, no sample, stale, no
+  // pending field) bounces the BogPilot logo instead of an empty "— Mbps" readout.
+  const bool nextLogo = !nextUploading;
+  const bool layoutChanged = nextLogo != caughtUp || nextCaught != upToDateText || nextPending != showPending || nextStale != stale || shown != rateShown;
+  caughtUp = nextLogo;
+  upToDateText = nextCaught;
   showPending = nextPending;
   stale = nextStale;
   rateShown = shown;
@@ -136,9 +144,9 @@ void OffroadScreensaver::relayout() {
   if (caughtUp) {
     const int target = qBound(220, qMin(qMax(1, width()), qMax(1, height())) / 3, 480);
     logoScaled = logo.isNull() ? QPixmap() : logo.scaledToWidth(target, Qt::SmoothTransformation);
-    const int textW = cm.horizontalAdvance(QStringLiteral("Up to date"));
-    contentW = qMax(logoScaled.width(), textW);
-    contentH = logoScaled.height() + (logoScaled.isNull() ? 0 : 18) + cm.height();
+    const int textW = upToDateText ? cm.horizontalAdvance(QStringLiteral("Up to date")) : 0;
+    contentW = qMax(qMax(1, logoScaled.width()), textW);
+    contentH = qMax(1, logoScaled.height() + (upToDateText ? (logoScaled.isNull() ? 0 : 18) + cm.height() : 0));
   } else {
     logoScaled = QPixmap();
     const int speedW = vm.horizontalAdvance(QStringLiteral("888.8 Mbps")) + 16 + vm.horizontalAdvance(QString::fromUtf8("↑"));
@@ -228,9 +236,11 @@ void OffroadScreensaver::paintEvent(QPaintEvent *event) {
       p.drawPixmap(box.left() + (box.width() - logoScaled.width()) / 2, yCursor, logoScaled);
       yCursor += logoScaled.height() + 18;
     }
-    p.setFont(caption);
-    p.setPen(Qt::white);
-    p.drawText(QRect(box.left(), yCursor, box.width(), cm.height()), Qt::AlignHCenter | Qt::AlignVCenter, QStringLiteral("Up to date"));
+    if (upToDateText) {
+      p.setFont(caption);
+      p.setPen(Qt::white);
+      p.drawText(QRect(box.left(), yCursor, box.width(), cm.height()), Qt::AlignHCenter | Qt::AlignVCenter, QStringLiteral("Up to date"));
+    }
     return;
   }
 
