@@ -2,10 +2,12 @@
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 # NOTE: Do NOT import anything here that needs be built (e.g. params)
 from openpilot.common.basedir import BASEDIR
+from openpilot.common.bogpilot_build_guard import ThermalPauser, build_jobs
 from openpilot.common.spinner import Spinner
 from openpilot.common.text_window import TextWindow
 from openpilot.system.hardware import AGNOS
@@ -32,7 +34,7 @@ def error_summary(output: str, max_lines: int = 15) -> list[str]:
     s = ln.strip()
     if not s or s.startswith(_NOISE) or s in seen:
       continue
-    if _LOCATED.match(s) or s.startswith("scons: ***") or _PY_EXC.match(s) or " error:" in s or s.startswith("error:"):
+    if _LOCATED.match(s) or s.startswith(("scons: ***", "error:")) or _PY_EXC.match(s) or " error:" in s:
       seen.add(s)
       picked.append(s)
   if not picked:  # unknown format: show the tail
@@ -46,19 +48,32 @@ def error_summary(output: str, max_lines: int = 15) -> list[str]:
 def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   env = os.environ.copy()
   env['SCONS_PROGRESS'] = "1"
-  nproc = os.cpu_count()
-  if nproc is None:
-    nproc = 2
+  # BogPilot: at most BOGPILOT_BUILD_JOBS (default 4) jobs on a device, so the comma stays cool and responsive
+  nproc = build_jobs(os.cpu_count(), AGNOS)
 
   extra_args = ["--minimal"] if minimal else []
+
+  # BogPilot: the spinner is also updated by the thermal pause thread
+  spinner_lock = threading.Lock()
+  cooling: list[str | None] = [None]
+  last_progress: list[tuple[float, str]] = [(0.0, "Building BogPilot: starting")]
+
+  def show_cooling(text: str | None) -> None:
+    cooling[0] = text
+    with spinner_lock:
+      pct, msg = last_progress[0]
+      spinner.update_progress(pct, 100., text or msg)
 
   # building with all cores can result in using too
   # much memory, so retry with less parallelism
   compile_output: list[bytes] = []
-  for n in (nproc, nproc/2, 1):
+  for n in dict.fromkeys((nproc, max(1, nproc // 2), 1)):
     compile_output.clear()
-    scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", "--cache-populate", *extra_args], cwd=BASEDIR, env=env, stderr=subprocess.PIPE)
+    # on a device: own process group, so the thermal pause can stop scons and every compiler it started
+    scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", "--cache-populate", *extra_args], cwd=BASEDIR, env=env,
+                                               stderr=subprocess.PIPE, start_new_session=AGNOS)
     assert scons.stderr is not None
+    pauser = ThermalPauser(scons.pid, status=show_cooling).start() if AGNOS else None
 
     # Read progress from stderr and update spinner
     while scons.poll() is None:
@@ -71,14 +86,18 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
         prefix = b'progress: '
         if line.startswith(prefix):
           i = int(line[len(prefix):])
-          spinner.update_progress(MAX_BUILD_PROGRESS * min(1., i / TOTAL_SCONS_NODES), 100.,
-                                  f"Building BogPilot: step {min(i, TOTAL_SCONS_NODES)} of {TOTAL_SCONS_NODES}")
+          last_progress[0] = (MAX_BUILD_PROGRESS * min(1., i / TOTAL_SCONS_NODES),
+                              f"Building BogPilot: step {min(i, TOTAL_SCONS_NODES)} of {TOTAL_SCONS_NODES}")
+          with spinner_lock:
+            spinner.update_progress(last_progress[0][0], 100., cooling[0] or last_progress[0][1])
         elif len(line):
           compile_output.append(line)
           print(line.decode('utf8', 'replace'))
       except Exception:
         pass
 
+    if pauser is not None:
+      pauser.stop()
     if scons.returncode == 0:
       break
 
