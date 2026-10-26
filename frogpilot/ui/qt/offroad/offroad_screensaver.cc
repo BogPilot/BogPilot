@@ -122,7 +122,7 @@ bool OffroadScreensaver::refreshSample() {
   const bool nextLogo = !nextUploading;
   const bool layoutChanged = nextLogo != caughtUp || nextCaught != upToDateText || nextPending != showPending || nextStale != stale || shown != rateShown;
   caughtUp = nextLogo;
-  upToDateText = nextCaught;
+  upToDateText = false;  // Bardo: no "Up to date" caption (could read as the BogPilot software version)
   showPending = nextPending;
   stale = nextStale;
   rateShown = shown;
