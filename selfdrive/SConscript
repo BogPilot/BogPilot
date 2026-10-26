@@ -3,5 +3,9 @@ SConscript(['controls/lib/lateral_mpc_lib/SConscript'])
 SConscript(['controls/lib/longitudinal_mpc_lib/SConscript'])
 SConscript(['locationd/SConscript'])
 SConscript(['navd/SConscript'])
+# BogPilot: build the modeld Cython modules on device (dmonitoringmodeld uses them). FrogPilot shipped
+# them prebuilt for Python 3.11 and capnp 1.0.2, which AGNOS 17.2 doesn't have.
+SConscript(['modeld/SConscript'])
+SConscript(['../frogpilot/classic_modeld/SConscript'])
 SConscript(['../frogpilot/tinygrad_modeld/SConscript'])
 SConscript(['ui/SConscript'])
