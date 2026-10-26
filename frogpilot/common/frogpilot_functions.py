@@ -183,6 +183,10 @@ def setup_frogpilot(build_metadata):
 
   boot_logo_location = Path("/usr/comma/bg.jpg")
   frogpilot_boot_logo = Path(__file__).parents[1] / "assets/other_images/frogpilot_boot_logo.png"
+  # BogPilot: AGNOS 12+ draws bg.jpg with /usr/comma/magic.py as a landscape image (screen width x width/2),
+  # while older AGNOS shows it portrait. Use the landscape copy there so it is not turned and stretched.
+  if Path("/usr/comma/magic.py").is_file():
+    frogpilot_boot_logo = Path(__file__).parents[1] / "assets/other_images/bogpilot_boot_logo_landscape.jpg"
   if not filecmp.cmp(frogpilot_boot_logo, boot_logo_location, shallow=False):
     stock_mount_options = subprocess.run(["findmnt", "-no", "OPTIONS", "/"], capture_output=True, text=True, check=True).stdout.strip()
 

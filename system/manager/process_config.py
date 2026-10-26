@@ -112,8 +112,6 @@ procs = [
 
   # debug procs
   NativeProcess("bridge", "cereal/messaging", ["./bridge"], notcar),
-  PythonProcess("webrtcd", "system.webrtc.webrtcd", notcar),
-  PythonProcess("webjoystick", "tools.bodyteleop.web", notcar),
 
   # FrogPilot processes
   NativeProcess("classic_modeld", "frogpilot/classic_modeld", ["./classic_modeld"], run_classic_modeld),
@@ -123,5 +121,14 @@ procs = [
   PythonProcess("the_pond", "frogpilot.system.the_pond.the_pond", always_run),
   PythonProcess("tinygrad_modeld", "frogpilot.tinygrad_modeld.tinygrad_modeld", run_tinygrad_modeld),
 ]
+
+# BogPilot: the comma body tools need pyaudio, aiortc and av, which some AGNOS images (e.g. 17.2) lack.
+# Skip them there instead of crashing the manager at startup.
+import importlib.util  # noqa: E402
+if all(importlib.util.find_spec(m) is not None for m in ("pyaudio", "aiortc", "av")):
+  procs += [
+    PythonProcess("webrtcd", "system.webrtc.webrtcd", notcar),
+    PythonProcess("webjoystick", "tools.bodyteleop.web", notcar),
+  ]
 
 managed_processes = {p.name: p for p in procs}
