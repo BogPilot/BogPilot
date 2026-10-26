@@ -14,8 +14,8 @@
 //
 // Pending uploads bounce the same realdata speed (Mbps) and PENDING backlog the offroad
 // upload card shows (frogpilot/ui/qt/onroad/upload_rate.h, read by selfdrive/ui/qt/widgets/wifi.cc).
-// When nothing is left to upload, the bounce switches to the BogPilot road mark
-// (selfdrive/assets/img_spinner_comma.png), with no caption.
+// When nothing is left to upload, the bounce switches to the BogPilot logo
+// (frogpilot/assets/bogpilot_theme/logo.png, mark plus "BogPilot" wordmark), no caption.
 
 namespace bogpilot_screensaver {
 constexpr const char TOGGLE_KEY[] = "OffroadScreensaver";

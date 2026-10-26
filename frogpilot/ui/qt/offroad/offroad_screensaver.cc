@@ -47,10 +47,7 @@ bool enabled() {
 OffroadScreensaver::OffroadScreensaver(QWidget *parent) : QWidget(parent) {
   setAttribute(Qt::WA_AcceptTouchEvents);
   setAttribute(Qt::WA_OpaquePaintEvent);
-  logo = QPixmap(QStringLiteral("../assets/img_spinner_comma.png"));  // BogPilot road mark (same as the spinner)
-  if (logo.isNull()) {
-    logo = QPixmap(QStringLiteral("../../frogpilot/assets/bogpilot_theme/logo.png"));
-  }
+  logo = QPixmap(QStringLiteral("../../frogpilot/assets/bogpilot_theme/logo.png"));  // BogPilot mark with the "BogPilot" wordmark
 
   sampleTimer = new QTimer(this);
   QObject::connect(sampleTimer, &QTimer::timeout, this, [this]() { refreshSample(); });
