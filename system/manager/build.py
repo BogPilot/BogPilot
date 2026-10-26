@@ -45,7 +45,8 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
         prefix = b'progress: '
         if line.startswith(prefix):
           i = int(line[len(prefix):])
-          spinner.update_progress(MAX_BUILD_PROGRESS * min(1., i / TOTAL_SCONS_NODES), 100.)
+          spinner.update_progress(MAX_BUILD_PROGRESS * min(1., i / TOTAL_SCONS_NODES), 100.,
+                                  f"Building BogPilot: step {min(i, TOTAL_SCONS_NODES)} of {TOTAL_SCONS_NODES}")
         elif len(line):
           compile_output.append(line)
           print(line.decode('utf8', 'replace'))
@@ -68,7 +69,12 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
     # Show TextWindow
     spinner.close()
     if not os.getenv("CI"):
-      with TextWindow("openpilot failed to build\n \n" + error_s) as t:
+      # BogPilot: put the actual error lines first so they are on screen without scrolling
+      err_lines = [ln for ln in error_s.split("\n") if ("error" in ln.lower() or ln.startswith("scons: ***"))]
+      summary = "\n".join(err_lines[-20:])[-8000:]
+      # a single argv string is capped at 128 KiB by the kernel; keep the tail of the log
+      error_s = error_s[-60000:]
+      with TextWindow("BogPilot failed to build\n \nErrors:\n" + summary + "\n \nFull output:\n" + error_s) as t:
         t.wait_for_exit()
     exit(1)
 
@@ -85,6 +91,6 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
 
 if __name__ == "__main__":
   spinner = Spinner()
-  spinner.update_progress(0, 100)
+  spinner.update_progress(0, 100, "Building BogPilot: starting")
   build_metadata = get_build_metadata()
   build(spinner, build_metadata.openpilot.is_dirty, minimal = AGNOS)

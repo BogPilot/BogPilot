@@ -1,15 +1,24 @@
 import os
 import subprocess
+import sys
 from openpilot.common.basedir import BASEDIR
+from openpilot.common.bogpilot_screen import magic_available
 
 
 class Spinner:
   def __init__(self):
+    # BogPilot: on AGNOS 14+ (17.2) the display belongs to magic/raylib and the Qt spinner
+    # would draw nothing, so use the raylib spinner there.
+    self.raylib = magic_available()
     try:
-      self.spinner_proc = subprocess.Popen(["./spinner"],
-                                           stdin=subprocess.PIPE,
-                                           cwd=os.path.join(BASEDIR, "selfdrive", "ui"),
-                                           close_fds=True)
+      if self.raylib:
+        self.spinner_proc = subprocess.Popen([sys.executable, os.path.join(BASEDIR, "common", "bogpilot_screen.py"), "spinner"],
+                                             stdin=subprocess.PIPE, cwd=BASEDIR, close_fds=True)
+      else:
+        self.spinner_proc = subprocess.Popen(["./spinner"],
+                                             stdin=subprocess.PIPE,
+                                             cwd=os.path.join(BASEDIR, "selfdrive", "ui"),
+                                             close_fds=True)
     except OSError:
       self.spinner_proc = None
 
@@ -24,8 +33,10 @@ class Spinner:
       except BrokenPipeError:
         pass
 
-  def update_progress(self, cur: float, total: float):
-    self.update(str(round(100 * cur / total)))
+  def update_progress(self, cur: float, total: float, text: str | None = None):
+    pct = str(round(100 * cur / total))
+    # the raylib spinner can show a status line under the bar; the Qt one only takes a number
+    self.update(f"p:{pct}|{text}" if (text and self.raylib) else pct)
 
   def close(self):
     if self.spinner_proc is not None:

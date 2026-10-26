@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 import os
+import sys
 import time
 import subprocess
 from openpilot.common.basedir import BASEDIR
+from openpilot.common.bogpilot_screen import magic_available
 
 
 class TextWindow:
   def __init__(self, text):
     try:
-      self.text_proc = subprocess.Popen(["./text", text],
-                                        stdin=subprocess.PIPE,
-                                        cwd=os.path.join(BASEDIR, "selfdrive", "ui"),
-                                        close_fds=True)
+      if magic_available():
+        # BogPilot: AGNOS 14+ (17.2): the Qt text window has no screen there; use raylib
+        self.text_proc = subprocess.Popen([sys.executable, os.path.join(BASEDIR, "common", "bogpilot_screen.py"), "text", text],
+                                          stdin=subprocess.PIPE, cwd=BASEDIR, close_fds=True)
+      else:
+        self.text_proc = subprocess.Popen(["./text", text],
+                                          stdin=subprocess.PIPE,
+                                          cwd=os.path.join(BASEDIR, "selfdrive", "ui"),
+                                          close_fds=True)
     except OSError:
       self.text_proc = None
 
