@@ -105,7 +105,7 @@ class Screen:
     self.rl = rl
     rl.set_trace_log_level(rl.TraceLogLevel.LOG_WARNING)
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
-    rl.init_window(0, 0, title)
+    rl.init_window(W, H, title)
     if not rl.is_window_ready():
       raise RuntimeError("no display")
     rl.set_target_fps(30)
@@ -151,9 +151,10 @@ class Screen:
     return tex
 
   def touch(self):
-    """mouse/touch position in 2160x1080 target coordinates"""
-    p = self.rl.get_mouse_position()
-    return self.rl.Vector2(p.x * W / self.sw, p.y * H / self.sh)
+    """touch (or mouse) position in 2160x1080 target coordinates"""
+    rl = self.rl
+    p = rl.get_touch_position(0) if rl.get_touch_point_count() > 0 else rl.get_mouse_position()
+    return rl.Vector2(p.x * W / self.sw, p.y * H / self.sh)
 
   def begin(self):
     self.rl.begin_texture_mode(self.target)
@@ -229,9 +230,34 @@ def run_spinner() -> int:
   return 0
 
 
+def touch_logger():
+  """BOGPILOT_TOUCH_LOG=<file> (default /tmp/bogpilot_touch.log on a device): one line per press/release"""
+  path = os.getenv("BOGPILOT_TOUCH_LOG", "/tmp/bogpilot_touch.log" if os.path.isfile("/AGNOS") else "")
+  def log(msg: str) -> None:
+    if path:
+      try:
+        with open(path, "a") as f:
+          f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+      except OSError:
+        pass
+  return log
+
+
+def do_reboot(log) -> None:
+  if os.path.isfile("/AGNOS") and not os.getenv("BOGPILOT_NO_REBOOT"):
+    log("reboot")
+    subprocess.run(["sudo", "reboot"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+
+
 def run_text(message: str) -> int:
   scr = Screen("BogPilot")
   rl = scr.rl
+  log = touch_logger()
+  log(f"text window up, screen {scr.sw}x{scr.sh}")
+  # BogPilot: never leave a dead screen. Reboot by itself after this many minutes (0 = never);
+  # BOGPILOT_ERROR_REBOOT_MIN overrides, and the build caller limits it to once per failure streak.
+  auto_min = float(os.getenv("BOGPILOT_ERROR_REBOOT_MIN", "0") or 0)
+  deadline = time.monotonic() + auto_min * 60 if auto_min > 0 else None
   pad, fs, lh = 60, 44, 54
   mono = "JetBrainsMono-Medium.ttf"
   lines = wrap(message, W - 2 * pad - 40, lambda s: scr.measure(s, fs, mono))
@@ -241,18 +267,25 @@ def run_text(message: str) -> int:
   max_scroll = max(0, len(lines) * lh - view_h)
   scroll = 0.0  # build.py puts the error summary first
   drag_y = None
+  hit = rl.Rectangle(btn.x - 120, btn.y - 120, btn.width + 120 + pad, btn.height + 120 + pad)  # generous tap area
   while not rl.window_should_close():
+    if deadline is not None and time.monotonic() > deadline:
+      log("auto reboot timeout")
+      do_reboot(log)
+      return EXIT_BUTTON
     p = scr.touch()
     if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
+      log(f"press {p.x:.0f},{p.y:.0f}")
       drag_y = p.y
     elif rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and drag_y is not None:
       scroll = max(0.0, min(float(max_scroll), scroll - (p.y - drag_y)))
       drag_y = p.y
     if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
       drag_y = None
-      if rl.check_collision_point_rec(p, btn):
-        if os.path.isfile("/AGNOS") and not os.getenv("BOGPILOT_NO_REBOOT"):
-          subprocess.run(["sudo", "reboot"], check=False)
+      on_btn = rl.check_collision_point_rec(p, hit)
+      log(f"release {p.x:.0f},{p.y:.0f} button={'yes' if on_btn else 'no'}")
+      if on_btn:
+        do_reboot(log)
         return EXIT_BUTTON
     scr.begin()
     y = pad - scroll
@@ -270,6 +303,10 @@ def run_text(message: str) -> int:
     scr.text("BogPilot", pad + 160, btn.y + 45, 60, rl.Color(255, 255, 255, 200), "Inter-SemiBold.ttf")
     rl.draw_rectangle_rounded(btn, 0.3, 10, rl.Color(70, 70, 70, 255))
     label = "Reboot" if os.path.isfile("/AGNOS") else "Exit"
+    if deadline is not None:
+      left = max(0, int(deadline - time.monotonic()))
+      note = f"Rebooting by itself in {left // 60}:{left % 60:02d}"
+      scr.text(note, btn.x - 40 - scr.measure(note, 44), btn.y + 52, 44, rl.Color(170, 170, 170, 255))
     scr.text(label, btn.x + (btn.width - scr.measure(label, 64, "Inter-SemiBold.ttf")) / 2, btn.y + 40, 64, rl.WHITE,
              "Inter-SemiBold.ttf")
     scr.end()

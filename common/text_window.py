@@ -39,7 +39,8 @@ class TextWindow:
   def wait_for_exit(self):
     if self.text_proc is not None:
       while True:
-        if self.get_status() == 1:
+        # BogPilot: any exit ends the wait (a crashed or display-less text window must not hang the caller)
+        if self.get_status() is not None:
           return
         time.sleep(0.1)
 

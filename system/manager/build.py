@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,31 @@ CACHE_DIR = Path("/data/scons_cache" if AGNOS else "/tmp/scons_cache")
 
 TOTAL_SCONS_NODES = 2820
 MAX_BUILD_PROGRESS = 100
+
+# BogPilot: the lines that say what failed: "file:line:col: message" (gcc, Cython), "scons: *** [target] ...",
+# and the last line of Python tracebacks. Headers like "Error compiling Cython file:" carry no information.
+_LOCATED = re.compile(r"^\S+:\d+(:\d+)?:\s+(?!warning|note)")
+_PY_EXC = re.compile(r"^([A-Za-z_][\w.]*)(Error|Exception|Exit): ")
+_NOISE = ("Error compiling Cython file:", "Cython.Compiler.Errors.CompileError:")
+
+
+def error_summary(output: str, max_lines: int = 15) -> list[str]:
+  picked: list[str] = []
+  seen: set[str] = set()
+  for ln in output.split("\n"):
+    s = ln.strip()
+    if not s or s.startswith(_NOISE) or s in seen:
+      continue
+    if _LOCATED.match(s) or s.startswith("scons: ***") or _PY_EXC.match(s) or " error:" in s or s.startswith("error:"):
+      seen.add(s)
+      picked.append(s)
+  if not picked:  # unknown format: show the tail
+    picked = [ln for ln in output.split("\n") if ln.strip()][-max_lines:]
+  # keep the first errors (usually the cause) and the final scons lines
+  if len(picked) > max_lines:
+    picked = picked[:max_lines - 3] + ["..."] + picked[-2:]
+  return picked
+
 
 def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   env = os.environ.copy()
@@ -70,8 +96,7 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
     spinner.close()
     if not os.getenv("CI"):
       # BogPilot: put the actual error lines first so they are on screen without scrolling
-      err_lines = [ln for ln in error_s.split("\n") if ("error" in ln.lower() or ln.startswith("scons: ***"))]
-      summary = "\n".join(err_lines[-20:])[-8000:]
+      summary = "\n".join(error_summary(error_s))[-8000:]
       # a single argv string is capped at 128 KiB by the kernel; keep the tail of the log
       error_s = error_s[-60000:]
       with TextWindow("BogPilot failed to build\n \nErrors:\n" + summary + "\n \nFull output:\n" + error_s) as t:
