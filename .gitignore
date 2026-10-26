@@ -83,3 +83,6 @@ build/
 
 poetry.toml
 Pipfile
+
+# BogPilot: scons output, built on device (the prebuilt branch carries these)
+frogpilot/tinygrad_modeld/models/commonmodel_pyx.cpp
