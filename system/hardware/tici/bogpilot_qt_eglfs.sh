@@ -116,7 +116,7 @@ function bogpilot_qt_eglfs_init {
   export QT_QPA_EGLFS_KMS_CONFIG="$dir/system/hardware/tici/bogpilot_kms.json"
   export QT_QPA_EGLFS_ALWAYS_SET_MODE=1
   export QT_QPA_EGLFS_HIDECURSOR=1
-  export QT_QPA_EGLFS_ROTATION="${BOGPILOT_QT_ROTATION:-90}"
+  export QT_QPA_EGLFS_ROTATION="${BOGPILOT_QT_ROTATION:-270}"
   export QT_QPA_EGLFS_PHYSICAL_WIDTH=136
   export QT_QPA_EGLFS_PHYSICAL_HEIGHT=68
 }
