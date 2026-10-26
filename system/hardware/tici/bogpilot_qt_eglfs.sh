@@ -119,4 +119,20 @@ function bogpilot_qt_eglfs_init {
   export QT_QPA_EGLFS_ROTATION="${BOGPILOT_QT_ROTATION:--90}"
   export QT_QPA_EGLFS_PHYSICAL_WIDTH=136
   export QT_QPA_EGLFS_PHYSICAL_HEIGHT=68
+  # Touch: Qt's libinput handler ignores QT_QPA_EGLFS_ROTATION, so taps landed in the wrong
+  # place. Use Qt's evdev touch handler, which can rotate the panel's portrait coordinates.
+  # Bench override without a rebuild: /data/bp_touch_rotation (0, 90, 180 or 270).
+  local touch_rot="270"
+  if [ -f /data/bp_touch_rotation ]; then
+    touch_rot="$(tr -dc '0-9' < /data/bp_touch_rotation)"
+  fi
+  local touch_dev=""
+  for ev in /sys/class/input/event*; do
+    if grep -qi "touch" "$ev/device/name" 2>/dev/null; then
+      touch_dev="/dev/input/$(basename "$ev")"
+      break
+    fi
+  done
+  export QT_QPA_EGLFS_NO_LIBINPUT=1
+  export QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS="${touch_dev:-/dev/input/event2}:rotate=${touch_rot:-270}"
 }
