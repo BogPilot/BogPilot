@@ -12,6 +12,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 source "$DIR/system/hardware/tici/bogpilot_agnos.sh"
 # BogPilot: Qt UI on AGNOS 17+ (eglfs on DRM, no weston)
 source "$DIR/system/hardware/tici/bogpilot_qt_eglfs.sh"
+# BogPilot: low-priority build, bounded network wait, stop on a failed build
+source "$DIR/system/hardware/tici/bogpilot_build.sh"
 
 function agnos_init {
   # TODO: move this to agnos
@@ -133,10 +135,20 @@ function launch {
   # start manager
   cd system/manager
   if [ ! -f $DIR/prebuilt ]; then
-    ./build.py
+    # BogPilot: before the first build of a commit, give Wi-Fi a bounded head start; then build at
+    # low priority. A failed build stops here with its error screen: never fall through into the
+    # Qt setup or the manager.
+    if [ -f /AGNOS ] && ! bogpilot_build_is_current "$DIR"; then
+      bogpilot_wait_network
+    fi
+    if ! bogpilot_run_build ./build.py; then
+      bogpilot_fail_hold "$BOGPILOT_LAST_FAIL_MIN" "build failed"
+    fi
   fi
   if [ -f /AGNOS ] && bogpilot_magic_display; then
-    bogpilot_qt_eglfs_init "$DIR"
+    if ! bogpilot_qt_eglfs_init "$DIR"; then
+      bogpilot_qtdeps_failed "$DIR"
+    fi
   fi
   ./manager.py
 

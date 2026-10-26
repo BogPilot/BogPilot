@@ -55,29 +55,57 @@ function bogpilot_qtdeps_fetch {
   bogpilot_qtdeps_ok
 }
 
-# Shows a status screen (raylib, via magic) until the deps are there.
+# Shows a status screen (raylib, via magic) until the deps are there. Gives up after
+# BOGPILOT_QTDEPS_TRIES failed downloads (default 30, about 5 minutes) and returns 1.
+BOGPILOT_QTDEPS_TRIES="${BOGPILOT_QTDEPS_TRIES:-30}"
+BOGPILOT_QTDEPS_RETRY_SLEEP="${BOGPILOT_QTDEPS_RETRY_SLEEP:-10}"
+BOGPILOT_QTDEPS_FAIL_COUNT="${BOGPILOT_QTDEPS_FAIL_COUNT:-/data/bp_qtdeps_fail_count}"
 function bogpilot_qtdeps_ensure {
-  local tries=0 screen_pid=""
+  local tries=0 screen_pid="" rc=0
   while ! bogpilot_qtdeps_ok; do
-    if [ -z "$screen_pid" ]; then
+    if [ -z "$screen_pid" ] && [ -z "${BOGPILOT_NO_SCREEN:-}" ]; then
       echo "BogPilot: fetching UI libraries" | /usr/local/venv/bin/python "$1/common/bogpilot_screen.py" spinner &
       screen_pid=$!
     fi
     bogpilot_qtdeps_fetch && break
     tries=$((tries + 1))
-    echo "BogPilot: could not download UI libraries (try $tries), retrying in 10s"
-    sleep 10
+    if [ "$tries" -ge "$BOGPILOT_QTDEPS_TRIES" ]; then
+      echo "BogPilot: could not download UI libraries after $tries tries, giving up"
+      rc=1
+      break
+    fi
+    echo "BogPilot: could not download UI libraries (try $tries of $BOGPILOT_QTDEPS_TRIES), retrying in ${BOGPILOT_QTDEPS_RETRY_SLEEP}s"
+    sleep "$BOGPILOT_QTDEPS_RETRY_SLEEP"
   done
   if [ -n "$screen_pid" ]; then
     kill "$screen_pid" 2>/dev/null
     wait "$screen_pid" 2>/dev/null
   fi
+  return $rc
+}
+
+# The UI libraries could not be fetched: say so on screen (raylib, magic is still running) and stop.
+# Reboots by itself like a failed build, at most BOGPILOT_FAIL_MAX_REBOOTS times in a row.
+function bogpilot_qtdeps_failed {
+  local dir="$1" count min
+  count=$(bogpilot_fail_count "$BOGPILOT_QTDEPS_FAIL_COUNT")
+  min=$(bogpilot_auto_reboot_min "$count")
+  bogpilot_fail_count_bump "$BOGPILOT_QTDEPS_FAIL_COUNT" >/dev/null
+  if [ -z "${BOGPILOT_NO_SCREEN:-}" ]; then
+    BOGPILOT_ERROR_REBOOT_MIN="$min" /usr/local/venv/bin/python "$dir/common/bogpilot_screen.py" text \
+      "BogPilot could not download its UI libraries.
+ 
+Connect to Wi-Fi with internet access, then reboot. The download is needed only once.
+Files: $BOGPILOT_QTDEPS" &
+  fi
+  bogpilot_fail_hold "$min" "UI libraries missing"
 }
 
 # Stop magic (it holds DRM master) and point Qt at eglfs_kms. Call after the build, before manager.
 function bogpilot_qt_eglfs_init {
   local dir="$1"
-  bogpilot_qtdeps_ensure "$dir"
+  bogpilot_qtdeps_ensure "$dir" || return 1
+  rm -f "$BOGPILOT_QTDEPS_FAIL_COUNT" 2>/dev/null
   sudo systemctl stop magic 2>/dev/null
   if systemctl is-active --quiet weston; then
     sudo systemctl stop weston-ready weston 2>/dev/null
