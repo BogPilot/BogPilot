@@ -236,6 +236,7 @@ def run_text(message: str) -> int:
   mono = "JetBrainsMono-Medium.ttf"
   lines = wrap(message, W - 2 * pad - 40, lambda s: scr.measure(s, fs, mono))
   btn = rl.Rectangle(W - pad - 420, H - pad - 150, 420, 150)
+  logo = scr.texture("img_spinner_comma.png", 150)  # BogPilot mark, bottom-left of the button row
   view_h = H - 2 * pad - 180
   max_scroll = max(0, len(lines) * lh - view_h)
   scroll = 0.0  # build.py puts the error summary first
@@ -264,6 +265,9 @@ def run_text(message: str) -> int:
       th = max(60, view_h * view_h / (view_h + max_scroll))
       ty = pad + (view_h - th) * (scroll / max_scroll)
       rl.draw_rectangle_rounded(rl.Rectangle(W - 24, ty, 12, th), 1, 6, rl.Color(120, 120, 120, 255))
+    if logo is not None:
+      rl.draw_texture(logo, int(pad), int(btn.y), rl.WHITE)
+    scr.text("BogPilot", pad + 160, btn.y + 45, 60, rl.Color(255, 255, 255, 200), "Inter-SemiBold.ttf")
     rl.draw_rectangle_rounded(btn, 0.3, 10, rl.Color(70, 70, 70, 255))
     label = "Reboot" if os.path.isfile("/AGNOS") else "Exit"
     scr.text(label, btn.x + (btn.width - scr.measure(label, 64, "Inter-SemiBold.ttf")) / 2, btn.y + 40, 64, rl.WHITE,
