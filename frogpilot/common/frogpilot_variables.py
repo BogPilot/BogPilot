@@ -393,7 +393,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("HideSpeed", "0", 2, "0"),
   ("HideSpeedLimit", "0", 2, "0"),
   ("HigherBitrate", "0", 2, "0"),
-  ("HolidayThemes", "1", 0, "0"),
+  ("HolidayThemes", "0", 0, "0"),
   ("HondaAltTune", "0", 2, "0"),
   ("HondaLowSpeedPedal", "0", 2, "0"),
   ("HondaMaxBrake", "0", 2, "0"),
