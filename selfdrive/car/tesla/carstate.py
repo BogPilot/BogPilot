@@ -52,6 +52,8 @@ class CarState(CarStateBase):
     self.epb_eac_revoked = False
     # AP1 only. Stock 0x399 blind-spot fields with a per-side hold (blindspot.py).
     self.ap1_bsm = Ap1Blindspot()
+    # DI_cruiseSet DBC factor 0.5 halves the AP1 value (cruise_set.py). Default ON.
+    self.cruise_set_scale = cruise_set_scale(cruise_set_scale_fix_enabled())
 
   def update(self, cp, cp_cam, frogpilot_toggles):
     ret = car.CarState.new_message()
