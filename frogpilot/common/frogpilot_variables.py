@@ -593,8 +593,8 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("ThemesDownloaded", "", 0, ""),
   ("ToyotaDoors", "1", 0, "0"),
   ("ToyotaDSUBypass", "0", 2, "0"),
-  ("TuningLevel", "0", 0, "0"),
-  ("TuningLevelConfirmed", "0", 0, "0"),
+  ("TuningLevel", "3", 0, "0"),  # BogPilot: Developer by default (BogPilot theme elements are level-3 toggles)
+  ("TuningLevelConfirmed", "1", 0, "0"),  # BogPilot: skip the first-open popup that drops new owners to Minimal
   ("TurnDesires", "0", 2, "0"),
   ("UnlimitedLength", "1", 2, "0"),
   ("UnlockDoors", "1", 0, "0"),
