@@ -411,7 +411,11 @@ public:
 
     warning_shown = false;
 
-    updateParam();
+    // Display-unit controls persist every close. m/s-backed controls persist only
+    // after the user steps the value, so a Metric flip cannot rewrite storage.
+    if (display_to_storage == 1.f || std::lround(value * factor) != std::lround(previous_value * factor)) {
+      updateParam();
+    }
   }
 
   void incrementPressed() {
@@ -430,11 +434,25 @@ public:
   }
 
   void refresh() {
-    value = std::clamp(std::round(params.getFloat(key) * factor) / factor, min_value, max_value);
+    float stored = params.getFloat(key);
+    float display = display_to_storage == 1.f ? stored : stored / display_to_storage;
+    float rounded = std::round(display * factor) / factor;
+    value = std::clamp(rounded, min_value, max_value);
+    bool clamped = std::lround(value * factor) != std::lround(rounded * factor);
     previous_value = value;
 
     updateDisplay();
-    updateParam();
+    // Scale 1 writes back, matching the previous control. A scaled control leaves the
+    // stored m/s alone unless the display value was clamped into range.
+    if (display_to_storage == 1.f || clamped) {
+      updateParam();
+    }
+  }
+
+  // display units * scale = stored units. Scale 1 stores the number on screen.
+  // Speed settings use mph-or-km/h per step so the param itself stays in m/s.
+  void setDisplayToStorage(float scale) {
+    display_to_storage = scale > 0.f ? scale : 1.f;
   }
 
   void setWarning(const QString &newWarning) {
@@ -488,7 +506,7 @@ public:
   }
 
   void updateParam() {
-    params.putFloat(key, value);
+    params.putFloat(key, value * display_to_storage);
   }
 
   void updateValue() {
@@ -512,6 +530,7 @@ private:
   bool increment_repeating;
   bool warning_shown;
 
+  float display_to_storage = 1.f;
   float interval;
   float factor;
   float max_value;
@@ -603,6 +622,11 @@ public:
     QHBoxLayout *hlayout = new QHBoxLayout(this);
     hlayout->addWidget(control1);
     hlayout->addWidget(control2);
+  }
+
+  void setDisplayToStorage(float scale) {
+    control1->setDisplayToStorage(scale);
+    control2->setDisplayToStorage(scale);
   }
 
   void updateControl(const float &newMinValue, const float &newMaxValue, const std::map<float, QString> &newValueLabels = {}) {

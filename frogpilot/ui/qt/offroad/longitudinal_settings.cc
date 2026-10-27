@@ -1,5 +1,11 @@
 #include "frogpilot/ui/qt/offroad/longitudinal_settings.h"
 
+#include "common/util.h"
+
+static float speedDisplayToMs(bool metric) {
+  return static_cast<float>(metric ? (1.0 / MS_TO_KPH) : (1.0 / MS_TO_MPH));
+}
+
 FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *parent) : FrogPilotListWidget(parent), parent(parent) {
   networkManager = new QNetworkAccessManager(this);
 
@@ -202,6 +208,8 @@ FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *
     {"SpeedLimitSources", tr("Show Speed Limit Sources"), tr("<b>Display the speed-limit sources and their current values</b> on the driving screen."), ""}
   };
 
+  const float speedToMs = speedDisplayToMs(params.getBool("IsMetric"));
+
   for (const auto &[param, title, desc, icon] : longitudinalToggles) {
     AbstractControl *longitudinalToggle;
 
@@ -241,6 +249,8 @@ FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *
     } else if (param == "CESpeed") {
       FrogPilotParamValueControl *CESpeed = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, tr(" mph"), std::map<float, QString>(), 1, true, 175);
       FrogPilotParamValueControl *CESpeedLead = new FrogPilotParamValueControl("CESpeedLead", tr("With Lead"), tr("<b>Switch to \"Experimental Mode\" when driving below this speed with a lead</b> to help openpilot handle low-speed situations more smoothly."), icon, 0, 99, tr(" mph"), std::map<float, QString>(), 1, true, 175);
+      CESpeed->setDisplayToStorage(speedToMs);
+      CESpeedLead->setDisplayToStorage(speedToMs);
       FrogPilotDualParamValueControl *conditionalSpeeds = new FrogPilotDualParamValueControl(CESpeed, CESpeedLead);
       longitudinalToggle = reinterpret_cast<AbstractControl*>(conditionalSpeeds);
     } else if (param == "CECurves") {
@@ -264,7 +274,9 @@ FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *
     } else if (param == "CESignalSpeed") {
       std::vector<QString> ceSignalToggles{"CESignalLaneDetection"};
       std::vector<QString> ceSignalToggleNames{tr("Not For Detected Lanes")};
-      longitudinalToggle = new FrogPilotParamValueButtonControl(param, title, desc, icon, 0, 99, tr(" mph"), std::map<float, QString>(), 1.0, true, ceSignalToggles, ceSignalToggleNames, true);
+      FrogPilotParamValueButtonControl *ceSignalToggle = new FrogPilotParamValueButtonControl(param, title, desc, icon, 0, 99, tr(" mph"), std::map<float, QString>(), 1.0, true, ceSignalToggles, ceSignalToggleNames, true);
+      ceSignalToggle->setDisplayToStorage(speedToMs);
+      longitudinalToggle = ceSignalToggle;
 
     } else if (param == "CurveSpeedController") {
       FrogPilotManageControl *curveControlToggle = new FrogPilotManageControl(param, title, desc, icon);
@@ -370,9 +382,13 @@ FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *
       });
       longitudinalToggle = qolLongitudinalToggle;
     } else if (param == "CustomCruise") {
-      longitudinalToggle = new FrogPilotParamValueControl(param, title, desc, icon, 1, 99, tr(" mph"));
+      FrogPilotParamValueControl *customCruiseToggle = new FrogPilotParamValueControl(param, title, desc, icon, 1, 99, tr(" mph"));
+      customCruiseToggle->setDisplayToStorage(speedToMs);
+      longitudinalToggle = customCruiseToggle;
     } else if (param == "CustomCruiseLong") {
-      longitudinalToggle = new FrogPilotParamValueControl(param, title, desc, icon, 1, 99, tr(" mph"));
+      FrogPilotParamValueControl *customCruiseLongToggle = new FrogPilotParamValueControl(param, title, desc, icon, 1, 99, tr(" mph"));
+      customCruiseLongToggle->setDisplayToStorage(speedToMs);
+      longitudinalToggle = customCruiseLongToggle;
     } else if (param == "IncreasedStoppedDistance") {
       longitudinalToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 10, tr(" feet"));
     } else if (param == "MapGears") {
@@ -380,7 +396,9 @@ FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *
       std::vector<QString> mapGearsToggleNames{tr("Acceleration"), tr("Deceleration")};
       longitudinalToggle = new FrogPilotButtonToggleControl(param, title, desc, icon, mapGearsToggles, mapGearsToggleNames);
     } else if (param == "SetSpeedOffset") {
-      longitudinalToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, tr(" mph"));
+      FrogPilotParamValueControl *setSpeedOffsetToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, tr(" mph"));
+      setSpeedOffsetToggle->setDisplayToStorage(speedToMs);
+      longitudinalToggle = setSpeedOffsetToggle;
     } else if (param == "WeatherPresets") {
       FrogPilotManageControl *weatherToggle = new FrogPilotManageControl(param, title, desc, icon);
       QObject::connect(weatherToggle, &FrogPilotManageControl::manageButtonClicked, [longitudinalLayout, weatherPanel, this]() {
@@ -590,7 +608,9 @@ FrogPilotLongitudinalPanel::FrogPilotLongitudinalPanel(FrogPilotSettingsWindow *
       });
       longitudinalToggle = manageSLCOffsetsButton;
     } else if (speedLimitControllerOffsetsKeys.contains(param)) {
-      longitudinalToggle = new FrogPilotParamValueControl(param, title, desc, icon, -99, 99, tr(" mph"));
+      FrogPilotParamValueControl *offsetToggle = new FrogPilotParamValueControl(param, title, desc, icon, -99, 99, tr(" mph"));
+      offsetToggle->setDisplayToStorage(speedToMs);
+      longitudinalToggle = offsetToggle;
     } else if (param == "SLCQOL") {
       ButtonControl *manageSLCQOLButton = new ButtonControl(title, tr("MANAGE"), desc);
       QObject::connect(manageSLCQOLButton, &ButtonControl::clicked, [longitudinalLayout, speedLimitControllerQOLPanel, this]() {
@@ -822,7 +842,6 @@ void FrogPilotLongitudinalPanel::updateMetric(bool metric, bool bootRun) {
   static bool previousMetric;
   if (metric != previousMetric && !bootRun) {
     double distanceConversion = metric ? FOOT_TO_METER : METER_TO_FOOT;
-    double speedConversion = metric ? MILE_TO_KM : KM_TO_MILE;
 
     params.putIntNonBlocking("IncreasedStoppedDistance", params.getInt("IncreasedStoppedDistance") * distanceConversion);
     params.putIntNonBlocking("IncreasedStoppedDistanceLowVisibility", params.getInt("IncreasedStoppedDistanceLowVisibility") * distanceConversion);
@@ -830,19 +849,8 @@ void FrogPilotLongitudinalPanel::updateMetric(bool metric, bool bootRun) {
     params.putIntNonBlocking("IncreasedStoppedDistanceRainStorm", params.getInt("IncreasedStoppedDistanceRainStorm") * distanceConversion);
     params.putIntNonBlocking("IncreasedStoppedDistanceSnow", params.getInt("IncreasedStoppedDistanceSnow") * distanceConversion);
 
-    params.putIntNonBlocking("CESignalSpeed", params.getInt("CESignalSpeed") * speedConversion);
-    params.putIntNonBlocking("CESpeed", params.getInt("CESpeed") * speedConversion);
-    params.putIntNonBlocking("CESpeedLead", params.getInt("CESpeedLead") * speedConversion);
-    params.putIntNonBlocking("CustomCruise", params.getInt("CustomCruise") * speedConversion);
-    params.putIntNonBlocking("CustomCruiseLong", params.getInt("CustomCruiseLong") * speedConversion);
-    params.putIntNonBlocking("Offset1", params.getInt("Offset1") * speedConversion);
-    params.putIntNonBlocking("Offset2", params.getInt("Offset2") * speedConversion);
-    params.putIntNonBlocking("Offset3", params.getInt("Offset3") * speedConversion);
-    params.putIntNonBlocking("Offset4", params.getInt("Offset4") * speedConversion);
-    params.putIntNonBlocking("Offset5", params.getInt("Offset5") * speedConversion);
-    params.putIntNonBlocking("Offset6", params.getInt("Offset6") * speedConversion);
-    params.putIntNonBlocking("Offset7", params.getInt("Offset7") * speedConversion);
-    params.putIntNonBlocking("SetSpeedOffset", params.getInt("SetSpeedOffset") * speedConversion);
+    // Speed settings (Offset1-7, cruise interval, conditional speeds, set-speed
+    // offset) are stored in m/s. The Metric toggle only changes the labels.
   }
   previousMetric = metric;
 
@@ -890,6 +898,20 @@ void FrogPilotLongitudinalPanel::updateMetric(bool metric, bool bootRun) {
   FrogPilotParamValueControl *increasedStoppedDistanceSnowToggle = static_cast<FrogPilotParamValueControl*>(toggles["IncreasedStoppedDistanceSnow"]);
   FrogPilotParamValueControl *setSpeedOffsetToggle = static_cast<FrogPilotParamValueControl*>(toggles["SetSpeedOffset"]);
 
+  const float speedToMs = speedDisplayToMs(metric);
+  ceSpeedToggle->setDisplayToStorage(speedToMs);
+  ceSignal->setDisplayToStorage(speedToMs);
+  customCruiseToggle->setDisplayToStorage(speedToMs);
+  customCruiseLongToggle->setDisplayToStorage(speedToMs);
+  offset1Toggle->setDisplayToStorage(speedToMs);
+  offset2Toggle->setDisplayToStorage(speedToMs);
+  offset3Toggle->setDisplayToStorage(speedToMs);
+  offset4Toggle->setDisplayToStorage(speedToMs);
+  offset5Toggle->setDisplayToStorage(speedToMs);
+  offset6Toggle->setDisplayToStorage(speedToMs);
+  offset7Toggle->setDisplayToStorage(speedToMs);
+  setSpeedOffsetToggle->setDisplayToStorage(speedToMs);
+
   if (metric) {
     offset1Toggle->setTitle(tr("Speed Offset (0–29 km/h)"));
     offset2Toggle->setTitle(tr("Speed Offset (30–49 km/h)"));
@@ -899,13 +921,13 @@ void FrogPilotLongitudinalPanel::updateMetric(bool metric, bool bootRun) {
     offset6Toggle->setTitle(tr("Speed Offset (100–119 km/h)"));
     offset7Toggle->setTitle(tr("Speed Offset (120–140 km/h)"));
 
-    offset1Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 0 and 24 mph."));
-    offset2Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 25 and 34 mph."));
-    offset3Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 35 and 44 mph."));
-    offset4Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 45 and 54 mph."));
-    offset5Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 55 and 64 mph."));
-    offset6Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 65 and 74 mph."));
-    offset7Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 75 and 99 mph."));
+    offset1Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 0 and 29 km/h."));
+    offset2Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 30 and 49 km/h."));
+    offset3Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 50 and 59 km/h."));
+    offset4Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 60 and 79 km/h."));
+    offset5Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 80 and 99 km/h."));
+    offset6Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 100 and 119 km/h."));
+    offset7Toggle->setDescription(tr("<b>How much to offset posted speed-limits</b> between 120 and 140 km/h."));
 
     increasedStoppedDistanceToggle->updateControl(0, 3, metricDistanceLabels);
     increasedStoppedDistanceLowVisibilityToggle->updateControl(0, 3, metricDistanceLabels);

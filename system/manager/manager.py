@@ -19,7 +19,7 @@ from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.system.version import get_build_metadata, terms_version, training_version
 
 from openpilot.frogpilot.common.frogpilot_functions import convert_params, frogpilot_boot_functions, setup_frogpilot, uninstall_frogpilot
-from openpilot.frogpilot.common.frogpilot_variables import EXCLUDED_KEYS, frogpilot_default_params, get_frogpilot_toggles, migrate_startup_messages, migrate_theme_params, params_cache, params_memory
+from openpilot.frogpilot.common.frogpilot_variables import EXCLUDED_KEYS, frogpilot_default_params, get_frogpilot_toggles, migrate_speed_params_to_ms, migrate_startup_messages, migrate_theme_params, params_cache, params_memory
 
 
 def save_last_known_clock() -> None:
@@ -76,6 +76,9 @@ def manager_init() -> None:
 
   # BogPilot: move theme params still on the stock FrogPilot defaults to the bundled BogPilot theme (one time)
   migrate_theme_params(params, params_cache, "/data/params_backup")
+
+  # BogPilot: one-time conversion of display-unit speed settings to m/s, before defaults fill unset keys
+  migrate_speed_params_to_ms(params, params_cache, "/data/params_backup")
 
   # set unset params
   reset_toggles = params.get_bool("DoToggleReset")
