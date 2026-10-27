@@ -6,6 +6,11 @@ from cereal import log
 from openpilot.selfdrive.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
+from openpilot.frogpilot.controls.lib.radar_persist_lead import (
+  RadarPersistLeadTracker,
+  hf_v9_should_use_radar,
+  radar_persist_lead_enabled,
+)
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function, ModelConstants
 
@@ -293,6 +298,12 @@ class LongitudinalMpc:
     self.mode = mode
     self.dt = dt
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
+    # BogPilot RadarPersistLead (this branch: default ON when param absent): multi-frame radar trackers so process_lead
+    # can keep using radar when HumanFollowing+v9 would otherwise fake a far lead.
+    self.radar_persist = (
+      (RadarPersistLeadTracker(dt), RadarPersistLeadTracker(dt))
+      if radar_persist_lead_enabled() else None
+    )
     self.reset()
     self.source = SOURCES[2]
 
@@ -325,6 +336,9 @@ class LongitudinalMpc:
     self.x0 = np.zeros(X_DIM)
     self.lead_xv_0 = np.zeros((N+1, 2))
     self.lead_xv_1 = np.zeros((N+1, 2))
+    if getattr(self, "radar_persist", None) is not None:
+      for tracker in self.radar_persist:
+        tracker.reset()
     self.set_weights()
 
   def set_cost_weights(self, cost_weights, constraint_cost_weights):
@@ -372,21 +386,51 @@ class LongitudinalMpc:
     lead_xv = np.column_stack((x_lead_traj, v_lead_traj))
     return lead_xv
 
-  def process_lead(self, model_lead, radar_lead, frogpilot_toggles, traffic_mode_active):
+  def process_lead(self, model_lead, radar_lead, frogpilot_toggles, traffic_mode_active, persist_ok=False):
     v_ego = self.x0[1]
 
     if (frogpilot_toggles.human_following or traffic_mode_active) and frogpilot_toggles.model_version == "v9":
-      if model_lead.prob > frogpilot_toggles.lead_detection_probability and radar_lead.status:
+      radar_status = bool(radar_lead is not None and radar_lead.status)
+      source = hf_v9_should_use_radar(
+        float(model_lead.prob),
+        float(frogpilot_toggles.lead_detection_probability),
+        radar_status,
+        bool(persist_ok),
+      )
+      if source == "model_radar":
         # Anchor at radar's trusted h=0, use model's delta for h>0. On radarless, radarState
         # is synthesized from the model (radard.get_RadarState_from_vision), so this collapses
         # to `x - RADAR_TO_CAMERA` and `v_ego + (model.v - model_v_ego)` — identical to the
         # prior formula. On radar cars, real radar measurements anchor the trajectory.
         x_lead_traj = float(radar_lead.dRel) + (np.asarray(model_lead.x, dtype=np.float64) - model_lead.x[0])
         v_lead_traj = float(radar_lead.vLead) + (np.asarray(model_lead.v, dtype=np.float64) - model_lead.v[0])
-      else:
-        # Fake a fast lead so MPC stays in the same mode.
-        x_lead_traj = 50.0 + (v_ego + 10.0) * LEAD_T_IDXS_MODEL
-        v_lead_traj = np.full_like(LEAD_T_IDXS_MODEL, v_ego + 10.0)
+
+        # MPC won't converge on immediate crashes; lift h=0 to the minimum braking distance.
+        v_lead_0 = v_lead_traj[0]
+        min_x_lead = MIN_X_LEAD_FACTOR * (v_ego + v_lead_0) * (v_ego - v_lead_0) / (-ACCEL_MIN * 2)
+        x_lead_traj[0] = max(x_lead_traj[0], min_x_lead)
+        v_lead_traj = np.clip(v_lead_traj, 0.0, 1e8)
+
+        x_lead_mpc = np.maximum.accumulate(np.interp(T_IDXS, LEAD_T_IDXS_MODEL, x_lead_traj))
+        v_lead_mpc = np.interp(T_IDXS, LEAD_T_IDXS_MODEL, v_lead_traj)
+        return np.column_stack((x_lead_mpc, v_lead_mpc))
+
+      if source == "radar_persist":
+        # BogPilot RadarPersistLead: same path as human_following=0 (classic radar
+        # extrapolation). Matches the late-brake counterfactual (~-2.62 peak).
+        x_lead = float(radar_lead.dRel)
+        v_lead = float(radar_lead.vLead)
+        a_lead = float(radar_lead.aLeadK)
+        a_lead_tau = float(radar_lead.aLeadTau)
+        min_x_lead = ((v_ego + v_lead) / 2) * (v_ego - v_lead) / (-ACCEL_MIN * 2)
+        x_lead = np.clip(x_lead, min_x_lead, 1e8)
+        v_lead = np.clip(v_lead, 0.0, 1e8)
+        a_lead = np.clip(a_lead, -10., 5.)
+        return self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
+
+      # Fake a fast lead so MPC stays in the same mode.
+      x_lead_traj = 50.0 + (v_ego + 10.0) * LEAD_T_IDXS_MODEL
+      v_lead_traj = np.full_like(LEAD_T_IDXS_MODEL, v_ego + 10.0)
 
       # MPC won't converge on immediate crashes; lift h=0 to the minimum braking distance.
       v_lead_0 = v_lead_traj[0]
@@ -421,10 +465,20 @@ class LongitudinalMpc:
   def update(self, v_cruise, modelV2, radarstate, x, v, a, j, t_follow, accel_min, accel_max, frogpilot_toggles, traffic_mode_active, personality=log.LongitudinalPersonality.standard, comfort_brake=COMFORT_BRAKE):
     v_ego = self.x0[1]
     model_leads = modelV2.leadsV3
-    self.status = model_leads[0].prob > frogpilot_toggles.lead_detection_probability or model_leads[1].prob > frogpilot_toggles.lead_detection_probability
+    persist0 = persist1 = False
+    if self.radar_persist is not None:
+      persist0 = self.radar_persist[0].update(radarstate.leadOne)
+      persist1 = self.radar_persist[1].update(radarstate.leadTwo)
+    model_status = (
+      model_leads[0].prob > frogpilot_toggles.lead_detection_probability
+      or model_leads[1].prob > frogpilot_toggles.lead_detection_probability
+    )
+    # hasLead must also be true when RadarPersistLead is feeding a radar-only lead,
+    # otherwise longitudinalPlan.hasLead stays false during the early window.
+    self.status = model_status or persist0 or persist1
 
-    lead_xv_0 = self.process_lead(model_leads[0], radarstate.leadOne, frogpilot_toggles, traffic_mode_active)
-    lead_xv_1 = self.process_lead(model_leads[1], radarstate.leadTwo, frogpilot_toggles, traffic_mode_active)
+    lead_xv_0 = self.process_lead(model_leads[0], radarstate.leadOne, frogpilot_toggles, traffic_mode_active, persist_ok=persist0)
+    lead_xv_1 = self.process_lead(model_leads[1], radarstate.leadTwo, frogpilot_toggles, traffic_mode_active, persist_ok=persist1)
     self.lead_xv_0 = lead_xv_0
     self.lead_xv_1 = lead_xv_1
 
