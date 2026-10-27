@@ -64,6 +64,18 @@ def ensure_magic(timeout: float = 8.0) -> bool:
   return False
 
 
+def release_magic_for_qt() -> None:
+  """AGNOS 17.2: the Qt UI runs on DRM directly (bogpilot_qt_eglfs.sh sets BOGPILOT_QT_EGLFS=1) and
+  cannot start while magic holds DRM master. ensure_magic() restarts magic for every raylib screen
+  (e.g. the registration spinner on a first boot), so stop it again once that screen is gone."""
+  if os.getenv("BOGPILOT_QT_EGLFS") != "1":
+    return
+  r = subprocess.run(["systemctl", "is-active", "--quiet", "magic"], check=False)
+  if r.returncode == 0:
+    subprocess.run(["sudo", "systemctl", "stop", "magic"], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def parse_spinner_line(line: str):
   """-> (progress or None, text or None, is_shot)"""
   line = line.strip()

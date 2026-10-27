@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 from openpilot.common.basedir import BASEDIR
-from openpilot.common.bogpilot_screen import magic_available
+from openpilot.common.bogpilot_screen import magic_available, release_magic_for_qt
 
 
 class Spinner:
@@ -46,6 +46,11 @@ class Spinner:
       except subprocess.TimeoutExpired:
         print("WARNING: failed to kill spinner")
       self.spinner_proc = None
+      if self.raylib:
+        try:
+          release_magic_for_qt()
+        except Exception:
+          pass
 
   def __del__(self):
     self.close()

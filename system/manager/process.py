@@ -2,6 +2,7 @@ import importlib
 import os
 import signal
 import struct
+import sys
 import time
 import subprocess
 from collections.abc import Callable, ValuesView
@@ -275,6 +276,53 @@ class DaemonProcess(ManagerProcess):
 
 RESTART_IF_CRASH = {"qcomgpsd"}
 
+# BogPilot (AGNOS 17.2, Qt on DRM): a ui that exits never comes back by itself (start() is a no-op
+# while self.proc is set, and the watchdog only restarts a ui that has sent a heartbeat), so the
+# screen stayed on the last splash frame with no message. Free the display and relaunch it a few
+# times; if it keeps dying, put an error on screen instead of a frozen splash.
+UI_RESTART_MAX, UI_RESTART_GAP_S = 3, 10.0
+
+
+def bogpilot_ui_guard(p: ManagerProcess) -> None:
+  if os.getenv("BOGPILOT_QT_EGLFS") != "1" or p.proc is None or p.proc.exitcode is None:
+    return
+  if getattr(p, "_ui_error_shown", False):
+    return
+  now = time.monotonic()
+  if now - getattr(p, "_ui_last_restart", 0.0) < UI_RESTART_GAP_S:
+    return
+  if p.watchdog_seen:
+    p._ui_failures = 0  # it ran normally before; count from here
+  code = p.proc.exitcode
+  p._ui_failures = getattr(p, "_ui_failures", 0) + 1
+  if p._ui_failures > UI_RESTART_MAX:
+    cloudlog.error(f"ui keeps exiting (last exit code {code}), showing an error")
+    p._ui_error_shown = True
+    try:
+      # the raylib error screen does not need the Qt flip shim
+      env = dict(os.environ)
+      pre = [x for x in env.get("LD_PRELOAD", "").split(":") if x and "bogpilot_drm_noflipevent" not in x]
+      if pre:
+        env["LD_PRELOAD"] = ":".join(pre)
+      else:
+        env.pop("LD_PRELOAD", None)
+      subprocess.Popen([sys.executable, os.path.join(BASEDIR, "common", "bogpilot_screen.py"), "text",
+                        "BogPilot's screen could not start.\n\n"
+                        f"The UI exited {UI_RESTART_MAX + 1} times in a row (last exit code {code}).\n"
+                        "Reboot to try again. If this keeps happening, reinstall BogPilot."],
+                       cwd=BASEDIR, close_fds=True, env=env)
+    except Exception:
+      cloudlog.exception("could not show the ui error screen")
+    return
+  cloudlog.error(f"ui exited with {code}, restarting ({p._ui_failures}/{UI_RESTART_MAX})")
+  p._ui_last_restart = now
+  try:
+    from openpilot.common.bogpilot_screen import release_magic_for_qt
+    release_magic_for_qt()
+  except Exception:
+    pass
+  p.stop(block=True)
+
 
 def ensure_running(procs: ValuesView[ManagerProcess], started: bool, params=None, CP: car.CarParams=None,
                    not_run: list[str] | None=None, classic_model=False, tinygrad_model=False, frogpilot_toggles=None) -> list[ManagerProcess]:
@@ -299,6 +347,8 @@ def ensure_running(procs: ValuesView[ManagerProcess], started: bool, params=None
         cloudlog.error(f"{p.name} exited with {p.proc.exitcode} while it should run, restarting")
         p._last_crash_restart = now
         p.stop(block=True)
+    if p.name == "ui":
+      bogpilot_ui_guard(p)
     p.start()
 
   return running

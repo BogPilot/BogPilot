@@ -101,6 +101,24 @@ Files: $BOGPILOT_QTDEPS" &
   bogpilot_fail_hold "$min" "UI libraries missing"
 }
 
+# AGNOS 17.2: Qt's per-frame DRM flip events crash the msm display driver (see
+# bogpilot_drm_noflipevent.c). Build the small preload library that turns them into the
+# flags-0 flip + vblank pacing the stock 17.2 UI uses, keyed by the source hash, and preload it.
+function bogpilot_qt_flip_shim {
+  local dir="$1" src sum out
+  src="$dir/system/hardware/tici/bogpilot_drm_noflipevent.c"
+  [ -f "$src" ] || return 1
+  sum=$(sha256sum "$src" | cut -c1-16)
+  out="$BOGPILOT_QTDEPS/flipshim/bogpilot_drm_noflipevent_$sum.so"
+  if [ ! -f "$out" ]; then
+    mkdir -p "$BOGPILOT_QTDEPS/flipshim" || return 1
+    rm -f "$BOGPILOT_QTDEPS"/flipshim/bogpilot_drm_noflipevent_*.so
+    gcc -O2 -Wall -fPIC -shared -I/usr/include/libdrm -o "$out.tmp" "$src" -ldl -Wl,--no-as-needed -ldrm || { rm -f "$out.tmp"; return 1; }
+    mv "$out.tmp" "$out"
+  fi
+  export LD_PRELOAD="$out${LD_PRELOAD:+:$LD_PRELOAD}"
+}
+
 # Stop magic (it holds DRM master) and point Qt at eglfs_kms. Call after the build, before manager.
 function bogpilot_qt_eglfs_init {
   local dir="$1"
@@ -135,4 +153,9 @@ function bogpilot_qt_eglfs_init {
   done
   export QT_QPA_EGLFS_NO_LIBINPUT=1
   export QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS="${touch_dev:-/dev/input/event2}:rotate=${touch_rot:-270}"
+  # tells common/bogpilot_screen.py to give the display back to Qt after a raylib screen
+  export BOGPILOT_QT_EGLFS=1
+  if ! bogpilot_qt_flip_shim "$dir"; then
+    echo "BogPilot: could not build the DRM flip shim; the UI may crash this kernel"
+  fi
 }
