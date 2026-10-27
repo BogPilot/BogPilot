@@ -4,6 +4,7 @@ from cereal import car, custom
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.car.tesla.blindspot import Ap1Blindspot, frames_from_vl_all
+from openpilot.selfdrive.car.tesla.cruise_set import cruise_set_scale, cruise_set_scale_fix_enabled
 from openpilot.selfdrive.car.tesla.cluster import CLUSTER_ADDRS, COUNTER_SIGNALS, MSG_NAMES
 from openpilot.selfdrive.car.tesla.hso import ap1_driver_input
 from openpilot.selfdrive.car.tesla.stalk_follow import dtr_sample, follow_seconds, parse_stalk_raw
@@ -117,10 +118,13 @@ class CarState(CarStateBase):
     # Tinkla-aligned: cruise set is DI_cruiseSet (ACC set), not DI_digitalSpeed
     # (≈ ego). With pcmCruise, VCruiseHelper copies this into controlsState.vCruise
     # so openpilot's set tracks the stalk set. Display/ego stay on ESP vEgo.
+    # NOTE: on AP1 the raw value is whole mph and, under the OP overlay, echoes
+    # our own DAS_setSpeed; DBC factor 0.5 makes this read ~vEgo/2. Opt-in x2
+    # via /data/params_bogpilot/TeslaCruiseSetScaleFix (cruise_set.py).
     if speed_units == "KPH":
-      ret.cruiseState.speed = cp.vl["DI_state"]["DI_cruiseSet"] * CV.KPH_TO_MS
+      ret.cruiseState.speed = cp.vl["DI_state"]["DI_cruiseSet"] * self.cruise_set_scale * CV.KPH_TO_MS
     elif speed_units == "MPH":
-      ret.cruiseState.speed = cp.vl["DI_state"]["DI_cruiseSet"] * CV.MPH_TO_MS
+      ret.cruiseState.speed = cp.vl["DI_state"]["DI_cruiseSet"] * self.cruise_set_scale * CV.MPH_TO_MS
     ret.cruiseState.available = ((cruise_state == "STANDBY") or ret.cruiseState.enabled)
     ret.cruiseState.standstill = False # This needs to be false, since we can resume from stop without sending anything special
 
