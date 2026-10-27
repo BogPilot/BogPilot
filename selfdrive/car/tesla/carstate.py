@@ -119,8 +119,9 @@ class CarState(CarStateBase):
     # (≈ ego). With pcmCruise, VCruiseHelper copies this into controlsState.vCruise
     # so openpilot's set tracks the stalk set. Display/ego stay on ESP vEgo.
     # NOTE: on AP1 the raw value is whole mph and, under the OP overlay, echoes
-    # our own DAS_setSpeed; DBC factor 0.5 makes this read ~vEgo/2. Opt-in x2
-    # via /data/params_bogpilot/TeslaCruiseSetScaleFix (cruise_set.py).
+    # our own DAS_setSpeed; DBC factor 0.5 makes this read ~vEgo/2. Default ON
+    # x2 via /data/params_bogpilot/TeslaCruiseSetScaleFix (cruise_set.py);
+    # write 0/false/off to disable.
     if speed_units == "KPH":
       ret.cruiseState.speed = cp.vl["DI_state"]["DI_cruiseSet"] * self.cruise_set_scale * CV.KPH_TO_MS
     elif speed_units == "MPH":
