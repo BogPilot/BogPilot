@@ -1,5 +1,11 @@
 #include "frogpilot/ui/qt/offroad/lateral_settings.h"
 
+#include "common/util.h"
+
+static float speedDisplayToMs(bool metric) {
+  return static_cast<float>(metric ? (1.0 / MS_TO_KPH) : (1.0 / MS_TO_MPH));
+}
+
 FrogPilotLateralPanel::FrogPilotLateralPanel(FrogPilotSettingsWindow *parent) : FrogPilotListWidget(parent), parent(parent) {
   QJsonObject shownDescriptions = QJsonDocument::fromJson(QString::fromStdString(params.get("ShownToggleDescriptions")).toUtf8()).object();
   QString className = this->metaObject()->className();
@@ -69,6 +75,8 @@ FrogPilotLateralPanel::FrogPilotLateralPanel(FrogPilotSettingsWindow *parent) : 
     {"PauseLateralSpeed", tr("Pause Steering Below"), tr("<b>Pause steering below the set speed.</b>"), ""}
   };
 
+  const float speedToMs = speedDisplayToMs(params.getBool("IsMetric"));
+
   for (const auto &[param, title, desc, icon] : lateralToggles) {
     AbstractControl *lateralToggle;
 
@@ -101,7 +109,9 @@ FrogPilotLateralPanel::FrogPilotLateralPanel(FrogPilotSettingsWindow *parent) : 
       });
       lateralToggle = aolToggle;
     } else if (param == "PauseAOLOnBrake") {
-      lateralToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, QString(), std::map<float, QString>(), 1, true);
+      FrogPilotParamValueControl *pauseAOLToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, QString(), std::map<float, QString>(), 1, true);
+      pauseAOLToggle->setDisplayToStorage(speedToMs);
+      lateralToggle = pauseAOLToggle;
 
     } else if (param == "LaneChanges") {
       FrogPilotManageControl *laneChangeToggle = new FrogPilotManageControl(param, title, desc, icon);
@@ -118,7 +128,9 @@ FrogPilotLateralPanel::FrogPilotLateralPanel(FrogPilotSettingsWindow *parent) : 
     } else if (param == "LaneDetectionWidth") {
       lateralToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 15, QString(), std::map<float, QString>(), 0.1, true);
     } else if (param == "MinimumLaneChangeSpeed") {
-      lateralToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, QString(), std::map<float, QString>(), 1, true);
+      FrogPilotParamValueControl *minimumLaneChangeSpeedToggle = new FrogPilotParamValueControl(param, title, desc, icon, 0, 99, QString(), std::map<float, QString>(), 1, true);
+      minimumLaneChangeSpeedToggle->setDisplayToStorage(speedToMs);
+      lateralToggle = minimumLaneChangeSpeedToggle;
 
     } else if (param == "LateralTune") {
       FrogPilotManageControl *lateralTuneToggle = new FrogPilotManageControl(param, title, desc, icon);
@@ -136,7 +148,9 @@ FrogPilotLateralPanel::FrogPilotLateralPanel(FrogPilotSettingsWindow *parent) : 
     } else if (param == "PauseLateralSpeed") {
       std::vector<QString> pauseLateralToggles{"PauseLateralOnSignal"};
       std::vector<QString> pauseLateralToggleNames{tr("Turn Signal Only")};
-      lateralToggle = new FrogPilotParamValueButtonControl(param, title, desc, icon, 0, 99, QString(), std::map<float, QString>(), 1, true, pauseLateralToggles, pauseLateralToggleNames, true);
+      FrogPilotParamValueButtonControl *pauseLateralToggle = new FrogPilotParamValueButtonControl(param, title, desc, icon, 0, 99, QString(), std::map<float, QString>(), 1, true, pauseLateralToggles, pauseLateralToggleNames, true);
+      pauseLateralToggle->setDisplayToStorage(speedToMs);
+      lateralToggle = pauseLateralToggle;
 
     } else {
       lateralToggle = new ParamControl(param, title, desc, icon);
@@ -272,13 +286,11 @@ void FrogPilotLateralPanel::updateMetric(bool metric, bool bootRun) {
   static bool previousMetric;
   if (metric != previousMetric && !bootRun) {
     double distanceConversion = metric ? FOOT_TO_METER : METER_TO_FOOT;
-    double speedConversion = metric ? MILE_TO_KM : KM_TO_MILE;
 
     params.putFloatNonBlocking("LaneDetectionWidth", params.getFloat("LaneDetectionWidth") * distanceConversion);
 
-    params.putIntNonBlocking("MinimumLaneChangeSpeed", params.getInt("MinimumLaneChangeSpeed") * speedConversion);
-    params.putIntNonBlocking("PauseAOLOnBrake", params.getInt("PauseAOLOnBrake") * speedConversion);
-    params.putIntNonBlocking("PauseLateralSpeed", params.getInt("PauseLateralSpeed") * speedConversion);
+    // MinimumLaneChangeSpeed, PauseAOLOnBrake, and PauseLateralSpeed are stored
+    // in m/s. The Metric toggle only changes the on-screen unit.
   }
   previousMetric = metric;
 
@@ -314,6 +326,11 @@ void FrogPilotLateralPanel::updateMetric(bool metric, bool bootRun) {
   FrogPilotParamValueControl *minimumLaneChangeSpeedToggle = static_cast<FrogPilotParamValueControl*>(toggles["MinimumLaneChangeSpeed"]);
   FrogPilotParamValueControl *pauseAOLOnBrakeToggle = static_cast<FrogPilotParamValueControl*>(toggles["PauseAOLOnBrake"]);
   FrogPilotParamValueControl *pauseLateralToggle = static_cast<FrogPilotParamValueControl*>(toggles["PauseLateralSpeed"]);
+
+  const float speedToMs = speedDisplayToMs(metric);
+  minimumLaneChangeSpeedToggle->setDisplayToStorage(speedToMs);
+  pauseAOLOnBrakeToggle->setDisplayToStorage(speedToMs);
+  pauseLateralToggle->setDisplayToStorage(speedToMs);
 
   if (metric) {
     laneWidthToggle->updateControl(0, 5, metricDistanceLabels);

@@ -216,7 +216,7 @@ def test_applies_on_fresh_ap1(env):
   for key, value in ap1.AP1_PARAM_PROFILE.items():
     assert params.get(key, encoding="utf-8") == value
   for key, mph in ap1.AP1_SPEED_OFFSETS_MPH.items():
-    assert params.get_int(key) == mph
+    assert params.get_float(key) == pytest.approx(mph * ap1.MPH_TO_MS, abs=1e-4)
   assert params.get_bool("FrogPilotTelemetry") is False
   for key in ap1.THEME_KEYS:
     assert params.get(key, encoding="utf-8") == BOGPILOT_THEME
@@ -256,20 +256,22 @@ def test_never_overwrites_owner_changes(env):
 def test_numeric_default_formats_count_as_default(env):
   params, bp_dir = env
   params.put("CarModel", ap1.AP1_CAR_MODEL)
-  params.put("Offset1", "5.000000")  # UI float format of the table default "5"
+  params.put("Offset1", "5.000000")  # legacy UI float of the old mph table default "5"
   params.put("DecelerationProfile", "1.000000")
   run(params, bp_dir)
-  assert params.get_int("Offset1") == 4
+  assert params.get_float("Offset1") == pytest.approx(4 * ap1.MPH_TO_MS, abs=1e-4)
   assert params.get("DecelerationProfile", encoding="utf-8") == "2"
 
 
 def test_metric_device_gets_kph_offsets(env):
+  # Storage is m/s for both unit systems. 4 mph is about 1.79 m/s, not 6 km/h.
   params, bp_dir = env
   params.put("CarModel", ap1.AP1_CAR_MODEL)
   params.put("IsMetric", "1")
   run(params, bp_dir)
-  got = {key: params.get_int(key) for key in ap1.AP1_SPEED_OFFSETS_MPH}
-  assert got == {"Offset1": 6, "Offset2": 8, "Offset3": 8, "Offset4": 8, "Offset5": 11, "Offset6": 13, "Offset7": 16}
+  for key, mph in ap1.AP1_SPEED_OFFSETS_MPH.items():
+    assert params.get_float(key) == pytest.approx(mph * ap1.MPH_TO_MS, abs=1e-4)
+  assert ap1.speed_offsets_for_units(True) == ap1.speed_offsets_for_units(False)
 
 
 def test_metric_ui_converted_defaults_count_as_default(env):
@@ -278,10 +280,10 @@ def test_metric_ui_converted_defaults_count_as_default(env):
   params.put("IsMetric", "1")
   params.put("Offset1", "8")    # settings UI converted the mph default 5 to km/h (truncated)
   params.put("Offset5", "16")   # 10 mph -> 16 km/h
-  params.put("Offset6", "12")   # owner's own km/h choice: kept
+  params.put("Offset6", "12")   # owner's own km/h choice: kept (migration converts this, not the profile)
   run(params, bp_dir)
-  assert params.get_int("Offset1") == 6
-  assert params.get_int("Offset5") == 11
+  assert params.get_float("Offset1") == pytest.approx(4 * ap1.MPH_TO_MS, abs=1e-4)
+  assert params.get_float("Offset5") == pytest.approx(7 * ap1.MPH_TO_MS, abs=1e-4)
   assert params.get_int("Offset6") == 12
 
 
@@ -344,6 +346,7 @@ def test_manager_wiring():
   loop_end = src.index('params.remove("DoToggleResetStock")')
   hook = src.index("apply_ap1_defaults_once(params)")
   assert loop_end < hook < src.index("frogpilot_boot_functions(build_metadata")
+  assert src.index("migrate_speed_params_to_ms(") < src.index("for k, v, stock in")
   block = src[loop_end:hook]
   assert re.search(r"if reset_toggles:\s*\n\s*clear_ap1_defaults_marker\(\)", block)
   assert "reset_toggles_stock" not in block  # a reset to stock leaves the marker alone

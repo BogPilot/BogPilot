@@ -22,9 +22,10 @@ few in EXPLICIT_DEFAULT_KEYS that are spelled out on purpose. Keys that are
 secret, personal, or tied to one device or car are never part of it (see
 NEVER_PROFILE_KEYS); the tests enforce that.
 
-Speed-limit offsets are kept in mph (AP1_SPEED_OFFSETS_MPH). On a metric device
-(IsMetric) they are converted to km/h and rounded before writing, because the
-Offset params are stored in the device's display unit.
+Speed-limit offsets are kept in mph in AP1_SPEED_OFFSETS_MPH and written as m/s.
+The settings UI shows mph or km/h from that stored speed. IsMetric does not
+change the stored number. Legacy display-unit defaults (mph, or km/h left by
+the old Metric toggle) still count as untouched so the profile can replace them.
 
 Theme: every theme menu (Color Scheme, Distance Button, Icon Pack, Sound Pack,
 Steering Wheel, Turn Signal) is set to the BogPilot theme, whose colors, icons,
@@ -108,6 +109,7 @@ STOCK_LOOK_THEME_VALUES: dict[str, frozenset[str]] = {
 
 # Speed-limit controller offsets in mph, by posted-limit band (the bands are the
 # settings labels for Offset1..Offset7 and speed_limit_controller.py's mph table).
+# Stored params are m/s (mph * MPH_TO_MS), not the display unit.
 AP1_SPEED_OFFSETS_MPH: dict[str, int] = {
   "Offset1": 4,                          # 0-24 mph limits: +4
   "Offset2": 5,                          # 25-34 mph: +5
@@ -115,9 +117,23 @@ AP1_SPEED_OFFSETS_MPH: dict[str, int] = {
   "Offset4": 5,                          # 45-54 mph: +5
   "Offset5": 7,                          # 55-64 mph: +7
   "Offset6": 8,                          # 65-74 mph: +8
-  "Offset7": 10,                         # 75-99 mph: +10 (same as the table default)
+  "Offset7": 10,                         # 75-99 mph: +10 (same as the historical mph default)
 }
 MPH_TO_KPH = 1.609344
+MPH_TO_MS = MPH_TO_KPH / 3.6
+KPH_TO_MS = 1.0 / 3.6
+
+# FrogPilot table defaults from before m/s storage. Used only to recognize an
+# offset the owner never changed, including the truncated km/h Metric rewrite.
+LEGACY_OFFSET_DEFAULTS_MPH: dict[str, float] = {
+  "Offset1": 5.0,
+  "Offset2": 5.0,
+  "Offset3": 5.0,
+  "Offset4": 5.0,
+  "Offset5": 10.0,
+  "Offset6": 10.0,
+  "Offset7": 10.0,
+}
 
 # Recommended Params values. Strings are stored exactly as the settings UI writes them.
 AP1_PARAM_PROFILE: dict[str, str] = {
@@ -137,7 +153,7 @@ AP1_PARAM_PROFILE: dict[str, str] = {
   "SLCPriority3": "Navigation",          # SLC source 3: Navigation
   "SLCLookaheadHigher": "1.000000",      # look 1 s ahead for a higher upcoming limit
   "SLCLookaheadLower": "1.000000",       # look 1 s ahead for a lower upcoming limit
-  # Offset1..Offset7 come from AP1_SPEED_OFFSETS_MPH (unit-aware), not from this table.
+  # Offset1..Offset7 come from AP1_SPEED_OFFSETS_MPH, stored as m/s, not from this table.
 
   # --- Lateral ---
   "AlwaysOnLateral": "0",                # Always On Lateral off
@@ -237,34 +253,38 @@ def _is_metric(params) -> bool:
     return False
 
 
-def speed_offsets_for_units(metric: bool) -> dict[str, str]:
-  """Offset1..7 as stored text: mph as-is, or converted to km/h and rounded on a metric device."""
-  out = {}
-  for key, mph in AP1_SPEED_OFFSETS_MPH.items():
-    value = round(mph * MPH_TO_KPH) if metric else mph
-    out[key] = f"{value:.6f}"
-  return out
+def speed_offsets_for_units(_metric: bool = False) -> dict[str, str]:
+  """Offset1..7 stored as m/s text. The display unit is not part of the stored value."""
+  return {key: f"{mph * MPH_TO_MS:.6f}" for key, mph in AP1_SPEED_OFFSETS_MPH.items()}
 
 
 def _profile_for_units(params) -> dict[str, str]:
   profile = dict(AP1_PARAM_PROFILE)
-  profile.update(speed_offsets_for_units(_is_metric(params)))
+  profile.update(speed_offsets_for_units())
   return profile
 
 
-def _is_converted_default(key, current, table, metric) -> bool:
-  """On a metric device the settings UI converted the mph table default to km/h (truncating), e.g. 5 -> 8.
+def _is_converted_default(key, current, metric) -> bool:
+  """Legacy display-unit table defaults still count as untouched.
 
-  Treat that converted value as "still default" so a metric owner who never touched an offset gets the profile.
+  Before m/s storage, offsets were mph integers, or km/h integers after the Metric
+  toggle truncated mph * 1.609344 (5 mph became 8 km/h). Migration multiplies those
+  by MPH_TO_MS or KPH_TO_MS. Exact mph defaults equal the m/s table and are handled
+  by values_equal; this catches the truncated km/h form and unmigrated text.
   """
-  if not metric or key not in AP1_SPEED_OFFSETS_MPH:
+  if key not in LEGACY_OFFSET_DEFAULTS_MPH:
     return False
   try:
-    default_mph = float(table[key])
     cur = float(_text(current))
-  except (TypeError, ValueError, KeyError):
+  except (TypeError, ValueError):
     return False
-  return cur in (int(default_mph * MPH_TO_KPH), round(default_mph * MPH_TO_KPH))
+  mph = LEGACY_OFFSET_DEFAULTS_MPH[key]
+  candidates = [mph, mph * MPH_TO_MS]
+  if metric:
+    for shown in (int(mph * MPH_TO_KPH), int(round(mph * MPH_TO_KPH))):
+      candidates.append(float(shown))
+      candidates.append(shown * KPH_TO_MS)
+  return any(abs(cur - candidate) < 1e-3 for candidate in candidates)
 
 
 def is_ap1(params) -> bool:
@@ -357,7 +377,7 @@ def _apply_profile(params, directory: Path, default_table: dict | None) -> list[
     if key in TUNING_LEVEL_KEYS and not tuning_unset:
       continue
     current = params.get(key)
-    if current is None or values_equal(current, table[key]) or _is_converted_default(key, current, table, metric):
+    if current is None or values_equal(current, table[key]) or _is_converted_default(key, current, metric):
       params.put(key, value)
       written.append(key)
 

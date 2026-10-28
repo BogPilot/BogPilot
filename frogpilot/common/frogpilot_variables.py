@@ -168,6 +168,112 @@ def migrate_theme_params(*stores, marker_path=None):
       pass
   return first_run
 
+# Speed settings below are stored in m/s. Older installs stored whole mph, or whole
+# km/h after the Metric toggle multiplied by MILE_TO_KM and truncated. The file
+# marker converts each existing value once. It is not a Params key: the prebuilt
+# params module rejects unknown keys.
+SPEED_PARAMS_IN_MS = (
+  "CESignalSpeed",
+  "CESpeed",
+  "CESpeedLead",
+  "CustomCruise",
+  "CustomCruiseLong",
+  "MinimumLaneChangeSpeed",
+  "Offset1",
+  "Offset2",
+  "Offset3",
+  "Offset4",
+  "Offset5",
+  "Offset6",
+  "Offset7",
+  "PauseAOLOnBrake",
+  "PauseLateralSpeed",
+  "SetSpeedOffset",
+)
+SPEED_PARAMS_MS_MARKER = Path("/data/params_bogpilot/SpeedParamsStoredInMS")
+_speed_params_migrated = False
+
+
+def _ms_from_mph(mph):
+  return f"{float(mph) * CV.MPH_TO_MS:.6f}"
+
+
+def display_speed_steps(meters_per_second, metric):
+  """Nearest whole mph, or km/h when metric, for a speed stored in m/s."""
+  per_step = CV.KPH_TO_MS if metric else CV.MPH_TO_MS
+  return int(round(float(meters_per_second) / per_step))
+
+
+def _open_param_store(store):
+  if isinstance(store, str):
+    try:
+      return Params(store)
+    except Exception:
+      return None
+  return store
+
+
+def _store_is_metric(store):
+  try:
+    raw = store.get("IsMetric", encoding="utf-8")
+  except Exception:
+    return None
+  if raw is None:
+    return False
+  return str(raw).strip() == "1"
+
+
+def migrate_speed_params_to_ms(*stores, marker_path=None):
+  """Convert legacy display-unit speed params to m/s once. Returns True if it ran.
+
+  Missing keys are left unset so a later default write can store m/s directly.
+  Each store uses its own IsMetric flag: mph when unset or 0, km/h when 1.
+  """
+  global _speed_params_migrated
+  marker = Path(marker_path) if marker_path is not None else SPEED_PARAMS_MS_MARKER
+  if marker_path is None and _speed_params_migrated:
+    return False
+  try:
+    if marker.exists():
+      if marker_path is None:
+        _speed_params_migrated = True
+      return False
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    import fcntl
+    lock_path = marker.with_name(marker.name + ".lock")
+    with open(lock_path, "a+") as lock:
+      fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+      try:
+        if marker.exists():
+          if marker_path is None:
+            _speed_params_migrated = True
+          return False
+        for store in stores:
+          opened = _open_param_store(store)
+          if opened is None:
+            continue
+          metric = _store_is_metric(opened)
+          if metric is None:
+            continue
+          scale = CV.KPH_TO_MS if metric else CV.MPH_TO_MS
+          for key in SPEED_PARAMS_IN_MS:
+            try:
+              raw = opened.get(key, encoding="utf-8")
+              if raw is None or str(raw).strip() == "":
+                continue
+              display = float(raw)
+            except Exception:
+              continue
+            opened.put(key, f"{display * scale:.6f}")
+        marker.write_text("1\n")
+        if marker_path is None:
+          _speed_params_migrated = True
+        return True
+      finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+  except Exception:
+    return False
+
 ERROR_LOGS_PATH = Path("/data/error_logs")
 SCREEN_RECORDINGS_PATH = Path("/data/media/screen_recordings")
 VIDEO_CACHE_PATH = Path("/data/video_cache")
@@ -316,7 +422,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("CENavigationLead", "1", 2, "0"),
   ("CENavigationTurns", "1", 2, "0"),
   ("CESignalLaneDetection", "1", 2, "0"),
-  ("CESignalSpeed", "55", 2, "0"),
+  ("CESignalSpeed", _ms_from_mph(55), 2, "0"),
   ("CESlowerLead", "0", 1, "0"),
   ("CESpeed", "0", 1, "0"),
   ("CESpeedLead", "0", 1, "0"),
@@ -329,8 +435,8 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("CurveSpeedController", "1", 1, "0"),
   ("CustomAlerts", "0", 0, "0"),
   ("CustomColors", BOGPILOT_THEME, 0, "stock"),
-  ("CustomCruise", "1", 2, "1"),
-  ("CustomCruiseLong", "5", 2, "5"),
+  ("CustomCruise", _ms_from_mph(1), 2, _ms_from_mph(1)),
+  ("CustomCruiseLong", _ms_from_mph(5), 2, _ms_from_mph(5)),
   ("CustomDistanceIcons", BOGPILOT_THEME, 0, "stock"),
   ("CustomIcons", BOGPILOT_THEME, 0, "stock"),
   ("CustomPersonalities", "0", 2, "0"),
@@ -441,7 +547,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("MapsSelected", "", 0, ""),
   ("MapStyle", "1", 2, "0"),
   ("MaxDesiredAcceleration", "4.0", 2, "2.0"),
-  ("MinimumLaneChangeSpeed", str(LANE_CHANGE_SPEED_MIN / CV.MPH_TO_MS), 2, str(LANE_CHANGE_SPEED_MIN / CV.MPH_TO_MS)),
+  ("MinimumLaneChangeSpeed", f"{LANE_CHANGE_SPEED_MIN:.6f}", 2, f"{LANE_CHANGE_SPEED_MIN:.6f}"),
   ("Model", DEFAULT_MODEL + "_default", 1, DEFAULT_MODEL + "_default"),
   ("ModelDrivesAndScores", "", 2, ""),
   ("ModelRandomizer", "0", 2, "0"),
@@ -457,13 +563,13 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("NoUploads", "0", 2, "0"),
   ("NudgelessLaneChange", "1", 0, "0"),
   ("NumericalTemp", "1", 3, "0"),
-  ("Offset1", "5", 0, "0"),
-  ("Offset2", "5", 0, "0"),
-  ("Offset3", "5", 0, "0"),
-  ("Offset4", "5", 0, "0"),
-  ("Offset5", "10", 0, "0"),
-  ("Offset6", "10", 0, "0"),
-  ("Offset7", "10", 0, "0"),
+  ("Offset1", _ms_from_mph(5), 0, "0"),
+  ("Offset2", _ms_from_mph(5), 0, "0"),
+  ("Offset3", _ms_from_mph(5), 0, "0"),
+  ("Offset4", _ms_from_mph(5), 0, "0"),
+  ("Offset5", _ms_from_mph(10), 0, "0"),
+  ("Offset6", _ms_from_mph(10), 0, "0"),
+  ("Offset7", _ms_from_mph(10), 0, "0"),
   ("OneLaneChange", "1", 2, "0"),
   ("OnroadDistanceButton", "0", 0, "0"),
   ("openpilotMinutes", "0", 0, "0"),
@@ -692,10 +798,14 @@ class FrogPilotVariables:
 
     toggle.tuning_level = params.get_int("TuningLevel") if params.get_bool("TuningLevelConfirmed") else 3
 
+    migrate_speed_params_to_ms(params, params_cache)
+
     toggle.is_metric = params.get_bool("IsMetric")
     distance_conversion = 1 if toggle.is_metric else CV.FOOT_TO_METER
     small_distance_conversion = 1 if toggle.is_metric else CV.INCH_TO_CM
-    speed_conversion = CV.KPH_TO_MS if toggle.is_metric else CV.MPH_TO_MS
+
+    def ms_value(key, use_params):
+      return (params if use_params else default).get_float(key)
 
     msg_bytes = params.get("CarParams" if started else "CarParamsPersistent", block=started)
     if msg_bytes:
@@ -808,7 +918,7 @@ class FrogPilotVariables:
     toggle.always_on_lateral_set &= toggle.always_on_lateral
     toggle.always_on_lateral_lkas = toggle.always_on_lateral_set and toggle.use_lkas_for_aol and (params.get_bool("AlwaysOnLateralLKAS") if toggle.tuning_level >= level["AlwaysOnLateralLKAS"] else default.get_bool("AlwaysOnLateralLKAS"))
     toggle.always_on_lateral_main = toggle.always_on_lateral_set and not toggle.use_lkas_for_aol and (params.get_bool("AlwaysOnLateralMain") if toggle.tuning_level >= level["AlwaysOnLateralMain"] else default.get_bool("AlwaysOnLateralMain"))
-    toggle.always_on_lateral_pause_speed = params.get_int("PauseAOLOnBrake") if toggle.always_on_lateral_set and toggle.tuning_level >= level["PauseAOLOnBrake"] else default.get_int("PauseAOLOnBrake")
+    toggle.always_on_lateral_pause_speed = ms_value("PauseAOLOnBrake", toggle.always_on_lateral_set and toggle.tuning_level >= level["PauseAOLOnBrake"])
 
     toggle.automatic_updates = (params.get_bool("AutomaticUpdates") if toggle.tuning_level >= level["AutomaticUpdates"] and (self.release_branch or self.vetting_branch) else default.get_bool("AutomaticUpdates")) and not BACKUP_PATH.is_file()
 
@@ -822,8 +932,8 @@ class FrogPilotVariables:
     toggle.conditional_lead = toggle.conditional_experimental_mode and (params.get_bool("CELead") if toggle.tuning_level >= level["CELead"] else default.get_bool("CELead"))
     toggle.conditional_slower_lead = toggle.conditional_lead and (params.get_bool("CESlowerLead") if toggle.tuning_level >= level["CESlowerLead"] else default.get_bool("CESlowerLead"))
     toggle.conditional_stopped_lead = toggle.conditional_lead and (params.get_bool("CEStoppedLead") if toggle.tuning_level >= level["CEStoppedLead"] else default.get_bool("CEStoppedLead"))
-    toggle.conditional_limit = params.get_int("CESpeed") * speed_conversion if toggle.conditional_experimental_mode and toggle.tuning_level >= level["CESpeed"] else default.get_int("CESpeed") * CV.MPH_TO_MS
-    toggle.conditional_limit_lead = params.get_int("CESpeedLead") * speed_conversion if toggle.conditional_experimental_mode and toggle.tuning_level >= level["CESpeedLead"] else default.get_int("CESpeedLead") * CV.MPH_TO_MS
+    toggle.conditional_limit = ms_value("CESpeed", toggle.conditional_experimental_mode and toggle.tuning_level >= level["CESpeed"])
+    toggle.conditional_limit_lead = ms_value("CESpeedLead", toggle.conditional_experimental_mode and toggle.tuning_level >= level["CESpeedLead"])
     toggle.conditional_navigation = toggle.conditional_experimental_mode and (params.get_bool("CENavigation") if toggle.tuning_level >= level["CENavigation"] else default.get_bool("CENavigation"))
     toggle.conditional_navigation_intersections = toggle.conditional_navigation and (params.get_bool("CENavigationIntersections") if toggle.tuning_level >= level["CENavigationIntersections"] else default.get_bool("CENavigationIntersections"))
     toggle.conditional_navigation_lead = toggle.conditional_navigation and (params.get_bool("CENavigationLead") if toggle.tuning_level >= level["CENavigationLead"] else default.get_bool("CENavigationLead"))
@@ -832,7 +942,7 @@ class FrogPilotVariables:
       toggle.conditional_model_stop_time = params.get_int("CEModelStopTime") if toggle.conditional_experimental_mode else default.get_int("CEModelStopTime")
     else:
       toggle.conditional_model_stop_time = default.get_int("CEModelStopTime") if toggle.conditional_experimental_mode and params.get_bool("CEStopLights") else 0
-    toggle.conditional_signal = params.get_int("CESignalSpeed") * speed_conversion if toggle.conditional_experimental_mode and toggle.tuning_level >= level["CESignalSpeed"] else default.get_int("CESignalSpeed") * CV.MPH_TO_MS
+    toggle.conditional_signal = ms_value("CESignalSpeed", toggle.conditional_experimental_mode and toggle.tuning_level >= level["CESignalSpeed"])
     toggle.conditional_signal_lane_detection = toggle.conditional_signal != 0 and (params.get_bool("CESignalLaneDetection") if toggle.tuning_level >= level["CESignalLaneDetection"] else default.get_bool("CESignalLaneDetection"))
     toggle.cem_status = toggle.conditional_experimental_mode and (params.get_bool("ShowCEMStatus") if toggle.tuning_level >= level["ShowCEMStatus"] else default.get_bool("ShowCEMStatus")) or toggle.debug_mode
 
@@ -972,7 +1082,7 @@ class FrogPilotVariables:
     toggle.lane_change_delay = params.get_float("LaneChangeTime") if toggle.lane_changes and toggle.tuning_level >= level["LaneChangeTime"] else default.get_float("LaneChangeTime")
     toggle.lane_detection_width = params.get_float("LaneDetectionWidth") * distance_conversion if toggle.lane_changes and toggle.tuning_level >= level["LaneDetectionWidth"] else default.get_float("LaneDetectionWidth") * CV.FOOT_TO_METER
     toggle.lane_detection = toggle.lane_detection_width > 0
-    toggle.minimum_lane_change_speed = params.get_float("MinimumLaneChangeSpeed") * speed_conversion if toggle.lane_changes and toggle.tuning_level >= level["MinimumLaneChangeSpeed"] else default.get_float("MinimumLaneChangeSpeed") * CV.MPH_TO_MS
+    toggle.minimum_lane_change_speed = ms_value("MinimumLaneChangeSpeed", toggle.lane_changes and toggle.tuning_level >= level["MinimumLaneChangeSpeed"])
     toggle.nudgeless = toggle.lane_changes and (params.get_bool("NudgelessLaneChange") if toggle.tuning_level >= level["NudgelessLaneChange"] else default.get_bool("NudgelessLaneChange"))
     toggle.one_lane_change = toggle.lane_changes and (params.get_bool("OneLaneChange") if toggle.tuning_level >= level["OneLaneChange"] else default.get_bool("OneLaneChange"))
 
@@ -1073,19 +1183,19 @@ class FrogPilotVariables:
       toggle.wheel_image = next((file.resolve().stem for file in (ACTIVE_THEME_PATH / "steering_wheel").glob("wheel.*")), "stock")
 
     quality_of_life_lateral = params.get_bool("QOLLateral") if toggle.tuning_level >= level["QOLLateral"] else default.get_bool("QOLLateral")
-    toggle.pause_lateral_below_speed = params.get_int("PauseLateralSpeed") * speed_conversion if quality_of_life_lateral and toggle.tuning_level >= level["PauseLateralSpeed"] else default.get_int("PauseLateralSpeed") * CV.MPH_TO_MS
+    toggle.pause_lateral_below_speed = ms_value("PauseLateralSpeed", quality_of_life_lateral and toggle.tuning_level >= level["PauseLateralSpeed"])
     toggle.pause_lateral_below_signal = toggle.pause_lateral_below_speed != 0 and (params.get_bool("PauseLateralOnSignal") if toggle.tuning_level >= level["PauseLateralOnSignal"] else default.get_bool("PauseLateralOnSignal"))
 
     quality_of_life_longitudinal = toggle.openpilot_longitudinal and (params.get_bool("QOLLongitudinal") if toggle.tuning_level >= level["QOLLongitudinal"] else default.get_bool("QOLLongitudinal"))
-    toggle.cruise_increase = params.get_int("CustomCruise") if quality_of_life_longitudinal and not pcm_cruise and toggle.tuning_level >= level["CustomCruise"] else default.get_int("CustomCruise")
-    toggle.cruise_increase_long = params.get_int("CustomCruiseLong") if quality_of_life_longitudinal and not pcm_cruise and toggle.tuning_level >= level["CustomCruiseLong"] else default.get_int("CustomCruiseLong")
+    toggle.cruise_increase = display_speed_steps(ms_value("CustomCruise", quality_of_life_longitudinal and not pcm_cruise and toggle.tuning_level >= level["CustomCruise"]), toggle.is_metric)
+    toggle.cruise_increase_long = display_speed_steps(ms_value("CustomCruiseLong", quality_of_life_longitudinal and not pcm_cruise and toggle.tuning_level >= level["CustomCruiseLong"]), toggle.is_metric)
     toggle.force_stops = quality_of_life_longitudinal and (params.get_bool("ForceStops") if toggle.tuning_level >= level["ForceStops"] else default.get_bool("ForceStops"))
     toggle.increase_stopped_distance = params.get_int("IncreasedStoppedDistance") * distance_conversion if quality_of_life_longitudinal and toggle.tuning_level >= level["IncreasedStoppedDistance"] else default.get_int("IncreasedStoppedDistance") * CV.FOOT_TO_METER
     map_gears = quality_of_life_longitudinal and (params.get_bool("MapGears") if toggle.tuning_level >= level["MapGears"] else default.get_bool("MapGears"))
     toggle.map_acceleration = map_gears and (params.get_bool("MapAcceleration") if toggle.tuning_level >= level["MapAcceleration"] else default.get_bool("MapAcceleration"))
     toggle.map_deceleration = map_gears and (params.get_bool("MapDeceleration") if toggle.tuning_level >= level["MapDeceleration"] else default.get_bool("MapDeceleration"))
     toggle.reverse_cruise_increase = quality_of_life_longitudinal and toggle.car_make == "toyota" and pcm_cruise and (params.get_bool("ReverseCruise") if toggle.tuning_level >= level["ReverseCruise"] else default.get_bool("ReverseCruise"))
-    toggle.set_speed_offset = params.get_int("SetSpeedOffset") * (1 if toggle.is_metric else CV.MPH_TO_KPH) if quality_of_life_longitudinal and not pcm_cruise and toggle.tuning_level >= level["SetSpeedOffset"] else default.get_int("SetSpeedOffset") * CV.MPH_TO_KPH
+    toggle.set_speed_offset = ms_value("SetSpeedOffset", quality_of_life_longitudinal and not pcm_cruise and toggle.tuning_level >= level["SetSpeedOffset"]) * CV.MS_TO_KPH
     toggle.weather_presets = quality_of_life_longitudinal and (params.get_bool("WeatherPresets") if toggle.tuning_level >= level["WeatherPresets"] else default.get_bool("WeatherPresets"))
     toggle.increase_following_distance_low_visibility = params.get_float("IncreaseFollowingLowVisibility") if toggle.weather_presets and toggle.tuning_level >= level["IncreaseFollowingLowVisibility"] else default.get_float("IncreaseFollowingLowVisibility")
     toggle.increase_following_distance_rain = params.get_float("IncreaseFollowingRain") if toggle.weather_presets and toggle.tuning_level >= level["IncreaseFollowingRain"] else default.get_float("IncreaseFollowingRain")
@@ -1141,13 +1251,10 @@ class FrogPilotVariables:
     slc_override_method = params.get_int("SLCOverride") if toggle.speed_limit_controller and toggle.tuning_level >= level["SLCOverride"] else default.get_int("SLCOverride")
     toggle.speed_limit_controller_override_manual = slc_override_method == 1
     toggle.speed_limit_controller_override_set_speed = slc_override_method == 2
-    toggle.speed_limit_offset1 = (params.get_int("Offset1") * speed_conversion if toggle.tuning_level >= level["Offset1"] else default.get_int("Offset1") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
-    toggle.speed_limit_offset2 = (params.get_int("Offset2") * speed_conversion if toggle.tuning_level >= level["Offset2"] else default.get_int("Offset2") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
-    toggle.speed_limit_offset3 = (params.get_int("Offset3") * speed_conversion if toggle.tuning_level >= level["Offset3"] else default.get_int("Offset3") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
-    toggle.speed_limit_offset4 = (params.get_int("Offset4") * speed_conversion if toggle.tuning_level >= level["Offset4"] else default.get_int("Offset4") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
-    toggle.speed_limit_offset5 = (params.get_int("Offset5") * speed_conversion if toggle.tuning_level >= level["Offset5"] else default.get_int("Offset5") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
-    toggle.speed_limit_offset6 = (params.get_int("Offset6") * speed_conversion if toggle.tuning_level >= level["Offset6"] else default.get_int("Offset6") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
-    toggle.speed_limit_offset7 = (params.get_int("Offset7") * speed_conversion if toggle.tuning_level >= level["Offset7"] else default.get_int("Offset7") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
+    for offset_index in range(1, 8):
+      offset_key = f"Offset{offset_index}"
+      offset_ms = ms_value(offset_key, toggle.tuning_level >= level[offset_key]) if toggle.speed_limit_controller else 0
+      setattr(toggle, f"speed_limit_offset{offset_index}", offset_ms)
     toggle.speed_limit_priority1 = params.get("SLCPriority1", encoding="utf-8") if toggle.speed_limit_controller and toggle.tuning_level >= level["SLCPriority1"] else default.get("SLCPriority1", encoding="utf-8")
     toggle.speed_limit_priority2 = params.get("SLCPriority2", encoding="utf-8") if toggle.speed_limit_controller and toggle.tuning_level >= level["SLCPriority2"] else default.get("SLCPriority2", encoding="utf-8")
     toggle.speed_limit_priority3 = params.get("SLCPriority3", encoding="utf-8") if toggle.speed_limit_controller and toggle.tuning_level >= level["SLCPriority3"] else default.get("SLCPriority3", encoding="utf-8")
