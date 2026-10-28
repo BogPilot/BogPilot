@@ -52,7 +52,7 @@ BOGPILOT_THEME = "BogPilot"
 
 # BogPilot file-backed toggles (not Params keys). Absent file = that toggle's built-in default.
 FILE_TOGGLE_KEYS = ("ConfidenceBall", "ConfidenceBallSide", "DeveloperHUD", "RemoteUIStream",
-                    "EnableICIntegration", "RegenComfortBrake", "SwapSpeedGraph")
+                    "EnableICIntegration", "RegenComfortBrake", "ColdComfortRegen", "SwapSpeedGraph")
 
 # Written as a pair, and only while the tuning level was never confirmed. Without
 # TuningLevelConfirmed=1 the settings panel's first-open popup would drop a new
@@ -186,6 +186,8 @@ AP1_PARAM_PROFILE: dict[str, str] = {
 }
 
 # Recommended /data/params_bogpilot file toggles (written only when the file is absent).
+# ColdComfortRegen is a known file toggle (FILE_TOGGLE_KEYS) and is intentionally
+# not listed here: an absent file is off, and this profile must not turn it on.
 AP1_FILE_TOGGLE_PROFILE: dict[str, str] = {
   "DeveloperHUD": "1",                   # Developer HUD on (default off)
 }

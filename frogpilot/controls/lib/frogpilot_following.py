@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import numpy as np
 
+from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import COMFORT_BRAKE, STOP_DISTANCE, desired_follow_distance, get_jerk_factor, get_T_FOLLOW
 from openpilot.selfdrive.car.tesla.stalk_follow import apply_stalk_t_follow
-from openpilot.selfdrive.car.tesla.regen_brake import ap1_comfort_brake
+from openpilot.selfdrive.car.tesla.regen_aware import RegenPowerEstimator
+from openpilot.selfdrive.car.tesla.regen_brake import (ap1_ambient_c, ap1_comfort_brake, apply_cold_comfort_brake,
+                                                        apply_cold_t_follow, cold_comfort_regen_enabled)
 
 from openpilot.frogpilot.common.frogpilot_variables import CITY_SPEED_LIMIT, CRUISING_SPEED, MAX_T_FOLLOW
 
@@ -26,6 +29,9 @@ class FrogPilotFollowing:
     self.desired_follow_distance = 0
     self.speed_jerk = 0
     self.t_follow = 0
+    # ColdComfortRegen t_follow / display-distance bias. Separate from plannerd's estimator.
+    self._cold_est = RegenPowerEstimator()
+    self._cold_est_on = False
 
   def update(self, v_ego, sm, frogpilot_toggles):
     if sm["controlsState"].enabled and sm["frogpilotCarState"].trafficModeEnabled:
@@ -75,10 +81,28 @@ class FrogPilotFollowing:
     if self.frogpilot_planner.frogpilot_weather.weather_id != 0:
       self.t_follow = min(self.t_follow + self.frogpilot_planner.frogpilot_weather.increase_following_distance, MAX_T_FOLLOW)
 
-    if sm["controlsState"].enabled and self.frogpilot_planner.tracking_lead:
+    tracking = sm["controlsState"].enabled and self.frogpilot_planner.tracking_lead
+    if tracking:
       if not sm["frogpilotCarState"].trafficModeEnabled and frogpilot_toggles.human_following and frogpilot_toggles.has_radar and frogpilot_toggles.model_version != "v9":
         self.update_follow_values(self.frogpilot_planner.lead_one.dRel, v_ego, self.frogpilot_planner.lead_one.vLead, frogpilot_toggles)
-      comfort_brake = ap1_comfort_brake(sm["carParams"].carFingerprint)
+
+    # ColdComfortRegen (default off). After every other t_follow adjustment so the
+    # bias is not divided away by human following. Off leaves t_follow and comfort as they were.
+    fingerprint = sm["carParams"].carFingerprint
+    comfort_brake = ap1_comfort_brake(fingerprint)
+    if cold_comfort_regen_enabled(fingerprint):
+      fcs = sm["frogpilotCarState"]
+      amb = ap1_ambient_c(getattr(fcs, "ap1AmbientTempC", float("nan")))
+      self._cold_est_on = True
+      self._cold_est.update(v_ego, sm["carControl"].actuators.accel, getattr(fcs, "ap1MotorTorqueNm", 0.0),
+                            getattr(fcs, "ap1MotorRpm", 0.0), amb, DT_MDL)
+      comfort_brake = apply_cold_comfort_brake(comfort_brake, amb, self._cold_est.limited, True)
+      self.t_follow = apply_cold_t_follow(self.t_follow, amb, self._cold_est.limited, True, cap=MAX_T_FOLLOW)
+    elif self._cold_est_on:
+      self._cold_est = RegenPowerEstimator()
+      self._cold_est_on = False
+
+    if tracking:
       self.desired_follow_distance = int(desired_follow_distance(v_ego, self.frogpilot_planner.lead_one.vLead, self.t_follow, comfort_brake=comfort_brake))
     else:
       self.desired_follow_distance = 0

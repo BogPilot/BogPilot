@@ -14,9 +14,10 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDX
 from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX, V_CRUISE_UNSET, CONTROL_N, get_accel_from_plan
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.fcw_gate import planner_fcw
-from openpilot.selfdrive.car.tesla.regen_brake import ap1_comfort_brake
-from openpilot.selfdrive.car.tesla.regen_aware import (RegenPowerEstimator, RegenStopShaper, lead_stop_distance,
-                                                        model_stop_distance, regen_aware_enabled)
+from openpilot.selfdrive.car.tesla.regen_brake import (ap1_ambient_c, ap1_comfort_brake, apply_cold_comfort_brake,
+                                                        cold_comfort_regen_enabled)
+from openpilot.selfdrive.car.tesla.regen_aware import (ColdComfortEarly, RegenPowerEstimator, RegenStopShaper,
+                                                        lead_stop_distance, model_stop_distance, regen_aware_enabled)
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
 from openpilot.selfdrive.car.tesla.throttle_gate import ap1_throttle_gate_for, apply_cut
 from openpilot.selfdrive.car.tesla.curve_speed import tesla_curve_brake_for
@@ -81,6 +82,11 @@ class LongitudinalPlanner:
     self.regen_shaper = RegenStopShaper()
     self.regen_a_early = 0.0
     self.regen_stop_dist = -1.0
+    # AP1: ColdComfortRegen (default off). Adds a capacity-clipped early decel for a
+    # closing, decelerating lead, and may lower comfort brake. Never raises the floor.
+    self.cold_early = ColdComfortEarly()
+    self.cold_a_early = 0.0
+    self._ap1_ambient = None
     # Tesla: look-ahead curve brake while CSC limits speed (tesla/curve_speed.py). Adds braking only.
     self.tesla_curve_brake = tesla_curve_brake_for(CP.carName, dt)
 
@@ -184,7 +190,15 @@ class LongitudinalPlanner:
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     # AP1-only: lower lead comfort brake (~regen-sized) via runtime x_obstacle
     # adjustment. Non-AP1 and toggle-off keep stock COMFORT_BRAKE. a_min unchanged.
+    # ColdComfortRegen (default off) may ease that target further. It never raises it,
+    # and it does not change accel_clip here (the braking floor stays what FrogPilot set).
+    cold_on = cold_comfort_regen_enabled(self.CP.carFingerprint)
+    if self.ap1_regen_aware or cold_on:
+      self._update_ap1_regen_est(sm)
     comfort_brake = ap1_comfort_brake(self.CP.carFingerprint)
+    if cold_on:
+      comfort_brake = apply_cold_comfort_brake(comfort_brake, self._ap1_ambient, self.regen_est.limited, True)
+    # t_follow already includes the cold/cool bump from FrogPilotFollowing when the toggle is on.
     self.mpc.update(v_cruise, sm['modelV2'], sm['radarState'], x, v, a, j, sm['frogpilotPlan'].tFollow, accel_clip[0], accel_clip[1], frogpilot_toggles, sm['frogpilotCarState'].trafficModeEnabled, personality=sm['controlsState'].personality, comfort_brake=comfort_brake)
 
     self.a_desired_trajectory_full = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
@@ -229,8 +243,16 @@ class LongitudinalPlanner:
         # Ends once the braking limit has reached frogpilotPlan's (non-zero) value.
         if accel_clip[0] < 0.0 and self.prev_accel_clip[0] <= accel_clip[0] + 0.05:
           self.ap1_engage_ramp = False
-    if self.ap1_regen_aware:
-      output_a_target = self.ap1_regen_shape(sm, output_a_target, mode, reset_state, frogpilot_toggles)
+    if self.ap1_regen_aware or cold_on:
+      output_a_target = self.ap1_regen_shape(sm, output_a_target, mode, reset_state, frogpilot_toggles, cold_on)
+      if self.cold_a_early < 0.0:
+        # Add-only. min() can only move the profile floor more negative, so a
+        # capacity-clipped early request is not clipped away, and hard braking
+        # FrogPilot already allowed is never delayed.
+        accel_clip[0] = min(accel_clip[0], self.cold_a_early)
+    else:
+      self.cold_early.reset()
+      self.cold_a_early = 0.0
     if self.tesla_curve_brake is not None:
       if reset_state:
         self.tesla_curve_brake.reset()
@@ -248,29 +270,54 @@ class LongitudinalPlanner:
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 
-  def ap1_regen_shape(self, sm, a_plan, mode, reset_state, frogpilot_toggles):
-    """Earlier gentle regen-only onset for known stops. Returns min(a_plan, early)."""
+  def _update_ap1_regen_est(self, sm):
+    """One estimator step per frame, shared by RegenAwareStop and ColdComfortRegen."""
     fcs = sm['frogpilotCarState']
+    self._ap1_ambient = ap1_ambient_c(getattr(fcs, 'ap1AmbientTempC', float('nan')))
+    self.regen_est.update(sm['carState'].vEgo, sm['carControl'].actuators.accel,
+                          getattr(fcs, 'ap1MotorTorqueNm', 0.0), getattr(fcs, 'ap1MotorRpm', 0.0),
+                          self._ap1_ambient, self.dt)
+
+  def ap1_regen_shape(self, sm, a_plan, mode, reset_state, frogpilot_toggles, cold_on=False):
+    """Earlier gentle regen-only onset. Returns min(a_plan, early requests).
+
+    RegenAwareStop (known stops) is unchanged when ColdComfortRegen is off.
+    When it is on, a closing decelerating lead can add a second request, still
+    only through min(). The estimator was already stepped this frame.
+    """
     v_ego = sm['carState'].vEgo
-    amb = getattr(fcs, 'ap1AmbientTempC', float('nan'))
-    amb = None if amb != amb else amb
-    self.regen_est.update(v_ego, sm['carControl'].actuators.accel, getattr(fcs, 'ap1MotorTorqueNm', 0.0),
-                          getattr(fcs, 'ap1MotorRpm', 0.0), amb, self.dt)
     if reset_state or sm['carState'].gasPressed:
       self.regen_shaper.reset()
+      self.cold_early.reset()
       self.regen_a_early = 0.0
+      self.cold_a_early = 0.0
       return a_plan
-    stop_gap = STOP_DISTANCE + float(getattr(frogpilot_toggles, 'increase_stopped_distance', 0.0) or 0.0)
-    lead = sm['radarState'].leadOne
-    d_stop = lead_stop_distance(lead.status, lead.dRel, lead.vLead, stop_gap)
-    if mode == 'blended':
-      # Model stops (red lights / stop signs) only where the e2e plan acts on them.
-      m = sm['modelV2']
-      d_model = model_stop_distance(list(m.position.x), list(m.velocity.x))
-      if d_model is not None:
-        d_stop = d_model if d_stop is None else min(d_stop, d_model)
-    self.regen_stop_dist = -1.0 if d_stop is None else d_stop
-    a_out, self.regen_a_early = self.regen_shaper.update(v_ego, a_plan, d_stop, self.regen_est.p_kw, self.dt)
+
+    a_out = a_plan
+    self.regen_a_early = 0.0
+    if self.ap1_regen_aware:
+      stop_gap = STOP_DISTANCE + float(getattr(frogpilot_toggles, 'increase_stopped_distance', 0.0) or 0.0)
+      lead = sm['radarState'].leadOne
+      d_stop = lead_stop_distance(lead.status, lead.dRel, lead.vLead, stop_gap)
+      if mode == 'blended':
+        # Model stops (red lights / stop signs) only where the e2e plan acts on them.
+        m = sm['modelV2']
+        d_model = model_stop_distance(list(m.position.x), list(m.velocity.x))
+        if d_model is not None:
+          d_stop = d_model if d_stop is None else min(d_stop, d_model)
+      self.regen_stop_dist = -1.0 if d_stop is None else d_stop
+      a_out, self.regen_a_early = self.regen_shaper.update(v_ego, a_plan, d_stop, self.regen_est.p_kw, self.dt)
+    else:
+      self.regen_shaper.reset()
+      self.regen_stop_dist = -1.0
+
+    if cold_on:
+      lead = sm['radarState'].leadOne
+      a_out, self.cold_a_early = self.cold_early.update(
+        v_ego, a_out, bool(lead.status), lead.dRel, lead.vLead, lead.aLeadK, self.regen_est.p_kw, self.dt)
+    else:
+      self.cold_early.reset()
+      self.cold_a_early = 0.0
     return a_out
 
   def publish(self, sm, pm):

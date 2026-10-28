@@ -222,3 +222,103 @@ class RegenStopShaper:
     if a_early >= 0.0:
       return a_plan, 0.0
     return min(a_plan, a_early), a_early
+
+
+# ColdComfortRegen early braking for a lead that is still moving.
+# RegenStopShaper only starts once the lead is already a stop (vLead <= 1.5) or the
+# model predicts a stop. This adds a gentle request earlier, while the lead is closing
+# and decelerating. The toggle (default off) and the comfort / t_follow bias are in
+# regen_brake.py. When that toggle is off, the planner does not call ColdComfortEarly.
+#
+# Thresholds follow the same style as the stop shaper: a short persist before onset
+# (LIMIT_TIME_S is 0.5 s) and a slightly longer dropout hold (STOP_LOST_HOLD_S is 0.5 s)
+# so a one-frame radar flicker does not drop the floor. The request is the gentle regen
+# target clipped to RegenPowerEstimator capacity. It is not a fixed -1.0 m/s^2.
+COLD_CLOSE_VREL_ON = -0.25    # m/s, v_lead - v_ego; more negative = closing faster
+COLD_CLOSE_VREL_OFF = 0.0     # once active, hold while the gap is not opening
+COLD_DECEL_ON = -0.15         # m/s^2, lead aLeadK must be decelerating at least this hard
+COLD_DECEL_OFF = -0.05        # hysteresis
+COLD_PERSIST_S = 0.5
+COLD_HOLD_S = 0.6
+COLD_MAX_TIME_GAP_S = 3.5     # ignore a lead farther out than this many seconds
+
+
+def cold_comfort_decel(v: float, p_kw: float) -> float:
+  """Positive decel (m/s^2) for the early request: gentle target, never above capacity."""
+  cap = regen_capacity(v, p_kw)
+  if cap <= 0.0:
+    return 0.0
+  return min(gentle_target(v, p_kw), cap)
+
+
+class ColdComfortEarly:
+  """Gentle early decel for a closing, decelerating lead. Output = min(plan, early).
+
+  Can only add braking. A plan that is already harder passes through unchanged.
+  While the condition flickers off, the last capacity-clipped request holds for
+  COLD_HOLD_S and is recomputed against the current regen capacity each step
+  (a falling capacity eases the request; it is never held at a fixed -1.0).
+  """
+
+  def __init__(self):
+    self.active = False
+    self.persist_t = 0.0
+    self.hold_t = 0.0
+    self.a_cmd = 0.0
+
+  def reset(self):
+    self.active = False
+    self.persist_t = 0.0
+    self.hold_t = 0.0
+    self.a_cmd = 0.0
+
+  def update(self, v, a_plan, lead_status, d_rel, v_lead, a_lead, p_kw, dt):
+    """Return (a_out, a_early). a_out = min(a_plan, a_early) always."""
+    raw = False
+    if lead_status and v > MIN_SPEED and dt > 0.0:
+      try:
+        d_rel = float(d_rel)
+        v_lead = float(v_lead)
+        a_lead = float(a_lead)
+      except (TypeError, ValueError):
+        d_rel = float("nan")
+        v_lead = 0.0
+        a_lead = 0.0
+      v_rel = v_lead - v
+      in_window = math.isfinite(d_rel) and math.isfinite(v_rel) and math.isfinite(a_lead) and d_rel > 0.0 and d_rel <= max(v, 1.0) * COLD_MAX_TIME_GAP_S
+      if self.active:
+        raw = in_window and v_rel < COLD_CLOSE_VREL_OFF and a_lead < COLD_DECEL_OFF
+      else:
+        raw = in_window and v_rel < COLD_CLOSE_VREL_ON and a_lead < COLD_DECEL_ON
+
+    if raw:
+      self.persist_t += dt
+      self.hold_t = 0.0
+    else:
+      self.persist_t = 0.0
+      if self.active:
+        self.hold_t += dt
+
+    if self.active:
+      if not raw and self.hold_t > COLD_HOLD_S:
+        self.active = False
+        self.hold_t = 0.0
+    elif self.persist_t >= COLD_PERSIST_S:
+      self.active = True
+      self.hold_t = 0.0
+
+    target = 0.0
+    if self.active and v > MIN_SPEED:
+      target = -cold_comfort_decel(v, p_kw)
+
+    if target < self.a_cmd:
+      self.a_cmd = max(target, self.a_cmd - ONSET_JERK * dt)
+    else:
+      self.a_cmd = min(target, self.a_cmd + RELEASE_JERK * dt)
+    if self.a_cmd > 0.0:
+      self.a_cmd = 0.0
+
+    a_early = self.a_cmd if self.a_cmd < 0.0 else 0.0
+    if a_early >= 0.0:
+      return a_plan, 0.0
+    return min(a_plan, a_early), a_early

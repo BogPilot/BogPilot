@@ -587,6 +587,8 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   # /data/params_bogpilot/EnableICIntegration (see selfdrive/car/tesla/toggles.py).
   # RegenComfortBrake is likewise file-backed at
   # /data/params_bogpilot/RegenComfortBrake (see selfdrive/car/tesla/regen_brake.py).
+  # ColdComfortRegen is file-backed at /data/params_bogpilot/ColdComfortRegen
+  # (default off; see selfdrive/car/tesla/regen_brake.py). Do not add it here.
   # LastKnownTime is file-backed at /data/params_bogpilot/LastKnownTime
   # (see common/bogpilot_clock.py); device-global wall-clock restore, not a toggle.
   ("TetheringEnabled", "0", 0, "0"),

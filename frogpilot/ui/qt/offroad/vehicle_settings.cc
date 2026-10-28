@@ -194,6 +194,7 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
     {"TeslaAP1Toggles", tr("Tesla AP1 Settings"), tr("<b>BogPilot features for Tesla Model S and X with Autopilot 1.</b>"), ""},
     {"EnableICIntegration", tr("Dash Cluster Integration"), QString("<b>%1</b><br><br>%2").arg(tr("Show openpilot on the Tesla dash cluster while engaged: the cluster set speed (including curve and speed limit targets), the Autosteer icon, hands-on reminders, and the path line.")).arg(tr("Turn off to leave the dash cluster completely stock. openpilot then sends no cluster messages. Driving is the same either way. Takes effect right away.")), ""},
     {"RegenComfortBrake", tr("Earlier, Gentler Regen Stops"), QString("<b>%1</b><br><br>%2").arg(tr("Start slowing for a car ahead sooner and more gently, sized to what regen alone can do (about 1.0 m/s²).")).arg(tr("Hard braking for cut-ins, collision warnings, and emergencies is unchanged, and so is the stopped distance. Turn off for stock openpilot following. Takes effect right away.")), ""},
+    {"ColdComfortRegen", tr("Cold Comfort Regen"), QString("<b>%1</b><br><br>%2").arg(tr("When regen is limited, start slowing sooner for a lead that is closing in and braking. The extra slowdown stays within what regen can do right now. Hard braking is never reduced.")).arg(tr("Cool air (15 °C and below) only nudges the approach a little earlier. Colder air, or regen that is already at its limit, nudges it further. The stopped distance does not change. Off unless you turn it on. Takes effect right away.")), ""},
 
     {"ToyotaToggles", tr("Toyota/Lexus Settings"), tr("<b>BogPilot features for Lexus and Toyota vehicles.</b>"), ""},
     {"ToyotaDoors", tr("Automatically Lock/Unlock Doors"), tr("<b>Automatically lock/unlock doors</b> when shifting in and out of drive."), ""},
@@ -255,6 +256,11 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
         vehiclesLayout->setCurrentWidget(teslaPanel);
       });
       vehicleToggle = teslaButton;
+    } else if (param == "ColdComfortRegen") {
+      // File-backed (/data/params_bogpilot/ColdComfortRegen). Absent file = off.
+      // The false fallback must match cold_comfort_regen_enabled().
+      vehicleToggle = new bogpilot::FileToggleControl(param, false, title, desc, icon);
+
     } else if (teslaKeys.contains(param)) {
       // File-backed (see bogpilot_file_toggle.h). Absent file = on, the car code's default.
       vehicleToggle = new bogpilot::FileToggleControl(param, true, title, desc, icon);

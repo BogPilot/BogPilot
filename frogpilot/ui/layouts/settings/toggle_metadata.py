@@ -2853,4 +2853,11 @@ TESLA_EARLY_TOGGLES = (
     parent_param="TeslaEarly",
     tuning_level=2,
   ),
+  ToggleDefinition(
+    title=("Cold comfort regen"),
+    param="ColdComfortRegen",
+    description=("<b>AP1 early regen braking for a closing, decelerating lead.</b> Default off for every fingerprint. When on, the planner may add a gentle early deceleration clipped to the current regen-power estimate (add-only: output is min of the MPC and that request). Cool outside air at or below 15 °C slightly lowers the regen comfort target and slightly raises follow time. Hard cold at or below 5 °C, or a measured regen torque plateau, eases comfort further and raises follow time more. The 5 °C power ceiling is unchanged. STOP_DISTANCE unchanged. Hard accel limits stay at ACCEL_MIN. July prebuilt params_pyx.so cannot store this key; it is file-backed at /data/params_bogpilot/ColdComfortRegen (echo 0 or 1). The on-device vehicle panel reads that file directly. Not applied to CarParams or panda safety. RegenComfortBrake and RegenAwareStop are unchanged when this is off."),
+    parent_param="TeslaEarly",
+    tuning_level=2,
+  ),
 )
