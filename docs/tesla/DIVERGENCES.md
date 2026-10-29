@@ -1,0 +1,179 @@
+# Tesla safety and behavior divergences
+
+Not a product. No warranty. Driver remains responsible. Comply with local law. AP1 Model S has been driven and debugged via rlogs; this remains research code and is not safety-validated as a product.
+
+Recorded disagreements only where the cited files were read. No speculation.
+
+## frog_ap1 vs BogPilot (safety gates)
+
+Historical: `frog_ap1` (`73a16cdd50033cb9f57a03fd619e2129558eef43`, classified in `docs/tesla/BRIDGE_DIFF.md`) set `dashcamOnly` false, set Tesla panda safety flags to 0, forced `FINGERPRINT=TESLA_AP1_MODELS`, and sent longitudinal commands without a long-active gate.
+
+BogPilot AP1 today (`selfdrive/car/tesla/safety_flags.py`, `interface.py`):
+
+- `dashcam_only_for_candidate` is false only for `CAR.TESLA_AP1_MODELS`; AP2, Raven, and other Tesla candidates stay `dashcamOnly`.
+- The Tesla panda safety model is kept; flags are not zeroed. AP1 gets `FLAG_TESLA_AP1 | FLAG_TESLA_LONG_CONTROL`.
+- As of `f1bcae66833526e75df4d8c7898656bcc0ee4f42`, `DAS_control` is planned only when `openpilotLongitudinalControl` and `CC.enabled` and `CC.longActive` are all true. The gate is `longitudinal_command_allowed` in `selfdrive/car/tesla/actuator_plan.py`, called from `selfdrive/car/tesla/carcontroller.py`. AP1 enables `openpilotLongitudinalControl` via toggle; long commands remain gated by that path.
+- No forced `FINGERPRINT=TESLA_AP1_MODELS`. There is no AP1 `FW_VERSIONS` row yet (`selfdrive/car/tesla/fingerprints.py` lists AP2 and Raven only), and Tesla has no CAN fingerprint table, so AP1 is selected by FrogPilot's saved car model fallback in `car_helpers.get_car` (`CarModel` = `TESLA_AP1_MODELS`). Route `0000002a` carParams: `fingerprintSource` can (the default label), EPS `1016704-00-HAA`, booster `1037123-00-A`, and radar firmware read and logged.
+
+## Tinkla human-accel override (HAO) not ported
+
+In earlytesla-openpilot `selfdrive/car/tesla/carstate.py`, when `self.enableHAO` is set, Tinkla zeros `ret.gas` and sets `ret.gasPressed = False` after reading `DI_pedalPos` (human-accel override so gas does not look pressed to the rest of the stack).
+
+BogPilot does not port HAO. Current `selfdrive/car/tesla/carstate.py` keeps `ret.gasPressed = (ret.gas > 0)`. Panda Tesla RX sets `gas_pressed` from the gas pedal byte in `panda/board/safety/safety_tesla.h`. Generic safety then clears controls on a rising gas edge in `panda/board/safety.h` (`generic_rx_checks`: `if (gas_pressed && !gas_pressed_prev && !(alternative_experience & ALT_EXP_DISABLE_DISENGAGE_ON_GAS)) { controls_allowed = false; }`). That gas-pressed disengage path is stricter than Tinkla HAO hiding the press. HAO stays deferred.
+
+## Instrument-cluster frames (AP1)
+
+Branch `bogpilot-tesla-cluster`. Code: `selfdrive/car/tesla/cluster.py`, wired in `carstate.py` / `carcontroller.py`; panda `board/safety/safety_tesla.h`. Behavior reference: Tinkla earlytesla-openpilot `501c7de` `selfdrive/car/tesla/HUD_module.py` and `teslacan.py` (`create_das_status`, `create_das_status2`, `create_lane_message`), earlytesla-panda `f7751e4` (`TESLA_AP_FWD_MODDED`, `tesla_fwd_hook`). BogPilot's own code.
+
+**How it differs from Tinkla's mechanism.** Tinkla's panda edits each stock bus-2 frame in the forward hook: it keeps the stock bits named by a mask and writes openpilot's bits over the rest. BogPilot's forward hook gets only `(bus, addr)` and cannot edit a frame. So openpilot rebuilds each new stock frame from its decoded DBC signals, writes the same openpilot fields, and sends it on bus 0 with stock counter + 1. The panda drops the stock copy only while openpilot sent that address within 1.5x its stock period (750 ms for 0x399 and 0x389, 150 ms for 0x239). Without `TESLA_FLAG_AP1`, or without a recent openpilot TX, stock frames pass as before. openpilot sends nothing for an address until it has a stock frame for it. Known edge: when substitution stops, one stock frame of that address is dropped (about 0.5 s for 0x399 / 0x389, 0.1 s for 0x239). Counters stay continuous.
+
+**Frames.**
+
+| id | this tree's DBC name | sent | openpilot fields (everything else is stock) |
+| --- | --- | --- | --- |
+| 0x399 | `AutopilotStatus` (Tinkla: `DAS_status`) | engaged, and 4 s after | engaged: `autopilotStatus` 5 (stock 3..5 left alone), `DAS_autopilotHandsOnState` 2 / 3 (quiet steer-required or hands on) / 5 (with chime), `DAS_autoLaneChangeState` 8 / 6 / 7 / 1 from the stock Mobileye lane bits, 9 / 10 during an openpilot lane change, FCW 1 and LDW 1 (left) / 2 (right) only when openpilot has one. After: `autopilotStatus` 1 becomes 2, nothing else |
+| 0x389 | `DAS_status2` | engaged, and 4 s after | `DAS_activationFailureStatus` 0. Engaged also: `DAS_driverInteractionLevel` 0, CSA state 2 (bits 32-33), `DAS_longCollisionWarning` 1 only when openpilot has an FCW |
+| 0x239 | `DAS_lanes` | engaged (toggle on) | C2 from a through-origin fit (y = c2·x²) of `modelV2.position` over 50 m (IC_LANE_SCALE 0.5) when engaged and toggle on; C0, C1, C3 0 (the model path starts at the car; Tinkla suppress_x_coord); view range = model path length capped at 100 m (Tinkla max_distance) and clamped to [0|160] m; fallback = actuator curvature + 50 m if model path missing/invalid. Stock Exists/LineUsage/forks/width preserved |
+
+Checksum for 0x399 and 0x389 is `(addr & 0xFF) + (addr >> 8) + sum(bytes 0..6)` in byte 7, the same as Tinkla's `tesla_compute_checksum`; it matches every stock frame in the AP1 rlogs on the box. 0x239 has no checksum.
+
+**Narrower than Tinkla on purpose.**
+
+- openpilot warnings only add. Tinkla overwrote `DAS_forwardCollisionWarning`, `DAS_laneDepartureWarning`, and `DAS_longCollisionWarning` with openpilot's values (0x0F SNA when none), which could hide a stock Mobileye warning. Here a stock warning is always kept.
+- Post-disengage: Tinkla forced `DAS_autopilotState` to 2 for 4 s regardless of the stock value. Here only stock 1 (UNAVAILABLE) becomes 2.
+- Panda rejects a 0x399 with autopilot state 3, 4, or 5 unless `controls_allowed`. Tinkla had no such check.
+- Tinkla's constant is `TIME_TO_HIDE_ERRORS = 4000000` us; its comment says 3 s. 4 s is used.
+- `enableICIntegration` (Tinkla name) gates all AP1 cluster substitution. July prebuilt `params_pyx.so` has no Tesla* keys, so this is **file-backed** at `/data/params_bogpilot/EnableICIntegration` (not a Params key, not in `frogpilot_default_params`). AP1 fingerprint defaults **on** when the file is absent; non-AP1 is always off. Toggle off → openpilot sends no cluster frames → panda recent-TX drop does not arm → stock 0x399 / 0x389 / 0x239 forward. The July prebuilt vehicle Settings panel does not show this toggle (same as other Tesla Early metadata); change with `echo 0` / `echo 1` into that file and restart. Documented in `selfdrive/car/tesla/toggles.py` and `TESLA_EARLY_TOGGLES`.
+- Engaged 0x239 curvature and view range come from `modelV2.position` (ego-frame through-origin fit y = c2·x² over 50 m, so C0 offset and C1 heading are always 0 and C3 is 0; sending a fitted heading and offset drew the path off to one side and diagonally across the car on the AP1 cluster, and Tinkla likewise forces C1 = 0 via `suppress_x_coord`; view range is the model path length capped at 100 m) when `enableICIntegration` is on; fallback is actuator curvature + 50 m. CarController lazily subscribes to `modelV2` only for that path (not for lead cars). `DAS_object` (0x309) and `DAS_telemetry` (0x3a9) are not in this DBC and are not invented. Stale/absent modelV2 never stops substitution by itself; toggle off stops it immediately. Lane presence / LineUsage stay stock (do not draw a fused line the stock frame did not report). Forks stay stock. 0x399 state 5, hands-on, lane-change, and FCW/LDW behavior are unchanged; stock warnings stay additive.
+
+**DBC disagreement.** This tree's `tesla_can.dbc` and Tinkla's (`BogGyver/opendbc` `9c0b6fe`) disagree for 0x399 bits 27-36 and 0x389 bits 31-33. Only one openpilot field lands there: CSA state, which Tinkla's DBC puts at 0x389 32|2 (this tree calls bits 31-33 `DAS_lssState`). AP1 rlogs only ever set bits 32-33 of that region, which fits Tinkla's layout, so `cluster.py` writes CSA there as a raw 2-bit field with that citation. Every other field is written by this tree's DBC name. Over 10218 stock 0x399 / 0x389 / 0x239 frames in the rlogs, every set bit is inside a signal of this tree's DBC, so the rebuild is byte-exact.
+
+**Deferred.**
+
+- 0x3e9 `DAS_bodyControls`. It carries turn-signal, hazard, headlight, and wiper requests, not display. BogPilot has no ALCA or hazard feature to drive it, so replacing it could only suppress stock requests. Stock frames also set bits 22, 23, 26, 28 that no DBC signal covers, so a rebuilt frame would change them. Not in the panda TX list.
+- `DAS_object` (0x309) and `DAS_telemetry` (0x3a9): not `BO_` lines in this tree's DBC. No invented signals.
+- Warning matrices 0x329 / 0x369 (0x349 stays the all-zero Hold clear only), pre-AP 0x659.
+
+
+## AP1 regen-sized comfort braking
+
+File-backed toggle `/data/params_bogpilot/RegenComfortBrake` (July prebuilt cannot store new Params keys). AP1 fingerprint defaults **on** when the file is absent; non-AP1 is always off. When on, the lead MPC desired-distance cost uses a 1.0 m/s² comfort brake (regen-sized; was 1.2: on route `0000002a` regen alone topped out near 1.0 m/s² at 30–35 mph before the friction brakes joined) via a runtime `x_obstacle` adjustment in `long_mpc.py`; the acados-generated solver still embeds stock `COMFORT_BRAKE=2.5` and is not regenerated. Hard accel limits stay at `ACCEL_MIN` (FCW/AEB/cut-in/danger keep full braking). `STOP_DISTANCE` and the panda braking floor are unchanged. Code: `selfdrive/car/tesla/regen_brake.py`, wired from `longitudinal_planner.py`.
+
+## AP1 comfort-band accel slew and regen ramp (`DAS_control`)
+
+`Ap1AccelSmoother` (`selfdrive/car/tesla/long_smooth.py`, used by `carcontroller.py`, AP1 only) slews the accel request sent in `DAS_control` 0x2b9. LongControl PID gains are 0, so the planner `aTarget` reaches the DI unfiltered. On route `0000002a` it showed one-step brake / gas reversals around radar lead jumps. On route `0000002e` (6914de87) it showed one-frame braking steps of up to -2.4 m/s². When the plan drops suddenly (allowThrottle going false, a lead first seen at 86 m), `aTarget = 2·(v(0.55 s) − v0)/0.55 − a0` overshoots well below the plan, e.g. +1.37 → -0.88 while the plan only reached -0.17 at 0.55 s.
+
+- **Rising requests** (more accel or a brake release) are limited to 2.5 m/s³.
+- **Braking ramp** (falling requests, shaped like the stock DI after a cruise cancel):
+  - **Drive release** (while the last output is above 0): released at `AP1_DRIVE_RELEASE_JERK` = 2.0 m/s³ with a 0.2 s soft start (`AP1_DRIVE_RELEASE_RAMP_S`). A pure lift (request at or above 0) tapers onto the request (S-curve), so +1.3 → 0 takes about 0.8 s (e3574753 released at 5 m/s³, about 0.25 s, which felt like regen grabbing). A lift into braking blends the cap from 2.0 at 0 to 5.0 m/s³ at -0.5 m/s² and back to the onset jerk over the last 0.3 m/s² of drive, so it meets the regen ramp at 0 without a jerk step. Below -1.0 m/s² there is no soft start.
+  - At or below 0, regen ramps in at `AP1_BRAKE_ONSET_JERK` = 2.0 m/s³. That rate blends linearly up to 8 m/s³ as the request goes from -1.0 to -2.0 m/s².
+  - For reference, the stock DI's own cancel ramp on `0000002e` averaged about 0.6 m/s³; ISO 15622 comfort guidance at speed is 2.5.
+  - Time to reach from 0: -0.9 in 0.45 s, -1.0 in 0.50 s, -1.5 in 0.30 s, -1.95 in 0.26 s. From +1.5, -1.0 takes 0.80 s.
+- **Never ramped (same step):** a request at or below -2.0 m/s², FCW (`hudControl.visualAlert == fcw`), the LongControl stopping state, below 1 m/s (standstill hold, launch, creep), while long control is not active, and on the gas-neutral frame.
+- The output always lies between the last output and the planner value.
+- **Unchanged:** `ACCEL_MIN` / `ACCEL_MAX`, the panda limits, `STOP_DISTANCE` and the planner.
+- **Standstill hold floor** (`AP1_STANDSTILL_HOLD_ACCEL` = -1.0 m/s²): at standstill (`CarState.standstill`) and without FCW, a request below -1.0 is held at -1.0, reached from a deeper last output at 1 m/s³. The DI latches its HOLD brake pressure from the request at HOLD entry and dumps it in 0.13–0.24 s at the launch, so the iBooster returns the pedal to rest in about 0.4–0.55 s; the stock DAS sends accelMin 0 there. Launch requests pass through on the same step, and nothing changes while moving (v ≥ 0.1 m/s). Route `00000032`: flat-ground HOLD 0x148 176–182 (e3574753: 216 after a -2.0 hold, 185 after -1.68); the DI applies more on its own on a hill (482 at about +6.7°, no rollback).
+- **Gas handoff** (`AP1_GAS_HANDOFF_MAX` = 2.0 m/s²). While the accelerator is pressed, DAS_control carries the neutral frame (0). Before, the first frame after the release restarted the slew from 0, so a driver at +1.2 m/s² saw the request drop to 0 and climb back at 2.5 m/s³ (~0.5 s), felt as a brief lift. Now `CarState.aEgo` during the press is latched (clipped to [0, 2.0], only at or above 1 m/s) and the first active frame after the release starts from it: a higher plan keeps rising, a lower plan is reached through the drive-release S-curve. FCW, urgent, hard braking and below 1 m/s are unchanged; going inactive clears the latch. No panda change. Open-loop replay of 117 segments (routes 2a, 2e, 2f–32, 34, 38): 71 releases; first-0.5 s dip below aEgo max 1.37 → 0.37 m/s² (median 0.18 → 0.00); post-handoff peak jerk unchanged (median 2.5 m/s³); output bit-identical outside the 3 s after each release.
+- **Full-log open-loop replay:** every frame passes the panda TX check on `0000002a`, `0000002e`, `0000002f`, `00000030` and `00000031`, and every planner request at or below -2.0 m/s² is sent unchanged on the same frame.
+
+## AP1 throttle cap (`allowThrottle` smoothing)
+
+Upstream caps the MPC max accel at the coast accel (about -0.3 m/s²) whenever the driving model's `gasPressProbs[1]` is below 0.4 (`allowThrottle`). On routes `0000002f`/`30`/`31` (e3574753) that flag flipped 10–46 times a minute while engaged, often for one 50 ms plan step, and each flip moved the max-accel limit from about +2 to -0.3 in one step; the planner's `aTarget` formula turned the collapse into steps of up to -2.2 m/s². `Ap1ThrottleCap` (`selfdrive/car/tesla/throttle_gate.py`, used by `longitudinal_planner.py`, AP1 only) turns the flag into a cut fraction with a fast attack (`AP1_THROTTLE_CUT_TAU` = 0.15 s) and slow release (`AP1_THROTTLE_RELEASE_TAU` = 1.5 s) and blends the MPC max accel toward the coast limit by that fraction. At creep speed and while the planner is reset it follows the raw flag. Braking limits, FCW, the lead cost and `ACCEL_MIN` are unchanged; other cars keep the stock 0/1 cut. Route `00000032`: about 3.2 flips a minute (e3574753: about 24).
+
+## AP1 `DAS_control` jerk limits
+
+Upstream sends `DAS_jerkMin` / `DAS_jerkMax` = ±8 m/s³ (`CarControllerParams.JERK_LIMIT_*`) in every 0x2b9; stock AP1 DAS sent about ±0.2 to ±1.2.
+
+`Ap1JerkLimit` (`long_smooth.py`) follows the ramped request sent, not the raw planner value:
+
+- ±1.5 in the comfort band.
+- Blends linearly to the full ±8 as the request sent falls from -0.3 to -0.5 m/s².
+- Full ±8 at or below -0.5, on urgent frames (FCW, stopping), while long control is not active, and on the gas-neutral frame.
+- Below 1 m/s (standstill hold, launch, creep) without FCW: `DAS_jerkMax` = `AP1_LAUNCH_JERK_MAX` = 1.5 (stock DAS sends about 1.2 there), `DAS_jerkMin` stays at the full 8 so braking is never limited.
+- Widening is instant. Narrowing back to ±1.5 is rate-limited (10 m/s³ per s, about 0.65 s), so the limit never steps down.
+
+`teslacan.create_longitudinal_commands` takes the values as arguments; non-AP1 Teslas keep ±8. No panda change (the panda accepts the full jerk range).
+
+## Planner FCW while longitudinal control is off
+
+`selfdrive/controls/lib/fcw_gate.py` (used by `longitudinal_planner.py`): while `reset_state` is true (long control off / disengaged), `mpc.crash_cnt` is cleared and planner FCW is not set. FrogPilot publishes min/maxAcceleration = 0 while disengaged, which coasts the MPC into a closing lead and latches `crash_cnt`; without this clear, controlsd raises EventName.fcw ("BRAKE!" / "Risk of Collision") at the engage instant. Model FCW (`hardBrakePredicted`), stock AEB passthrough, and engaged planner FCW are unchanged.
+
+## AP1 driver steering input (override border and hands pause)
+
+- `carState.steeringPressed` on AP1 is any non-zero `EPAS_handsOnLevel` (`hso.ap1_driver_input`, `AP1_DRIVER_INPUT_LEVEL = 1`), the stock Tesla port and `frog_ap1` mapping. It raises `steerOverride`, controlsd enters `overriding`, and the prebuilt UI draws the grey border. `f8aadaa8` had raised it to >= 2 (TinklaHandsOnLevel); logged AP1 EPAS only reports levels 0, 1 and 3 (never 2), so the border only went grey on brief level 3 peaks.
+- The Tinkla hands pause is unchanged at level >= 2 (`hso.ap1_steering_pressed`): CarController sends 0x488 type NONE at the measured angle and cruise stays up. controlsd no longer clears `latActive` from `steeringPressed` on AP1, so a level 1 override keeps openpilot steering (as in `frog_ap1`) with the border grey. `_ap1_epas_inhibit_alert` does not count EPAS INHIBITED during the hands pause (EPAS reports INHIBITED with code 3 while the driver is at level 3).
+- Resume hold (`hso.AP1_RESUME_HOLD_S = 0.3`, `hso.Ap1DriverYield`, used by CarController). Once hands reach level >= 2 while engaged, 0x488 stays type NONE at the measured angle until `EPAS_handsOnLevel` has been 0 for 0.3 s in a row; any level >= 1 restarts the count. Lateral then resumes through the 300 ms measured-angle soft-start (`AP1_ENGAGE_SOFT_START_FRAMES`), the same one used at engage, so the first ANGLE frame is the wheel's own angle. Before this, lateral resumed as soon as the level fell to 1, which is still driver torque, so openpilot steered against the driver between level 3 peaks. During the hold the interface adds `steerOverride` so the border stays grey; `steeringPressed` itself is not extended. Not engaged clears the hold at once, so disengage, cancel, and re-engage are not delayed; longitudinal, FCW/AEB and driver monitoring are not touched. Tinkla's 50-frame numb period and 15 degree handoff are still not ported.
+- Hold length: first shipped at 0.8 s from the log evidence below; after driving it the user chose 0.5 s (matching Tinkla's 50-frame HSO period), then 0.3 s for a sharper corner resume (Tinkla also extends the hold on the turn-signal stalk and a 15 degree angle difference, which are not ported). Evidence for the original 0.8 s: in three logged AP1 drives (about 70k EPAS samples) 9 of 14 level 3 overrides dropped to level 1 first and reached level 0 up to 2.9 s later. After reaching 0, the driver pressed again within 0.24 to 0.56 s in 9 of 10 re-presses (the other at 1.0 s, then nothing under 2 s). 0.8 s bridges every engaged gap between driver inputs up to 0.76 s. Replaying those drives through `Ap1DriverYield`, openpilot no longer takes the wheel back between two overrides (10 times in under 1 s before, 0 after). Level 1 input without a level 2+ peak still keeps openpilot steering with the border grey, as in `frog_ap1`.
+
+## Angle steering and dashcamOnly
+
+Angle steering does not blend with driver torque. `selfdrive/car/tesla/interface.py` documents that. AP1 (`CAR.TESLA_AP1_MODELS`) is the explicit exception: `dashcam_only_for_candidate` returns false, so `ret.dashcamOnly` is false. Other Tesla candidates stay `dashcamOnly`. Angle steer still does not blend with torque.
+
+## AP1 angle-rate table (Tinkla) vs shared Tesla table
+
+Tinkla is the authority for AP1 angle rates. Source read: earlytesla-panda `board/safety/safety_tesla.h` (`TESLA_LOOKUP_ANGLE_RATE_UP`, `TESLA_LOOKUP_ANGLE_RATE_DOWN`, `TESLA_DEG_TO_CAN`). The shared `TESLA_STEERING_LIMITS` table is the Model 3/Y and non-AP1 limit. It is not an AP1 limit, and its numbers were not changed.
+
+| | speeds (m/s) | rate up (deg/s) | rate down (deg/s) | deg to CAN |
+| --- | --- | --- | --- | --- |
+| `TESLA_STEERING_LIMITS` (shared, non-AP1) | 0, 5, 15 | 10, 1.6, 0.3 | 10, 7.0, 0.8 | 10 |
+| `TESLA_AP1_STEERING_LIMITS` (Tinkla AP1) | 2, 7, 17 | 8, 4, 2.5 | 9, 5, 4.5 | 10 |
+
+`TESLA_FLAG_AP1` is bit 3, value 8. It does not overlap `TESLA_FLAG_POWERTRAIN` (1), `TESLA_FLAG_LONGITUDINAL_CONTROL` (2), or `TESLA_FLAG_RAVEN` (4). `tesla_tx_hook` passes `TESLA_AP1_STEERING_LIMITS` to `steer_angle_cmd_checks` only when that flag is set, and `TESLA_STEERING_LIMITS` otherwise. The choice does not read `0x2bf`.
+
+`flags_for_candidate` in `selfdrive/car/tesla/safety_flags.py` sets bit 8 (`Panda.FLAG_TESLA_AP1`, value 8) only when the candidate is `CAR.TESLA_AP1_MODELS`. Raven keeps `FLAG_TESLA_RAVEN` and does not get bit 8. AP2 gets neither. The `0x2bf` powertrain path still adds `FLAG_TESLA_LONG_CONTROL` and a second config with `FLAG_TESLA_POWERTRAIN`; those flags also include bit 8 only if the candidate is AP1. AP1 is not expected to have `0x2bf`. This does not set `openpilotLongitudinalControl` for AP1 (that is the interface toggle). `dashcam_only_for_candidate` is false only for AP1; other candidates stay `dashcamOnly`. The flag selects `TESLA_AP1_STEERING_LIMITS` in panda when that safety config is installed. It does not engage the car by itself.
+
+## AP1 speed-limit raise (low-conflict, no stalk injection)
+
+When FrogPilot **Speed Limit Controller** is on, a confirmed higher posted limit lifts openpilot's cruise target to limit+offset (e.g. 30 zone set 36 → 45 zone with +6 → 51) so longitudinal accelerates into the faster zone. Lift runs **after** the min() merge so a low DI_cruiseSet seed cannot undo the raise; CSC re-caps only when the curve controller is actively controlling. Uses existing SLC toggles: `SLCConfirmationHigher` must be off (or tip-up / accept) for unattended raises; override and denied limits are respected.
+
+Engage / tip policy (`Ap1RaiseHoldoff` in `slc_raise.py`, applied in `frogpilot_vcruise.py`; AP1 only, and only with SLC on). Full user-facing map: [`STALK.md`](STALK.md).
+
+- **Engage classification.** On the cruise-enabled rising edge, the most recent of UP / DN / RWD pressed within the last 0.8 s (`RECENT_S`) decides. Stalk inputs are continuous **levels** from `carstate.button_states` published on `frogpilotCarState.accelPressed` / `decelPressed` / `resumePressed` (not 10 ms `buttonEvents`: the 20 Hz planner missed short RWD holds on route 26 and about half of UP/DN edges on route 25).
+- **UP/DN engage → sticky current speed** (`latched_vego_ms`, no raise). Holds through posted-limit changes in both directions until a pull or disengage, the same as a tipped set: no `min` with SLC + offset, no raise on a higher limit (the old `LIMIT_RISE_MS` latch end is removed). Only CSC caps it. An engaged tip ends it and starts a tip from the latched speed. The choice of sticky / tip / SLC tracking is in `ap1_cruise_ms` (`slc_raise.py`).
+- **RWD / pull engage, or pull while engaged → SLC tracking.** Clears tip and sticky; the set is SLC + offset lifted after the `min()` merge, so it follows higher **and lower** limits. Route `0000002a` fix (`034baaba`): the pull no longer seeds `tip_ms` with the raised set. That seed had made tip authority block a 45 → 30 Mobileye drop until cancel + re-engage. When the tip clears, the stale `slc.overridden_speed` is reset to 0.
+- **Engaged tips (software set only).** Base is the current software set: sticky latch first (never `max(plan, SLC+offset)` while sticky; route 26/27), then the existing tip, then the SLC set (`set_hint` floored with `slc_desired`, never `DI_cruiseSet`, which reads about half the current speed under the overlay; route 28). First position (raw `SpdCtrlLvr_Stat` 16 / 32) → ±1 mph on the press edge. Full tip (raw 4 / 8, `tip_full`) → `next_5_ms` / `prev_5_ms` of the base, on the edge or when the press reaches the second position. `ButtonType` maps both positions to one `accelCruise` / `decelCruise`, so the raw value is published separately as `frogpilotCarState.spdCtrlLvr`. Route `0000002a` fix: before, full vs first was decided only by a 0.45 s hold, so 0.08–0.21 s full tips gave ±1 (50 → 49 instead of 45). Holding first position 0.45 s (`TIP_HOLD_S`) still upgrades once as a fallback. A held full tip gives one step (no repeat scroll). Capped at `V_CRUISE_MAX`, floored at 1 mph (`TIP_MIN_MS`): tips may go below 15 mph, but never to 0, which means "no tip" and used to fall back to SLC tracking (a raise to posted limit + offset).
+- **Tip authority.** A tipped set stays until a pull or disengage. Speed limit zone changes do not clear it in either direction (a higher limit must not auto-raise it; a lower limit does not lower it); CSC still caps. Tip is written to `slc.overridden_speed` so Max Set Speed gas override returns to it. No engaged-DECEL raise holdoff. Never follows stale `DI_cruiseSet` under the OP overlay (route 25 cliff 31 → 12 → 3; route 28 half-set).
+- **No stalk TX.** Tips and pulls do not send cancel / FWD or any stalk frame on 0x45 (stock `DI_cruiseState` can soft-lock to STANDBY after cancel + stalk spam). Panda 0x45 TX stays cancel-only.
+- **SLC posted-limit guard** (`Ap1SlcLimitGuard`, `slc_raise.py`; applied in `frogpilot_vcruise.py` only for `TESLA_AP1_MODELS` with SLC on). Filters the SLC target / offset used for SLC tracking and pull engage and published as `frogpilotPlan.slcSpeedLimit` (which controlsd uses for the pull-engage set). Limits under 15 mph are ignored even if they persist (previous valid limit kept; 15 is valid). A sudden drop, more than 15 mph or below half the current limit, must persist 2 s (`CONFIRM_S`) before it is accepted; drops of 15 mph or less, rises, and "no limit" (0) apply immediately. Route `0000002a` seg 5: a ~1.4 s Mobileye 5 mph reading in a 45 zone dropped the SLC-tracking set from 51 to about 6; with the guard it stays 51. FrogPilot's `SpeedLimitController` state and its gas-override check still see the raw value. Tips, tip-engage and the tip floor are not affected.
+- Offset bands compare in rounded mph / km/h (`speed_limit_controller.py`) so 25 mph uses Offset2 (25–34); upstream compared raw m/s and put 25 mph in Offset1.
+- Posted limit source on AP1: `frogpilotCarState.dashboardSpeedLimit` from stock Mobileye `DAS_fusedSpeedLimit` (0x399 on bus 2), then `UI_mapSpeedLimit`, then `UI_mppSpeedLimit` (`selfdrive/car/tesla/speed_limit.py`). SNA / unknown / unlimited → 0.
+
+Cruise set source is `DI_cruiseSet` (Tinkla-aligned), not `DI_digitalSpeed`. `DAS_accSpeedLimit` on 0x389 is written from the OP set so the IC set speed matches. DBC factor is **0.4** (was 0.2): route 21 cluster digital set=60 was 0.2 packing vs IC 0.4. `cruise_set_mph` rejects `V_CRUISE_UNSET` (255 kph) so standstill DI set=0 cannot pack ~158 mph / cluster digital set ~90 (route 23). Comma/HUD set comes from `cluster_display_kph`: the planner set (`frogpilotPlan.vCruise`) whenever it is above the DI-seeded set, which under the OP overlay is about half the current speed, so CSC curve targets, SLC limit changes and tips all show on the cluster set speed (CSC engage briefly shows the current speed, a cosmetic quirk); also prefers plan over UNSET. Sent only while engaged and with `EnableICIntegration` on. Stock fused/vision speed-limit sign fields stay stock. **No** fake stalk on 0x45; panda CANCEL-only on 0x45 is unchanged. Code: `selfdrive/car/tesla/slc_raise.py`, `frogpilot/controls/lib/frogpilot_vcruise.py`, `frogpilot/controls/frogpilot_card.py`, `frogpilot/controls/lib/speed_limit_controller.py`, `cluster.py`, `opendbc/tesla_can.dbc`, `controlsd.py` cluster display lift.
+
+## AP1 stalk-hold Experimental Mode toggles
+
+Upstream FrogPilot toggles Experimental Mode from the distance button or LKAS button, and only while `longActive`. AP1 adds two stalk holds that call the same `handle_experimental_mode` from `frogpilot_card.py` (CEM on → flips the CEM override; otherwise toggles `ExperimentalMode`). No new Params key, no CAN TX, no panda change. Timing runs in `carstate.py` at `DT_CTRL`.
+
+- **Engaged ~1.23 s pull** (`selfdrive/car/tesla/stalk_pull_hold.py`, `PULL_HOLD_S = 1.23` (was 2.0), `PULL_HOLD_ENABLED = True`). Armed only if cruise was enabled before the RWD edge, so the engage pull never toggles. Fires once; IDLE re-arms. Disabled in `9c98191e` after drive 18 (stock DI treats a held pull as resume and may jump its set about 0.7 s in, e.g. 15 → 31 mph), re-enabled in `d854f359` with that side effect accepted. The pull also clears tip / sticky (SLC tracking) like any pull.
+- **Disengaged ~1.23 s forward** (`selfdrive/car/tesla/stalk_fwd_hold.py`, `FWD_HOLD_S = 1.23` (was 2.0), `FWD_HOLD_ENABLED = True`, `3396283b`). Armed only if cruise was not enabled at the FWD edge; a cancel that starts engaged stays disarmed for that hold even after it disengages; engaging mid-hold aborts. Works without `longActive`, unlike the distance / LKAS paths. Route `0000002a` replay: all 7 forward pushes were engaged cancels (longest 0.12 s), none would toggle.
+
+## Other AP1 changes on main since milestone 2
+
+- **Panda angle resync while disengaged** (`1d6669ae`, `panda/board/safety/safety_tesla.h`, `TESLA_FLAG_AP1` only). Each `EPAS_sysStatus` (0x370) received while the angle rate check is not running sets `desired_angle_last` to the measured angle, so the first 0x488 after engage is rate-checked against the real wheel instead of the previous engagement's last angle (which blocked the first steering frame of most engages in replay). Rate tables, TX list and forwarding are unchanged. Test: `panda/tests/safety/test_tesla_ap1_angle_resync.py`.
+- **0x488 counter continuity** (`0904bb35`, `steer_counter.py`). AP1 sends 0x488 when a stock frame arrives with counter = stock + 2, so stock/openpilot handovers never repeat or step the counter back (drive 18/19 handovers with delta 0 latched EPAS code 7). Falls back to the old `frame % 2` cadence if the stock stream is missing for 60 ms.
+- **Neutral `DAS_control` while the accelerator is pressed** (`4ded2e35`, `actuator_plan.py`). On every engaged step with `gasPressed`, AP1 sends accelMin = accelMax = 0, setSpeed = current speed, the only 0x2b9 shape the panda accepts while the pedal is down. No panda change.
+- **EPB EAC revoke is a permanent steer fault** (`ec8a6fd8`, `carstate.py`). `EPB_epasEACAllow` 0 (EPAS inhibited until a car power cycle) raises `steerFaultPermanent` instead of only the silent steer-unavailable warning.
+
+## AP1 blind spot from the stock DAS (`blindspot.py`)
+
+- **Source.** `DAS_blindSpotRearLeft` / `DAS_blindSpotRearRight` in the stock `AutopilotStatus` (0x399) on bus 2 (`cp_cam`, already read for the cluster frames). 0 none, 1 / 2 warning (both count as a car), 3 SNA (ignored). opendbc does not check Tesla checksums, so a frame whose `DAS_statusChecksum` does not match is skipped. Read-only: nothing new is sent and the panda is unchanged.
+- **Hold.** 0x399 comes every 0.5 s (faster bursts while `autopilotStatus` changes), so each side stays on for `BSM_HOLD_S` = 1.0 s after the last warning frame. A two-frame warning shows for 1.5 s.
+- **`enableBsm` for `TESLA_AP1_MODELS` only.** This turns on the standard lane-change block (`desire_helper` will not start a lane change toward a flagged side; controlsd shows "Car Detected in Blindspot" with the prompt chime) and the FrogPilot blind spot UI: Blind Spot Path (red adjacent lane, drawn only when the planner has a lane width, which needs at least the minimum lane-change speed), and Border Metrics -> Blind Spot (that half of the onroad border solid red; it flashes red/yellow only with the blinker on that side and Border Metrics -> Turn Signal on). Border Metrics needs tuning level 3: Developer UI -> Developer Metrics -> Border Metrics.
+- **Replay** (all routes `0000002a` to `00000032`): 5 episodes, all from 2 or 6 consecutive warning frames, none in the route 32 car wash, no SNA or bad checksums, no flapping; none of the 5 real lane changes would have been held (the nearest episode was 43 s away).
+
+## Last-known wall clock (device-global)
+
+comma devices lose RTC across power-off and boot into a fixed AGNOS/systemd epoch (~Nov 2023) until GPS or NTP sets the clock, so rlog wall-clock stamps and route directory names collide across boots. BogPilot writes the current UTC unix time to `/data/params_bogpilot/LastKnownTime` about every 5 minutes from `system.timed` once `system_time_valid()` is true (tiny file; same durable dir as other BogPilot file-backed prefs; not a Params key). At `manager_init`, before `save_bootlog` / loggerd, `maybe_restore_last_known_time` sets the clock from that file when the clock is still on the bogus epoch or far behind the saved stamp. GPS/NTP via `timed.set_time` still correct afterward (`set_time` uses `abs(diff)` so a restored-but-slightly-stale clock can be advanced). It also saves once on every onroad-to-offroad transition and when manager exits (power-monitor shutdown, UI power off, reboot, SIGTERM), via `save_last_known_time_now`, which skips the write when the clock is invalid or older than the saved stamp; the 5-minute save remains as the backup for sudden power loss. First boot after install stays wrong until one valid-time period saves a stamp. Code: `common/bogpilot_clock.py`. No panda change; not car-specific.
+
+
+## AP1 standstill-engage experiment (branch `bogpilot-tesla-standstill` only, default ON there)
+
+Tinkla `tesla_unity_dev` `selfdrive/car/tesla/LONG_module.py` 246-255 / 355-367 sends `DAS_control` while openpilot is disengaged and the car is in Drive (stock AP not active): `accState` 4, `setSpeed` 0, accel [-1.4, +1.8], jerk [-0.46, +0.476], comment "so we can enable at 0 km/h". Tinkla's panda has no shape check for this.
+
+BogPilot port (experiment, not yet car-tested):
+- Toggle: file-backed `/data/params_bogpilot/AP1StandstillEngage`. On this test branch it is **on by default** (absent, empty or `1` = on; `0` / `false` / `off` = off), read once at car init (`toggles.ap1_standstill_engage`), only with openpilot long on. It sets panda safety bit `TESLA_FLAG_AP1_STANDSTILL` (16; `Panda.FLAG_TESLA_AP1_STANDSTILL`), and CarController sends standby frames only when that bit is in the installed safety param.
+- Frame: `accState` 4 (ACC_ON), `setSpeed` 0, **accelMax 0** (not Tinkla's +1.8), accelMin -1.4, jerk -0.46 / +0.476, on the stock `DAS_controlCounter`s (same counter path as engaged 0x2b9). Sent only while disengaged, `gearShifter == drive`, and stock `autopilotStatus` (0x399 bus 2) not 3-5 (`actuator_plan.ap1_standby_allowed`).
+- Panda (`safety_tesla.h` `tesla_ap1_standby_frame`): with `TESLA_FLAG_AP1 | LONG_CONTROL | AP1_STANDSTILL` and longitudinal not allowed, the only 0x2b9 shape accepted besides the inactive 0/0 frame is setSpeed 0, accState 0 or 4, aebEvent 0, accelMax <= 0 m/s^2, accelMin in [min_accel, 0], min <= max. Stock-AEB rejection and the engaged checks are unchanged. Without the bit nothing changes.
+- Side effect: while standby frames are sent, the panda's recent-TX drop replaces the stock bus-2 0x2b9 on bus 0 (as Tinkla did). Stock AEB still forwards (the drop is skipped while stock AEB is active, and the panda rejects OP 0x2b9 then).
+- Open: whether the DI needs accelMax > 0 to accept a 0 mph engage. Only a car test can tell; raising it needs a panda change.
+- Tests: `panda/tests/safety/test_tesla_ap1_standstill.py`, `selfdrive/car/tesla/tests/test_ap1_standstill.py`. Replay: `/workspace/out/standstill_replay/`.

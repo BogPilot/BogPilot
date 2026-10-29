@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# BogPilot: run the AGNOS updater so a downgrade works from any newer AGNOS (e.g. 19.9).
+#
+# Usage: bogpilot_updater <agnos.py> <manifest>
+#
+# On success the updater flashes the other slot and reboots, so this script never returns.
+# Any return means the downgrade failed; the caller (launch_chffrplus.sh) shows the error
+# screen. All output is appended to $BOGPILOT_AGNOS_LOG (default /data/tmp/bogpilot_agnos.log).
+#
+# Order:
+#  1. weston is running (old AGNOS): this branch's own updater, unchanged.
+#  2. updater_magic (raylib zipapp shipped with this branch). It imports pyserial, which
+#     AGNOS 19.9 dropped, so a small serial stand-in (third_party/bogpilot_pydeps) is added only when the system
+#     one is missing.
+#  3. Branches without updater_magic: the updater AGNOS ships at /usr/comma/updater (raylib,
+#     present on every AGNOS that has the "magic" display server). Else the Qt updater.
+#  4. If the updater returned without rebooting, try /usr/comma/updater once.
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+BASEDIR_GUESS="$( cd "$DIR/../../.." >/dev/null && pwd )"
+
+AGNOS_PY=$1
+MANIFEST=$2
+
+LOG="${BOGPILOT_AGNOS_LOG:-/data/tmp/bogpilot_agnos.log}"
+COMMA_UPDATER="${BOGPILOT_COMMA_UPDATER:-/usr/comma/updater}"
+VENDOR_DIR="${BOGPILOT_PYDEPS:-$BASEDIR_GUESS/third_party/bogpilot_pydeps}"
+
+mkdir -p "$(dirname "$LOG")" 2>/dev/null
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] bogpilot_updater: $*" | tee -a "$LOG"
+}
+
+weston_active() {
+  if [ -n "$BOGPILOT_TEST_WESTON" ]; then
+    [ "$BOGPILOT_TEST_WESTON" = "1" ]
+    return
+  fi
+  systemctl is-active --quiet weston-ready 2>/dev/null
+}
+
+shutting_down() {
+  if [ -n "$BOGPILOT_TEST_SYSTEM_STATE" ]; then
+    [ "$BOGPILOT_TEST_SYSTEM_STATE" = "stopping" ]
+    return
+  fi
+  [ "$(systemctl is-system-running 2>/dev/null)" = "stopping" ]
+}
+
+# run a command, keep its exit code, copy all output to the log
+run_logged() {
+  log "running: $*"
+  "$@" 2>&1 | tee -a "$LOG"
+  local rc=${PIPESTATUS[0]}
+  log "exited with code $rc: $1"
+  return $rc
+}
+
+# the updater reboots on success; give systemd a moment to report it
+wait_if_rebooting() {
+  sleep "${BOGPILOT_REBOOT_GRACE:-2}"
+  if shutting_down; then
+    log "system is rebooting"
+    sleep "${BOGPILOT_REBOOT_WAIT:-600}"
+    exit 0
+  fi
+}
+
+if [[ ! -f "$AGNOS_PY" || ! -f "$MANIFEST" ]]; then
+  log "invalid args: agnos.py='$AGNOS_PY' manifest='$MANIFEST'"
+  exit 2
+fi
+
+log "AGNOS update: $(cat /VERSION 2>/dev/null || echo unknown) -> ${AGNOS_VERSION:-?} (manifest $MANIFEST)"
+
+# Only use what this AGNOS ships: its venv python first.
+if [ -d /usr/local/venv/bin ]; then
+  export PATH="/usr/local/venv/bin:$PATH"
+fi
+
+rc=1
+tried_comma=0
+if weston_active; then
+  run_logged "$DIR/updater" "$AGNOS_PY" "$MANIFEST"
+  rc=$?
+elif [ -f "$DIR/updater_magic" ]; then
+  if ! python3 -c "import serial" >/dev/null 2>&1; then
+    if [ -d "$VENDOR_DIR/serial" ]; then
+      log "pyserial missing on this AGNOS, using serial stub in $VENDOR_DIR"
+      export PYTHONPATH="$VENDOR_DIR${PYTHONPATH:+:$PYTHONPATH}"
+    else
+      log "pyserial missing on this AGNOS and no serial stub at $VENDOR_DIR"
+    fi
+  fi
+  run_logged "$DIR/updater_magic" "$AGNOS_PY" "$MANIFEST"
+  rc=$?
+elif [ -x "$COMMA_UPDATER" ]; then
+  tried_comma=1
+  run_logged "$COMMA_UPDATER" "$AGNOS_PY" "$MANIFEST"
+  rc=$?
+else
+  run_logged "$DIR/updater" "$AGNOS_PY" "$MANIFEST"
+  rc=$?
+fi
+wait_if_rebooting
+
+if [ "$tried_comma" -eq 0 ] && [ -x "$COMMA_UPDATER" ] && ! weston_active; then
+  log "trying the AGNOS built-in updater $COMMA_UPDATER"
+  run_logged "$COMMA_UPDATER" "$AGNOS_PY" "$MANIFEST"
+  rc=$?
+  wait_if_rebooting
+fi
+
+log "AGNOS updater returned without rebooting (code $rc)"
+[ "$rc" -eq 0 ] && rc=1
+exit $rc
