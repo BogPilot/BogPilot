@@ -11,3 +11,8 @@ if [ -z "$AGNOS_VERSION" ]; then
 fi
 
 export STAGING_ROOT="/data/safe_staging"
+
+# BogPilot: block comma/Konik phone-home at the process env level
+# (covers the prebuilt Qt ui binary which still getenv("API_HOST") / ATHENA_HOST)
+export API_HOST=""
+export ATHENA_HOST=""

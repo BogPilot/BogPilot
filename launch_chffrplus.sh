@@ -87,7 +87,7 @@ function launch {
   export PYTHONPATH="$DIR/frogpilot/third_party:$PWD"
 
   # BogPilot: once AGNOS 10.1 is actually running, leave this bridge branch for
-  # the public daily-driver bogpilot-tesla (Mapbox works natively there).
+  # the offline daily-driver bogpilot-tesla-noreg (no comma registration).
   if [ -f /AGNOS ]; then
     bogpilot_handoff_to_daily "$BASEDIR" "$DIR/launch_chffrplus.sh"
   fi

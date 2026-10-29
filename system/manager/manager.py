@@ -175,6 +175,8 @@ def manager_thread() -> None:
   params = Params()
 
   ignore: list[str] = []
+  # BogPilot: never start comma athena / server uploader regardless of DongleId
+  ignore += ["manage_athenad", "uploader"]
   if params.get("DongleId", encoding='utf8') in (None, UNREGISTERED_DONGLE_ID):
     ignore += ["manage_athenad", "uploader"]
   if os.getenv("NOBOARD") is not None:

@@ -1758,14 +1758,14 @@ DEVICE_CONTROLS_TOGGLES = (
     description=("<b>WARNING: This will prevent your drives from being uploaded to <b>comma connect</b> which will impact debugging and official support from comma!</b><br><br><b>Prevent the device from uploading driving data.</b>"),
     parent_param="DeviceManagement",
     toggle_type=ToggleType.BUTTON_TOGGLE,
-    tuning_level=2,
+    tuning_level=4,
   ),
   ToggleDefinition(
     title=("Disable Onroad Only"),
     param="DisableOnroadUploads",
     description=("<b>Disable uploads only while driving.</b> Offroad uploads remain enabled."),
     parent_param="NoUploads",
-    tuning_level=2,
+    tuning_level=4,
   ),
   ToggleDefinition(
     title=("Share Driving Data"),
@@ -1808,7 +1808,7 @@ DEVICE_CONTROLS_TOGGLES = (
     description=("<b>Upload driving data to \"stable.konik.ai\" instead of \"connect.comma.ai\".</b>"),
     parent_param="DeviceManagement",
     reboot_required=True,
-    tuning_level=2,
+    tuning_level=4,
   ),
   ToggleDefinition(
     title=("Screen Settings"),

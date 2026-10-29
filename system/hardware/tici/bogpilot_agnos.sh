@@ -141,7 +141,7 @@ bogpilot_agnos_failed() {
 bogpilot_handoff_to_daily() {
   local basedir="$1" launcher="$2"
   local marker="${BOGPILOT_HANDOFF_MARKER:-/data/params_bogpilot/HandoffToBogpilotTeslaDone}"
-  local target="${BOGPILOT_HANDOFF_BRANCH:-bogpilot-tesla}"
+  local target="${BOGPILOT_HANDOFF_BRANCH:-bogpilot-tesla-noreg}"
   local running
 
   running=$(cat /VERSION 2>/dev/null || echo unknown)

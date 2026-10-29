@@ -154,13 +154,15 @@ def frogpilot_boot_functions(build_metadata, params_cache):
     for video in VIDEO_CACHE_PATH.glob("*.mp4"):
       delete_file(video)
 
-  if use_konik_server():
+  # BogPilot: never call register()/pilotauth for Konik or comma. Offline DongleId
+  # is minted in system.athena.registration.register during manager_init.
+  if False and use_konik_server():
     if params.get("KonikDongleId", encoding="utf8") != None:
       params.put("DongleId", params.get("KonikDongleId", encoding="utf8"))
     else:
       params.put("KonikDongleId", register(show_spinner=True, register_konik=True))
       params.put("DongleId", params.get("KonikDongleId", encoding="utf8"))
-  elif params.get("DongleId", encoding="utf8") == params.get("KonikDongleId", encoding="utf8"):
+  elif False and params.get("DongleId", encoding="utf8") == params.get("KonikDongleId", encoding="utf8"):
     params.remove("DongleId")
 
   def boot_thread():

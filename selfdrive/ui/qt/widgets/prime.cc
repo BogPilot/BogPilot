@@ -145,7 +145,7 @@ PrimeAdWidget::PrimeAdWidget(QWidget* parent) : QFrame(parent) {
   main_layout->addWidget(upgrade, 0, Qt::AlignTop);
   main_layout->addSpacing(50);
 
-  QLabel *description = new QLabel(tr("Become a comma prime member at connect.comma.ai"));
+  QLabel *description = new QLabel(tr("BogPilot runs offline — comma prime / connect pairing is disabled."));
   description->setStyleSheet("font-size: 56px; font-weight: light; color: white;");
   description->setWordWrap(true);
   main_layout->addWidget(description, 0, Qt::AlignTop);
@@ -190,7 +190,7 @@ SetupWidget::SetupWidget(QWidget* parent) : QFrame(parent) {
   registrationTitle->setStyleSheet("font-size: 75px; font-weight: bold;");
   finishRegistationLayout->addWidget(registrationTitle);
 
-  QLabel* registrationDescription = new QLabel(useKonikServer() ? tr("Pair your device with Konik connect (stable.konik.ai).") : tr("Pair your device with comma connect (connect.comma.ai) and claim your comma prime offer."));
+  QLabel* registrationDescription = new QLabel(tr("BogPilot runs offline — device pairing with comma/Konik is disabled."));
   registrationDescription->setWordWrap(true);
   registrationDescription->setStyleSheet("font-size: 50px; font-weight: light;");
   finishRegistationLayout->addWidget(registrationDescription);
