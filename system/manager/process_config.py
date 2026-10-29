@@ -66,7 +66,8 @@ def run_tinygrad_modeld(started, params, CP: car.CarParams, classic_model, tinyg
   return started and tinygrad_model
 
 procs = [
-  DaemonProcess("manage_athenad", "system.athena.manage_athenad", "AthenadPid"),
+  # BogPilot: athena phone-home disabled (no wss://athena.comma.ai / athena.konik.ai)
+  DaemonProcess("manage_athenad", "system.athena.manage_athenad", "AthenadPid", enabled=False),
 
   NativeProcess("camerad", "system/camerad", ["./camerad"], driverview),
   NativeProcess("logcatd", "system/logcatd", ["./logcatd"], allow_logging),
@@ -106,7 +107,8 @@ procs = [
   PythonProcess("hardwared", "system.hardware.hardwared", always_run),
   PythonProcess("tombstoned", "system.tombstoned", always_run, enabled=not PC),
   PythonProcess("updated", "system.updated.updated", always_run, enabled=not PC),
-  PythonProcess("uploader", "system.loggerd.uploader", allow_uploads),
+  # BogPilot: comma/Konik log uploader disabled (on-device loggerd kept)
+  PythonProcess("uploader", "system.loggerd.uploader", allow_uploads, enabled=False),
   PythonProcess("statsd", "system.statsd", allow_logging),
   PythonProcess("hevc_streamd", "system.hevc_stream.hevc_streamd", hevc_stream, enabled=not PC),
 

@@ -7,8 +7,8 @@ from openpilot.system.version import get_version
 
 from openpilot.frogpilot.common.frogpilot_utilities import use_konik_server
 
-API_HOST = os.getenv('API_HOST', 'https://api.commadotai.com')
-KONIK_API_HOST = os.getenv('API_HOST', 'https://api.konik.ai')
+API_HOST = os.getenv('API_HOST', '')  # BogPilot: comma API disabled; api_get never dials out
+KONIK_API_HOST = os.getenv('API_HOST', '')  # BogPilot: Konik API disabled
 
 KEYS = {"id_rsa": "RS256",
         "id_ecdsa": "ES256"}
@@ -42,14 +42,18 @@ class Api:
     return token
 
 
+class _BogPilotBlockedResponse:
+  """Stand-in when comma/Konik API calls are refused (BogPilot offline policy)."""
+  status_code = 503
+  text = '{"error":"bogpilot_api_disabled"}'
+  def json(self):
+    return {"error": "bogpilot_api_disabled"}
+
+
 def api_get(endpoint, method='GET', timeout=None, access_token=None, **params):
-  headers = {}
-  if access_token is not None:
-    headers['Authorization'] = "JWT " + access_token
-
-  headers['User-Agent'] = "openpilot-" + get_version()
-
-  return requests.request(method, (KONIK_API_HOST if use_konik_server() else API_HOST) + "/" + endpoint, timeout=timeout, headers=headers, params=params)
+  # BogPilot: never phone home to api.commadotai.com / api.konik.ai. Callers that
+  # check status_code get 503; do not perform the HTTP request.
+  return _BogPilotBlockedResponse()
 
 
 def get_key_pair() -> tuple[str, str, str] | tuple[None, None, None]:
