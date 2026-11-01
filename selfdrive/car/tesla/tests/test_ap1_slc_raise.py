@@ -21,6 +21,7 @@ from openpilot.selfdrive.car.tesla.slc_raise import (
   merge_vcruise_with_slc,
   next_5_ms,
   prev_5_ms,
+  step_1_ms,
   V_CRUISE_UNSET_MS,
 )
 
@@ -1317,3 +1318,140 @@ def test_ap1_guard_drop_back_window_expires():
   assert out[-1] == (45, 6)  # rise was >30 s ago: normal sudden-drop confirmation
   out = _guard_run(g, [(25, 6, 1.1)])
   assert out[-1] == (25, 6)
+
+
+# --- AP1TipRoundSet: whole-unit rounding before tip steps (default off) -------
+
+KPH = CV.KPH_TO_MS
+
+
+@pytest.mark.parametrize("base_mph,up,dn", [
+  (14.8, 20, 10),
+  (15.0, 20, 10),
+  (15.2, 20, 10),
+  (49.6, 55, 45),
+  (50.0, 55, 45),
+  (14.5, 20, 10),   # half-up: 14.5 → 15
+  (14.49, 15, 10),  # 14.49 → 14 → next 15 / prev 10
+  (36.0, 40, 35),
+])
+def test_round_whole_next_prev_5_mph(base_mph, up, dn):
+  assert next_5_ms(base_mph * MPH, round_whole=True) == pytest.approx(up * MPH)
+  assert prev_5_ms(base_mph * MPH, round_whole=True) == pytest.approx(dn * MPH)
+
+
+@pytest.mark.parametrize("base_mph,up,dn", [
+  (14.8, 15, 10),
+  (15.0, 20, 10),
+  (15.2, 20, 15),
+  (49.6, 50, 45),
+  (50.0, 55, 45),
+])
+def test_round_whole_off_is_legacy(base_mph, up, dn):
+  """Toggle off (default) = old next/prev multiple of the fractional mph base."""
+  assert next_5_ms(base_mph * MPH) == pytest.approx(up * MPH)
+  assert prev_5_ms(base_mph * MPH) == pytest.approx(dn * MPH)
+  assert next_5_ms(base_mph * MPH, round_whole=False, is_metric=True) == pytest.approx(up * MPH)
+  assert prev_5_ms(base_mph * MPH, round_whole=False, is_metric=True) == pytest.approx(dn * MPH)
+
+
+@pytest.mark.parametrize("base_kph,up,dn", [
+  (24.8, 30, 20),
+  (25.0, 30, 20),
+  (25.2, 30, 20),
+  (79.6, 85, 75),
+  (80.0, 85, 75),
+  (52.4, 55, 50),
+])
+def test_round_whole_next_prev_5_metric(base_kph, up, dn):
+  assert next_5_ms(base_kph * KPH, round_whole=True, is_metric=True) == pytest.approx(up * KPH)
+  assert prev_5_ms(base_kph * KPH, round_whole=True, is_metric=True) == pytest.approx(dn * KPH)
+
+
+def test_step_1_round_whole():
+  assert step_1_ms(14.8 * MPH, 1, round_whole=True) == pytest.approx(16 * MPH)
+  assert step_1_ms(14.8 * MPH, -1, round_whole=True) == pytest.approx(14 * MPH)
+  assert step_1_ms(15.2 * MPH, -1, round_whole=True) == pytest.approx(14 * MPH)
+  assert step_1_ms(50.0 * MPH, 1, round_whole=True) == pytest.approx(51 * MPH)
+  assert step_1_ms(24.8 * KPH, 1, round_whole=True, is_metric=True) == pytest.approx(26 * KPH)
+  # Legacy keeps the fractional base, +1 mph
+  assert step_1_ms(14.8 * MPH, 1) == pytest.approx(15.8 * MPH)
+  assert step_1_ms(14.8 * MPH, 1) == 14.8 * MPH + Ap1RaiseHoldoff.TIP_STEP_MS
+
+
+def _holdoff_tip(h, base_ms, up=False, dn=False, tip_full=True):
+  """Engaged (tip-engage sticky at base), then one tip edge; returns tip_ms."""
+  dt = 0.05
+  slc = 25 * MPH
+  # Tip-engage via UP stalk while disengaged → sticky = vEgo
+  h.update(False, False, True, False, slc, base_ms, dt=dt)
+  h.update(False, False, False, False, slc, base_ms, dt=dt)
+  h.update(True, False, False, False, slc, base_ms, dt=dt)
+  assert h.sticky_vego is True
+  h.update(True, False, False, False, slc, base_ms, current_set_ms=h.latched_vego_ms, dt=dt)
+  h.update(True, dn, up, False, slc, base_ms, current_set_ms=h.latched_vego_ms, dt=dt, tip_full=tip_full)
+  return h.tip_ms
+
+
+def test_holdoff_full_tip_up_from_14_8_latch():
+  """Stalk +5 right after a 14.8 mph tip-engage: off → 15 (legacy), on → 20."""
+  assert _holdoff_tip(Ap1RaiseHoldoff(), 14.8 * MPH, up=True) == pytest.approx(15 * MPH)
+  assert _holdoff_tip(Ap1RaiseHoldoff(round_whole=True), 14.8 * MPH, up=True) == pytest.approx(20 * MPH)
+
+
+def test_holdoff_full_tip_down_from_15_2_latch():
+  assert _holdoff_tip(Ap1RaiseHoldoff(), 15.2 * MPH, dn=True) == pytest.approx(15 * MPH)
+  assert _holdoff_tip(Ap1RaiseHoldoff(round_whole=True), 15.2 * MPH, dn=True) == pytest.approx(10 * MPH)
+
+
+def test_holdoff_first_detent_round_whole():
+  assert _holdoff_tip(Ap1RaiseHoldoff(), 14.8 * MPH, up=True, tip_full=False) == pytest.approx(15.8 * MPH)
+  assert _holdoff_tip(Ap1RaiseHoldoff(round_whole=True), 14.8 * MPH, up=True, tip_full=False) == pytest.approx(16 * MPH)
+  assert _holdoff_tip(Ap1RaiseHoldoff(round_whole=True), 15.2 * MPH, dn=True, tip_full=False) == pytest.approx(14 * MPH)
+
+
+def test_holdoff_metric_round_whole():
+  h = Ap1RaiseHoldoff(round_whole=True, is_metric=True)
+  assert _holdoff_tip(h, 24.8 * KPH, up=True) == pytest.approx(30 * KPH)
+  # Metric flag ignored when the toggle is off (legacy mph steps)
+  h_off = Ap1RaiseHoldoff(round_whole=False, is_metric=True)
+  assert _holdoff_tip(h_off, 24.8 * KPH, up=True) == pytest.approx(next_5_ms(24.8 * KPH))
+
+
+def test_holdoff_exact_multiples_step_5_both_modes():
+  for rw in (False, True):
+    assert _holdoff_tip(Ap1RaiseHoldoff(round_whole=rw), 50 * MPH, up=True) == pytest.approx(55 * MPH)
+    assert _holdoff_tip(Ap1RaiseHoldoff(round_whole=rw), 50 * MPH, dn=True) == pytest.approx(45 * MPH)
+
+
+def test_holdoff_default_round_whole_off():
+  h = Ap1RaiseHoldoff()
+  assert h.round_whole is False and h.is_metric is False
+
+
+def test_ap1_tip_round_set_toggle_default_off(tmp_path, monkeypatch):
+  from openpilot.selfdrive.car.tesla import toggles
+  from openpilot.selfdrive.car.tesla.values import CAR
+  path = tmp_path / "AP1TipRoundSet"
+  monkeypatch.setattr(toggles, "_ap1_tip_round_path", path)
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is False  # absent → off
+  for on in ("1", "true", "on", "ON\n"):
+    path.write_text(on)
+    assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is True
+  for off in ("0", "false", "off", "", "garbage"):
+    path.write_text(off)
+    assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is False
+  path.write_text("1")
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP2_MODELS) is False
+  assert toggles.ap1_tip_round_set("TESLA_AP1_MODELS") is True  # frogpilot_toggles.car_model string
+
+
+def test_vcruise_wires_tip_round_toggle():
+  """Source: frogpilot_vcruise reads AP1TipRoundSet once and feeds holdoff + is_metric."""
+  from pathlib import Path
+  vsrc = (Path(__file__).resolve().parents[4] / "frogpilot" / "controls" / "lib" /
+          "frogpilot_vcruise.py").read_text()
+  assert "self._ap1_tip_round = None" in vsrc
+  assert "ap1_tip_round_set(" in vsrc
+  assert "hold.round_whole = bool(self._ap1_tip_round)" in vsrc
+  assert 'hold.is_metric = bool(getattr(frogpilot_toggles, "is_metric", False))' in vsrc

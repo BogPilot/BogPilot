@@ -24,6 +24,8 @@ class FrogPilotVCruise:
     self.ap1_raise_holdoff = Ap1RaiseHoldoff()
     self.ap1_limit_guard = Ap1SlcLimitGuard()
     self._ap1_tip_override_active = False
+    # AP1TipRoundSet (file-backed, default off); read once on the first AP1 tick.
+    self._ap1_tip_round = None
 
   def update(self, gps_position, now, time_validated, v_cruise, v_ego, sm, frogpilot_toggles):
     force_stop = self.frogpilot_planner.cem.stop_light_detected and sm["controlsState"].enabled and frogpilot_toggles.force_stops
@@ -127,6 +129,11 @@ class FrogPilotVCruise:
         # (drive26/27 F2). When neither sticky nor tip (post-pull allow_raise),
         # floor the hint with slc_desired so tip ±1 from the raised set.
         hold = self.ap1_raise_holdoff
+        if self._ap1_tip_round is None:
+          from openpilot.selfdrive.car.tesla.toggles import ap1_tip_round_set
+          self._ap1_tip_round = ap1_tip_round_set(str(getattr(frogpilot_toggles, "car_model", "") or ""))
+        hold.round_whole = bool(self._ap1_tip_round)
+        hold.is_metric = bool(getattr(frogpilot_toggles, "is_metric", False))
         if hold.sticky_vego and float(hold.latched_vego_ms) > 0.0:
           set_hint = float(hold.latched_vego_ms)
         elif float(hold.tip_ms) > 0.0:

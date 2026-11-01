@@ -39,6 +39,8 @@ so standstill DI set=0 cannot pack ~158 mph / cluster digital set ~90
 Not a product. No warranty. The driver remains responsible. Comply with local law.
 """
 
+import math
+
 from openpilot.common.conversions import Conversions as CV
 
 # Matches selfdrive/controls/lib/drive_helpers.V_CRUISE_UNSET (kph).
@@ -102,20 +104,59 @@ def merge_vcruise_with_slc(v_cruise_ms: float, csc_target_ms: float, slc_desired
 
 
 
-def next_5_ms(speed_ms: float) -> float:
-  """Next multiple of 5 mph above speed_ms (30→35, 36→40); exact multiples go +5."""
-  mph = round(float(speed_ms) * CV.MS_TO_MPH, 4)
-  return float((int(mph // 5.0) + 1) * 5.0) * CV.MPH_TO_MS
+def _speed_units(speed_ms: float, round_whole: bool, is_metric: bool) -> tuple[float, float]:
+  """Set speed in tip units and the factor back to m/s.
+
+  round_whole=False (legacy): mph, rounded to 4 decimals only (float noise).
+  round_whole=True (AP1TipRoundSet): the display unit (km/h when metric, else
+  mph), rounded half-up to a whole number first. The cluster and the comma UI
+  show whole numbers only, so a 14.8 mph tip-engage latch reads as 15 and a +5
+  tip goes to 20 instead of 15.
+  """
+  if not round_whole:
+    return round(float(speed_ms) * CV.MS_TO_MPH, 4), CV.MPH_TO_MS
+  to_unit = CV.MS_TO_KPH if is_metric else CV.MS_TO_MPH
+  to_ms = CV.KPH_TO_MS if is_metric else CV.MPH_TO_MS
+  value = round(float(speed_ms) * to_unit, 4)
+  return float(math.floor(value + 0.5)), to_ms
 
 
-def prev_5_ms(speed_ms: float) -> float:
-  """Next-lower multiple of 5 mph (31→30, 30→25, 36→35); exact multiples go −5."""
-  mph = round(float(speed_ms) * CV.MS_TO_MPH, 4)
-  if mph <= 0.0:
+def next_5_ms(speed_ms: float, round_whole: bool = False, is_metric: bool = False) -> float:
+  """Next multiple of 5 above speed_ms (30→35, 36→40); exact multiples go +5.
+
+  Legacy (round_whole=False): mph, fractional base (14.8→15).
+  round_whole=True: base rounded to a whole display unit first (14.8→15→20,
+  49.6→50→55); steps in km/h when is_metric.
+  """
+  value, to_ms = _speed_units(speed_ms, round_whole, is_metric)
+  return float((int(value // 5.0) + 1) * 5.0) * to_ms
+
+
+def prev_5_ms(speed_ms: float, round_whole: bool = False, is_metric: bool = False) -> float:
+  """Next-lower multiple of 5 (31→30, 30→25, 36→35); exact multiples go −5.
+
+  round_whole=True: base rounded to a whole display unit first (15.2→15→10,
+  49.6→50→45); steps in km/h when is_metric.
+  """
+  value, to_ms = _speed_units(speed_ms, round_whole, is_metric)
+  if value <= 0.0:
     return 0.0
-  if mph % 5.0 == 0.0:
-    return max(mph - 5.0, 0.0) * CV.MPH_TO_MS
-  return float(int(mph // 5.0) * 5.0) * CV.MPH_TO_MS
+  if value % 5.0 == 0.0:
+    return max(value - 5.0, 0.0) * to_ms
+  return float(int(value // 5.0) * 5.0) * to_ms
+
+
+def step_1_ms(speed_ms: float, direction: int, round_whole: bool = False, is_metric: bool = False) -> float:
+  """First-detent tip: ±1 unit from the base.
+
+  Legacy: base ± 1 mph (fractional base kept: 14.8→15.8).
+  round_whole=True: whole display unit first, then ±1 (14.8→15→16; km/h when metric).
+  Caller clamps to TIP_MIN_MS / V_CRUISE_MAX_MS.
+  """
+  if not round_whole:
+    return float(speed_ms) + float(direction) * 1.0 * CV.MPH_TO_MS
+  value, to_ms = _speed_units(speed_ms, round_whole, is_metric)
+  return (value + float(direction)) * to_ms
 
 
 class Ap1RaiseHoldoff:
@@ -149,7 +190,11 @@ class Ap1RaiseHoldoff:
   V_CRUISE_MAX_MS = 145.0 * CV.KPH_TO_MS
   DT_DEFAULT = 0.05  # model tick; avoid importing realtime here
 
-  def __init__(self):
+  def __init__(self, round_whole: bool = False, is_metric: bool = False):
+    # AP1TipRoundSet (default off): round the tip base to a whole display unit
+    # before ±1 / next-5 / prev-5. Caller may update both attributes.
+    self.round_whole = bool(round_whole)
+    self.is_metric = bool(is_metric)
     self.sticky_vego = False
     self.latched_vego_ms = 0.0
     self.tip_ms = 0.0
@@ -228,10 +273,11 @@ class Ap1RaiseHoldoff:
         self._tip_press_active = True
         self.tip_dir = 1
         if tip_full:
-          self.tip_ms = min(next_5_ms(base), self.V_CRUISE_MAX_MS)
+          self.tip_ms = min(next_5_ms(base, round_whole=self.round_whole, is_metric=self.is_metric), self.V_CRUISE_MAX_MS)
           self._tip_upgraded = True
         else:
-          self.tip_ms = min(base + self.TIP_STEP_MS, self.V_CRUISE_MAX_MS)
+          up1 = step_1_ms(base, 1, round_whole=True, is_metric=self.is_metric) if self.round_whole else base + self.TIP_STEP_MS
+          self.tip_ms = min(up1, self.V_CRUISE_MAX_MS)
           self._tip_upgraded = False
       elif dn_edge:
         self.sticky_vego = False
@@ -241,30 +287,31 @@ class Ap1RaiseHoldoff:
         self._tip_press_active = True
         self.tip_dir = -1
         if tip_full:
-          self.tip_ms = max(prev_5_ms(base), self.TIP_MIN_MS)
+          self.tip_ms = max(prev_5_ms(base, round_whole=self.round_whole, is_metric=self.is_metric), self.TIP_MIN_MS)
           self._tip_upgraded = True
         else:
-          self.tip_ms = max(base - self.TIP_STEP_MS, self.TIP_MIN_MS)
+          dn1 = step_1_ms(base, -1, round_whole=True, is_metric=self.is_metric) if self.round_whole else base - self.TIP_STEP_MS
+          self.tip_ms = max(dn1, self.TIP_MIN_MS)
           self._tip_upgraded = False
       if self._tip_press_active and not self._tip_upgraded:
         # Mid-press reach of pos2, or long hold without detent info
         if tip_full:
           if self.tip_dir > 0:
-            nxt = next_5_ms(self._tip_base_ms)
+            nxt = next_5_ms(self._tip_base_ms, round_whole=self.round_whole, is_metric=self.is_metric)
             self.tip_ms = min(max(float(self.tip_ms), nxt), self.V_CRUISE_MAX_MS)
           elif self.tip_dir < 0:
-            self.tip_ms = max(prev_5_ms(self._tip_base_ms), self.TIP_MIN_MS)
+            self.tip_ms = max(prev_5_ms(self._tip_base_ms, round_whole=self.round_whole, is_metric=self.is_metric), self.TIP_MIN_MS)
           self._tip_upgraded = True
         elif self.tip_dir > 0 and up_pressed:
           self._tip_hold_s += dt
           if self._tip_hold_s >= self.TIP_HOLD_S:
-            nxt = next_5_ms(self._tip_base_ms)
+            nxt = next_5_ms(self._tip_base_ms, round_whole=self.round_whole, is_metric=self.is_metric)
             self.tip_ms = min(max(float(self.tip_ms), nxt), self.V_CRUISE_MAX_MS)
             self._tip_upgraded = True
         elif self.tip_dir < 0 and decel_pressed:
           self._tip_hold_s += dt
           if self._tip_hold_s >= self.TIP_HOLD_S:
-            self.tip_ms = max(prev_5_ms(self._tip_base_ms), self.TIP_MIN_MS)
+            self.tip_ms = max(prev_5_ms(self._tip_base_ms, round_whole=self.round_whole, is_metric=self.is_metric), self.TIP_MIN_MS)
             self._tip_upgraded = True
       # Release ends hold timing (tip_ms latched value remains until clear)
       if self.tip_dir > 0 and not up_pressed:
