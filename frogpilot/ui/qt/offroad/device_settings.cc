@@ -1,6 +1,8 @@
 #include "frogpilot/ui/screenrecorder/screenrecorder.h"
 #include "frogpilot/ui/screenstream/screen_stream.h"
 #include "frogpilot/ui/qt/offroad/device_settings.h"
+#include "frogpilot/ui/qt/offroad/offroad_screensaver.h"
+#include "frogpilot/ui/qt/widgets/bogpilot_file_toggle.h"
 
 FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : FrogPilotListWidget(parent), parent(parent) {
   QJsonObject shownDescriptions = QJsonDocument::fromJson(QString::fromStdString(params.get("ShownToggleDescriptions")).toUtf8()).object();
@@ -41,7 +43,7 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : Fr
     {"HigherBitrate", tr("High-Quality Recording"), tr("<b>Save drive footage in higher video quality.</b>"), ""},
     {"LowVoltageShutdown", tr("Low-Voltage Cutoff"), tr("<b>While parked, if the battery voltage falls below the set level, the device shuts down</b> to prevent excessive battery drain."), ""},
     {"IncreaseThermalLimits", tr("Raise Temperature Limits"), QString("<b>%1</b><br><br>%2").arg(tr("WARNING: Running at higher temperatures may damage your device!")).arg(tr("<b>Allow the device to run at higher temperatures</b> before throttling or shutting down. Use only if you understand the risks!")), ""},
-    {"FrogPilotTelemetry", tr("Share Driving Data"), tr("<b>Automatically share anonymized driving data with FrogPilot to help improve it.</b><br><br>Only driving signals are shared: no video, no GPS or location, no VIN, and no identifiers. Turn this off to opt out."), ""},
+    {"FrogPilotTelemetry", tr("Share Driving Data"), tr("<b>Help improve BogPilot</b> by sharing a privacy-safe car fingerprint. BogPilot itself sends no data: this toggle does not upload anything. To share a fingerprint from your own logs, see github.com/BogPilot/bogpilot-fingerprint"), ""},
     {"UseKonikServer", tr("Use Konik Server"), tr("<b>Upload driving data to \"connect.konik.ai\" instead of \"connect.comma.ai\".</b>"), ""},
 
     {"ScreenManagement", tr("Screen Settings"), tr("<b>Settings that control screen brightness, screen recording, and timeout duration.</b>"), "../../frogpilot/assets/toggle_icons/icon_light.png"},
@@ -50,6 +52,7 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : Fr
     {"ScreenBrightnessOnroad", tr("Screen Brightness (Onroad)"), tr("<b>The screen brightness while driving.</b>"), ""},
     {"ScreenRecorder", tr("Screen Recorder"), tr("<b>Add a button to the driving screen to record the display.</b>"), ""},
     {"ScreenTimeout", tr("Screen Timeout (Offroad)"), tr("<b>How long the screen stays on after being tapped while not driving.</b>"), ""},
+    {"OffroadScreensaver", tr("Offroad Screensaver"), tr("<b>After the offroad screen timeout, bounce the upload readout instead of turning the screen off.</b><br><br>While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says \"Up to date\", it bounces the BogPilot logo with those words.<br><br>On by default. File <b>/data/params_bogpilot/OffroadScreensaver</b> (1 on, 0 off). The prebuilt params store cannot take a new key."), ""},
     {"ScreenTimeoutOnroad", tr("Screen Timeout (Onroad)"), tr("<b>How long the screen stays on after being tapped while driving.</b>"), ""},
     {"StandbyMode", tr("Standby Mode"), tr("<b>Turn the screen off while driving and automatically wake it up for alerts or engagement state changes.</b>"), ""}
   };
@@ -120,6 +123,10 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : Fr
       deviceToggle = streamToggle;
     } else if (param == "ScreenTimeout" || param == "ScreenTimeoutOnroad") {
       deviceToggle = new FrogPilotParamValueControl(param, title, desc, icon, 5, 60, tr(" seconds"), {}, 5);
+    } else if (param == "OffroadScreensaver") {
+      // File-backed (/data/params_bogpilot/OffroadScreensaver, default ON: no file = on, an explicit
+      // "0" = off). The fallback must match bogpilot_screensaver::TOGGLE_DEFAULT. Not a Params key.
+      deviceToggle = new bogpilot::FileToggleControl(param, bogpilot_screensaver::TOGGLE_DEFAULT, title, desc, icon);
 
     } else {
       deviceToggle = new ParamControl(param, title, desc, icon);

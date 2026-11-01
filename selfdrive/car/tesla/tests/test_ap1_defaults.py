@@ -78,11 +78,11 @@ def test_owner_profile_values():
   src = (ROOT / "frogpilot/ui/qt/offroad/longitudinal_settings.cc").read_text()
   assert 'accelerationProfiles{tr("Standard"), tr("Eco"), tr("Sport"), tr("Sport+")}' in src
   assert 'decelerationProfiles{tr("Standard"), tr("Eco"), tr("Eco+")}' in src
-  # chimes muted, telemetry opted out
+  # chimes muted; FrogPilot telemetry is removed outright (table default 0, hidden), so not in the profile
   assert ap1.values_equal(ap1.AP1_PARAM_PROFILE["EngageVolume"], 0)
   assert ap1.values_equal(ap1.AP1_PARAM_PROFILE["DisengageVolume"], 0)
-  assert ap1.AP1_PARAM_PROFILE["FrogPilotTelemetry"] == "0"
-  assert "FrogPilotTelemetry" not in ap1.NEVER_PROFILE_KEYS
+  assert "FrogPilotTelemetry" not in ap1.AP1_PARAM_PROFILE
+  assert TABLE["FrogPilotTelemetry"] == "0"
   assert ap1.AP1_SPEED_OFFSETS_MPH == {"Offset1": 4, "Offset2": 5, "Offset3": 5, "Offset4": 5,
                                        "Offset5": 7, "Offset6": 8, "Offset7": 10}
 

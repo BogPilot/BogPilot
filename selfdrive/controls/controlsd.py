@@ -657,7 +657,16 @@ class Controls:
     # AP1: steeringPressed is any EPAS hands level (override / grey border) and
     # does not clear latActive here. The Tinkla hands pause (level >= 2) is
     # applied in selfdrive/car/tesla/carcontroller.py, which sends type NONE.
-    CC.latActive = (self.active or self.sm['frogpilotCarState'].alwaysOnLateralEnabled) and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
+    aol_lateral = self.sm['frogpilotCarState'].alwaysOnLateralEnabled
+    # AP1: AOL-only lateral is held off at parking speed (EPB revoke risk); see
+    # selfdrive/car/tesla/aol_gate.py. Engaged lateral is unchanged.
+    from openpilot.selfdrive.car.tesla.slc_raise import is_ap1
+    if is_ap1(self.CP.carFingerprint):
+      if not hasattr(self, 'ap1_aol_gate'):
+        from openpilot.selfdrive.car.tesla.aol_gate import AP1AolGate
+        self.ap1_aol_gate = AP1AolGate()
+      aol_lateral = self.ap1_aol_gate.update(aol_lateral, self.active, CS.vEgo, CS.steeringAngleDeg)
+    CC.latActive = (self.active or aol_lateral) and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                    (not standstill or self.joystick_mode) and self.sm['frogpilotPlan'].lateralCheck and not self.sm['frogpilotCarState'].pauseLateral
     CC.longActive = self.enabled and not self.contains_event_type(ET.OVERRIDE_LONGITUDINAL) and not self.sm['frogpilotCarState'].pauseLongitudinal and self.CP.openpilotLongitudinalControl
 

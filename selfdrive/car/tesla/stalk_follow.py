@@ -179,6 +179,26 @@ _PERSONALITY = {
 }
 
 
+_PERSONALITY_BY_DETENT = {3: _PERSONALITY["aggressive"], 5: _PERSONALITY["standard"], 7: _PERSONALITY["relaxed"]}
+
+
+def crossed_personality(prev_detent, detent):
+  """Personality of the last named detent (3, 5, 7) the stalk passed over between prev_detent and detent.
+
+  A quick twist can skip detents on CAN (2026-10-20 route 000000a5: DTR 200 -> 166 -> 100 -> 33 never reported 66),
+  so a landing on 1, 2, 4 or 6 that jumped over a named detent would otherwise keep the old personality while a slow
+  twist through the same detents changes it. Returns None when nothing named was skipped (or no history).
+  Both ends are excluded: prev_detent was already applied and a named landing is handled by ap1_stalk_commands.
+  """
+  if prev_detent is None or detent is None or abs(detent - prev_detent) < 2:
+    return None
+  step = 1 if detent > prev_detent else -1
+  last = None
+  for d in range(prev_detent + step, detent, step):
+    last = _PERSONALITY_BY_DETENT.get(d, last)
+  return last
+
+
 def follow_seconds(decision) -> float:
   """Seconds to publish, or 0 when the stalk decision is not ready.
 

@@ -19,6 +19,7 @@ from openpilot.selfdrive.car.tesla.regen_aware import (RegenPowerEstimator, Rege
                                                         model_stop_distance, regen_aware_enabled)
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
 from openpilot.selfdrive.car.tesla.throttle_gate import ap1_throttle_gate_for, apply_cut
+from openpilot.selfdrive.car.tesla.curve_speed import tesla_curve_brake_for
 
 from openpilot.frogpilot.common.frogpilot_variables import MINIMUM_LATERAL_ACCELERATION
 
@@ -80,6 +81,8 @@ class LongitudinalPlanner:
     self.regen_shaper = RegenStopShaper()
     self.regen_a_early = 0.0
     self.regen_stop_dist = -1.0
+    # Tesla: look-ahead curve brake while CSC limits speed (tesla/curve_speed.py). Adds braking only.
+    self.tesla_curve_brake = tesla_curve_brake_for(CP.carName, dt)
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -228,6 +231,18 @@ class LongitudinalPlanner:
           self.ap1_engage_ramp = False
     if self.ap1_regen_aware:
       output_a_target = self.ap1_regen_shape(sm, output_a_target, mode, reset_state, frogpilot_toggles)
+    if self.tesla_curve_brake is not None:
+      if reset_state:
+        self.tesla_curve_brake.reset()
+      m = sm['modelV2']
+      a_curve = self.tesla_curve_brake.update(sm['frogpilotPlan'].cscControllingSpeed and not reset_state, v_ego,
+                                              ModelConstants.T_IDXS[:len(m.position.x)], list(m.position.x),
+                                              list(m.velocity.x), list(m.orientationRate.z))
+      if a_curve < 0.0:
+        # min(MPC, request): only adds braking. The floor may follow the request below the
+        # eco+ -0.875 profile floor, still slewed 0.05/step by the clip below.
+        output_a_target = min(output_a_target, a_curve)
+        accel_clip[0] = min(accel_clip[0], a_curve)
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])

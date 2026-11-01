@@ -56,9 +56,6 @@ def allow_uploads(started, params, CP: car.CarParams, classic_model, tinygrad_mo
 def run_classic_modeld(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
   return started and classic_model
 
-def run_frogpilot_telemetry(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
-  return frogpilot_toggles.frogpilot_telemetry and not frogpilot_toggles.no_logging and not frogpilot_toggles.no_uploads
-
 def run_new_modeld(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
   return started and not (classic_model or tinygrad_model)
 
@@ -121,7 +118,6 @@ procs = [
   # FrogPilot processes
   NativeProcess("classic_modeld", "frogpilot/classic_modeld", ["./classic_modeld"], run_classic_modeld),
   PythonProcess("frogpilot_process", "frogpilot.frogpilot_process", always_run),
-  PythonProcess("frogpilot_telemetry", "frogpilot.system.frogpilot_telemetry", run_frogpilot_telemetry, enabled=not PC),
   PythonProcess("mapd", "frogpilot.navigation.mapd", always_run),
   PythonProcess("speed_limit_filler", "frogpilot.system.speed_limit_filler", run_speed_limit_filler),
   PythonProcess("the_pond", "frogpilot.system.the_pond.the_pond", always_run),

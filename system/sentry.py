@@ -3,20 +3,18 @@ import sentry_sdk
 import traceback
 from datetime import datetime
 from enum import Enum
-from sentry_sdk.integrations.threading import ThreadingIntegration
 
-from openpilot.common.params import Params
-from openpilot.system.hardware import HARDWARE, PC
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.version import get_build_metadata, get_version
 
-from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, params
+from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH
 
 class SentryProject(Enum):
-  # python project
-  SELFDRIVE = "https://7ba43fba4cfcf1a6c0eff83d40374e43@o4505034923769856.ingest.us.sentry.io/4505034930651136"
-  # native project
-  SELFDRIVE_NATIVE = "https://7ba43fba4cfcf1a6c0eff83d40374e43@o4505034923769856.ingest.us.sentry.io/4505034930651136"
+  # BogPilot: no crash-report destination. Upstream openpilot sent to comma's Sentry project;
+  # FrogPilot replaced both DSNs with FrogPilot's own project, which only accepted FrogAi
+  # origins (so BogPilot devices never reported anyway). Both are removed; init() is a no-op
+  # and crashes are only written to the local error logs by capture_exception().
+  SELFDRIVE = "disabled-selfdrive"
+  SELFDRIVE_NATIVE = "disabled-selfdrive-native"
 
 
 def report_tombstone(fn: str, message: str, contents: str) -> None:
@@ -75,49 +73,11 @@ def save_exception(exc_text: str, crash_log) -> None:
 
 
 def init(project: SentryProject) -> bool:
-  build_metadata = get_build_metadata()
-  # forks like to mess with this, so double check
-  frogpilot_remote = "frogai" in build_metadata.openpilot.git_origin.lower()
-  if not frogpilot_remote or build_metadata.openpilot.is_dirty or PC:
-    return False
+  """BogPilot: never initialise Sentry, so nothing leaves the device.
 
-  short_branch = build_metadata.channel
-
-  if short_branch in ["COMMA", "HEAD"]:
-    return False
-  elif short_branch == "FrogPilot-Development":
-    env = "Development"
-  elif build_metadata.release_channel:
-    env = "Release"
-  elif short_branch == "FrogPilot-Testing":
-    env = "Testing"
-  elif short_branch == "FrogPilot-Staging":
-    env = "Staging"
-  else:
-    env = short_branch
-
-  integrations = []
-  if project == SentryProject.SELFDRIVE:
-    integrations.append(ThreadingIntegration(propagate_hub=True))
-
-  sentry_sdk.init(project.value,
-                  default_integrations=False,
-                  release=get_version(),
-                  integrations=integrations,
-                  traces_sample_rate=1.0,
-                  max_value_length=8192,
-                  environment=env)
-
-  params = Params()
-
-  sentry_sdk.set_user({"id": params.get("DongleId", encoding="utf-8")})
-  sentry_sdk.set_tag("origin", build_metadata.openpilot.git_origin)
-  sentry_sdk.set_tag("branch", short_branch)
-  sentry_sdk.set_tag("commit", build_metadata.openpilot.git_commit)
-  sentry_sdk.set_tag("updated", params.get("Updated", encoding="utf-8"))
-  sentry_sdk.set_tag("installed", params.get("InstallDate", encoding="utf-8"))
-
-  if project == SentryProject.SELFDRIVE:
-    sentry_sdk.Hub.current.start_session()
-
-  return True
+  sentry_sdk.capture_* calls elsewhere are no-ops without init(); local error logs
+  (ERROR_LOGS_PATH) are still written by capture_exception(). If a DSN is ever added
+  back, pass include_local_variables=False so stack frames' locals (params, keys,
+  positions) are not uploaded.
+  """
+  return False

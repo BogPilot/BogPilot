@@ -8,11 +8,13 @@
 
 #include <QColor>
 #include <QFont>
+#include <QLineF>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointF>
 #include <QRectF>
 #include <QString>
+#include <QVector>
 
 // File-backed toggle (the prebuilt params_pyx.so cannot store new Params keys).
 // Missing file = ON. "0", "false" or "off" turns the redesign off and restores the previous BogPilot layout.
@@ -142,25 +144,71 @@ QColor leadDistanceColor(float d_rel, bool adjacent, float v_ego);
 // box = inner edge of the square. Thin side segments are centred on the 8 px bracket centreline, so the thick corner
 // brackets protrude both inside and outside. dist = pill text above the box (empty = no pill).
 void paintLeadLock(QPainter &p, const QRectF &box, const QString &dist, const QColor &color = QColor(255, 255, 255, 245));
-// Lead labels (approved option A2): a speed pill above the box (40 px number, thin accent underline) and a smaller
-// distance tag below it. When the tag would reach keepout_top (top of the steering arc's area) both are stacked above
-// the box, speed on top. Pills are clamped inside `view`.
+// Lead labels v6 (approved option B, lead-in-box): the primary lead's speed is a number only (no unit) centred inside
+// the box on a dark translucent pill (paintLeadSpeedInBox), sized like the adjacent-lead number, with the closing accent
+// bar under the digits. Only the distance tag sits outside the box: below it by default, above it when the tag below
+// would reach keepout_top (top of the steering arc's area, i.e. close leads). Either position is also checked against
+// the speed row and accel graph (leadTagHudOverlap); when both positions collide, the side with less overlap wins.
+// The tag is clamped inside `view`.
 struct LeadLabels {
-  QString speed;                       // "42" (or "~42" for a camera-only lead)
-  QString speed_unit;                  // "mph" / "km/h"
+  QString speed;                       // "42" (or "~42" for a camera-only lead), drawn inside the box
   QString dist;                        // "144"
   QString dist_unit;                   // "ft" / "m"
-  bool vision_only = false;            // no radar match: speed dimmed
-  QColor accent = QColor(255, 255, 255, 70);   // underline: orange / red while closing (HUD LEAD SPD colours)
+  bool vision_only = false;            // no radar match: shown as "~N", same near-white ink
+  QColor accent;                       // bar under the digits: orange / red while closing; invalid = none
 };
-// Returns true when the stacked (both above) fallback was used.
+// Returns true when the distance tag was placed above the box.
 bool paintLeadLabels(QPainter &p, const QRectF &box, const LeadLabels &l, const QRectF &view, qreal keepout_top);
+// Primary lead speed inside the lock-on box (number only). Scales with the box height (0.42 x, 24-64 px) and shrinks
+// so the pill stays inside the corner brackets.
+void paintLeadSpeedInBox(QPainter &p, const QRectF &box, const QString &speed, bool vision_only, const QColor &accent);
+// Overlap area (px^2) of r with the speed row capsule and the accel graph panel (8 px margin). These are painted after
+// the leads, so anything under them is hidden.
+qreal leadTagHudOverlap(const QRectF &r);
+
+// ---- LKAS Fault border flash ----
+// True for the steering fault Tesla AP1 reports as "LKAS Fault" (steerUnavailable: EPAS EAC_FAULT or the EPB revoking
+// EAC) in any of its alert forms: immediateDisable ("TAKE CONTROL IMMEDIATELY" / "LKAS Fault: Restart the Car"),
+// permanent ("LKAS Fault: Restart the car to engage") and noEntry ("openpilot Unavailable" / "LKAS Fault: ..."),
+// or any other alert whose first or second line says LKAS Fault.
+bool isLkasFaultAlert(const QString &alert_type, const QString &text1, const QString &text2 = QString());
+// While that alert is on screen the status border hard-alternates red / orange every LKAS_FAULT_FLASH_MS
+// (2.5 Hz full cycle), overriding the engaged / disengaged colour.
+constexpr int LKAS_FAULT_FLASH_MS = 200;
+const QColor LKAS_FAULT_RED(0xe0, 0x1b, 0x24, 0xff);
+const QColor LKAS_FAULT_ORANGE(0xff, 0x8c, 0x00, 0xff);
+QColor lkasFaultBorderColor(double millis);
 // Adjacent-lane lead speed (approved option A, number only): the absolute speed centred inside the muted box on a
 // small dark translucent pill, in the box colour lightened for legibility. The number scales with the box height and
 // shrinks so the pill always stays inside the brackets of small / distant boxes. The caller hides it below
 // ADJ_SPEED_MIN (displayed units).
 constexpr int ADJ_SPEED_MIN = 5;
-void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color);
+// Placement (approved mockup 2026-10-21, adjacent leads only): the pill stays inside the box unless its in-box rect,
+// grown by ADJ_LABEL_MARGIN, meets one of the `keepout` rects (the icons in the driver-side bottom corner, which paint
+// over the leads). Then it moves outside the box on the side away from that corner (right; left with rhd),
+// ADJ_LABEL_OUTSIDE px past the box edge and centred on the box, and slides further out past every keepout rect it
+// still meets. A thin leader line joins it to the box once it sits more than ADJ_LABEL_LEADER_MIN px out.
+// `view` (if valid) keeps the outside pill on screen. No keepout = the in-box pill, exactly as before.
+constexpr int ADJ_LABEL_MARGIN = 8;
+constexpr int ADJ_LABEL_OUTSIDE = 26;
+constexpr int ADJ_LABEL_LEADER_MIN = 40;
+constexpr int ADJ_LABEL_SLIDE_GAP = 4;
+constexpr int ADJ_LABEL_BRACKET = 16;   // corner brackets reach this far outside the box (leader starts there)
+struct AdjacentSpeedPlacement {
+  QRectF rect;          // pill
+  int px = 0;           // font px; 0 = nothing to draw
+  bool outside = false;
+  bool leader = false;
+  QLineF leader_line;
+};
+// The keepout for the above: record button touch target, no-GPS slot (shown or not), personality / DM [/ map] row with
+// its label, the pedal icons (if shown) and the CEM / paused icons as drawn (`status_icons`, already in widget space).
+// Fixed parts are mirrored with rhd. `widget_w` = camera widget width.
+QVector<QRectF> bottomCornerKeepout(qreal widget_w, bool rhd, bool map_button, bool pedals, const QVector<QRectF> &status_icons);
+AdjacentSpeedPlacement placeAdjacentSpeed(const QRectF &box, const QString &speed, const QVector<QRectF> &keepout,
+                                          bool rhd = false, const QRectF &view = QRectF());
+void paintAdjacentSpeed(QPainter &p, const QRectF &box, const QString &speed, const QColor &box_color,
+                        const QVector<QRectF> &keepout = QVector<QRectF>(), bool rhd = false, const QRectF &view = QRectF());
 // Box for a lead whose road contact point is (x, y), sized from the distance like the old chevron.
 QRectF leadLockBox(const QPointF &contact, float d_rel, qreal max_x, qreal max_y);
 

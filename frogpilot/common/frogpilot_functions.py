@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-import dataclasses
 import datetime
 import filecmp
 import json
-import jwt
-import requests
-import re
-import secrets
 import shutil
 import subprocess
 import tarfile
@@ -16,7 +11,6 @@ import zstandard as zstd
 
 from pathlib import Path
 
-from openpilot.common.api import get_key_pair
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 from openpilot.common.time import system_time_valid
@@ -27,10 +21,9 @@ from openpilot.frogpilot.assets.model_manager import ModelManager
 from openpilot.frogpilot.assets.theme_manager import ThemeManager
 from openpilot.frogpilot.common.frogpilot_utilities import delete_file, run_cmd, use_konik_server
 from openpilot.frogpilot.common.frogpilot_variables import (
-  ERROR_LOGS_PATH, EXCLUDED_KEYS, FROGPILOT_API, HD_LOGS_PATH, KONIK_LOGS_PATH, MODELS_PATH, SCREEN_RECORDINGS_PATH,
+  ERROR_LOGS_PATH, EXCLUDED_KEYS, HD_LOGS_PATH, KONIK_LOGS_PATH, MODELS_PATH, SCREEN_RECORDINGS_PATH,
   THEME_SAVE_PATH, VIDEO_CACHE_PATH, FrogPilotVariables, frogpilot_default_params, get_frogpilot_toggles, params
 )
-from openpilot.frogpilot.system.frogpilot_stats import send_stats
 
 def backup_directory(backup, destination, success_message, fail_message, minimum_backup_size=0, compressed=False):
   in_progress_destination = destination.parent / (destination.name + "_in_progress")
@@ -99,7 +92,7 @@ def backup_frogpilot(build_metadata):
   if free > minimum_backup_size * maximum_backups:
     directory = Path(BASEDIR)
     destination_directory = backup_path / f"{build_metadata.channel}_{build_metadata.openpilot.git_commit_date[12:-16]}_auto"
-    backup_directory(directory, destination_directory, f"Successfully backed up FrogPilot to {destination_directory}", f"Failed to backup FrogPilot to {destination_directory}", minimum_backup_size, compressed=True)
+    backup_directory(directory, destination_directory, f"Successfully backed up BogPilot to {destination_directory}", f"Failed to backup BogPilot to {destination_directory}", minimum_backup_size, compressed=True)
 
 def backup_toggles(params_cache):
   params_backup = Params("/data/params_backup")
@@ -178,8 +171,6 @@ def frogpilot_boot_functions(build_metadata, params_cache):
     backup_frogpilot(build_metadata)
     backup_toggles(params_cache)
 
-    send_stats(json.loads(params.get("LastGPSPosition") or "{}"), params, get_frogpilot_toggles())
-
   threading.Thread(target=boot_thread, daemon=True).start()
 
 def setup_frogpilot(build_metadata):
@@ -202,116 +193,6 @@ def setup_frogpilot(build_metadata):
   if build_metadata.channel == "FrogPilot-Development" and Path("/persist/frogsgomoo.py").is_file():
     run_cmd(["sudo", "mount", "-o", "remount,rw", "/persist"], "Successfully remounted /persist as read-write", "Failed to remount /persist")
     run_cmd(["sudo", "python3", "/persist/frogsgomoo.py"], "Ran frogsgomoo.py", "Failed to run frogsgomoo.py")
-
-  register_device(build_metadata)
-
-def register_device(build_metadata):
-  def valid_api_token(api_token):
-    return isinstance(api_token, str) and re.fullmatch(r"fp_live\.[A-Za-z0-9_-]{43,}", api_token) is not None
-
-  def valid_frogpilot_credentials(api_token, frogpilot_dongle_id):
-    return (
-      valid_api_token(api_token) and
-      isinstance(frogpilot_dongle_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{16}", frogpilot_dongle_id) is not None
-    )
-
-  def ready_device_identity(stock_dongle_id, hardware_serial, imei):
-    return (
-      isinstance(stock_dongle_id, str) and re.fullmatch(r"[A-Za-z0-9]{16}", stock_dongle_id) is not None and
-      isinstance(hardware_serial, str) and re.fullmatch(r"[A-Za-z0-9._:-]{4,128}", hardware_serial) is not None and
-      isinstance(imei, str) and re.fullmatch(r"\d{15}", imei) is not None
-    )
-
-  api_token = params.get("FrogPilotApiToken", encoding="utf8")
-  frogpilot_dongle_id = params.get("FrogPilotDongleId", encoding="utf8")
-  if valid_frogpilot_credentials(api_token, frogpilot_dongle_id):
-    return
-
-  def register_thread():
-    while not system_time_valid():
-      print("Device registration waiting for valid system time")
-      time.sleep(5)
-
-    while True:
-      alg, private_key, public_key = get_key_pair()
-      stock_dongle_id = params.get("StockDongleId", encoding="utf8")
-      hardware_serial = params.get("HardwareSerial", encoding="utf8")
-      imei = params.get("IMEI", encoding="utf8")
-      if (
-        alg in ("RS256", "ES256") and private_key and public_key and
-        ready_device_identity(stock_dongle_id, hardware_serial, imei)
-      ):
-        break
-      print("Device registration waiting for required identity")
-      time.sleep(5)
-
-    claims = {
-      "aud": "frogpilot-register",
-      "build_metadata": dataclasses.asdict(build_metadata),
-      "contract_version": 2,
-      "device": HARDWARE.get_device_type(),
-      "device_public_key": public_key,
-      "hardware_serial": hardware_serial,
-      "identity": stock_dongle_id,
-      "imei": imei,
-      "os_version": HARDWARE.get_os_version(),
-      "registration_attempt_id": secrets.token_urlsafe(16),
-      "stock_dongle_id": stock_dongle_id,
-    }
-
-    headers = {"User-Agent": "frogpilot-api/2.0"}
-    existing_api_token = params.get("FrogPilotApiToken", encoding="utf8")
-    if valid_api_token(existing_api_token):
-      headers["Authorization"] = f"Bearer {existing_api_token}"
-
-    while True:
-      try:
-        now = int(time.time())
-        token_claims = {
-          **claims,
-          "exp": now + 300,
-          "iat": now,
-          "jti": secrets.token_urlsafe(16),
-          "nbf": now,
-        }
-        registration_token = jwt.encode(token_claims, private_key, algorithm=alg)
-        if isinstance(registration_token, bytes):
-          registration_token = registration_token.decode("utf8")
-
-        response = requests.post(
-          f"{FROGPILOT_API}/register",
-          json={"registration_token": registration_token},
-          headers=headers,
-          timeout=10,
-        )
-
-        if response.status_code in (408, 429, 500, 502, 503, 504):
-          print(f"Device registration retryable failure: status={response.status_code}")
-        elif response.status_code == 200:
-          try:
-            data = response.json()
-          except ValueError:
-            data = None
-          if isinstance(data, dict) and data.get("ok") is True:
-            api_token = data.get("api_token")
-            frogpilot_dongle_id = data.get("frogpilot_dongle_id")
-            if valid_frogpilot_credentials(api_token, frogpilot_dongle_id):
-              print(f"Device registration successful: dongle_id={frogpilot_dongle_id[:8]}..., token=set")
-              params.put("FrogPilotApiToken", api_token)
-              params.put("FrogPilotDongleId", frogpilot_dongle_id)
-              return
-          print("Device registration retryable failure: invalid server response")
-        else:
-          print(f"Device registration failed: status={response.status_code}")
-          return
-      except requests.exceptions.RequestException as e:
-        print(f"Device registration retryable failure: request_error={type(e).__name__}")
-      except Exception as e:
-        print(f"Device registration failed: error={type(e).__name__}")
-        return
-      time.sleep(60 + secrets.randbelow(15))
-
-  threading.Thread(target=register_thread, daemon=True).start()
 
 
 def uninstall_frogpilot():

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import dataclasses
 import json
 import math
 import numpy as np
@@ -22,10 +21,9 @@ from opendbc.can.parser import CANParser
 from openpilot.common.realtime import DT_DMON, DT_HW
 from openpilot.selfdrive.car.toyota.carcontroller import LOCK_CMD
 from openpilot.system.hardware import HARDWARE
-from openpilot.system.version import get_build_metadata
 from panda import Panda
 
-from openpilot.frogpilot.common.frogpilot_variables import EARTH_RADIUS, ERROR_LOGS_PATH, FROGPILOT_API, KONIK_PATH, MAPD_PATH, MAPS_PATH, params, params_cache, params_memory
+from openpilot.frogpilot.common.frogpilot_variables import EARTH_RADIUS, ERROR_LOGS_PATH, KONIK_PATH, MAPD_PATH, MAPS_PATH, params, params_cache, params_memory
 
 running_threads = {}
 
@@ -116,31 +114,30 @@ def calculate_road_curvature(modelData):
 
   return float(predicted_lateral_acc / max(velocity[index], 1)**2), max(time_to_curve, 1)
 
-def capture_report(discord_user, report, frogpilot_toggles):
-  api_info = get_frogpilot_api_info()
+BOGPILOT_REPORTS_PATH = Path("/data/media/0/bogpilot_reports")
 
+def capture_report(discord_user, report, frogpilot_toggles):
+  # BogPilot: "Report an issue" used to POST the report, error log, toggles and FrogPilot device
+  # identifiers to the FrogPilot API (FrogPilot Discord). Keep it on the device instead.
   error_file_path = ERROR_LOGS_PATH / "error.txt"
   error_content = "No error log found."
   if error_file_path.exists():
     error_content = error_file_path.read_text()[:1000]
 
   payload = {
-    "api_token": api_info.api_token,
-    "build_metadata": api_info.build_metadata,
-    "device": api_info.device_type,
     "discord_user": discord_user,
     "error_content": error_content,
-    "frogpilot_dongle_id": api_info.dongle_id,
     "frogpilot_toggles": frogpilot_toggles,
     "report": report,
   }
 
   try:
-    response = requests.post(f"{FROGPILOT_API}/discord/report", json=payload, headers={"Content-Type": "application/json", "User-Agent": "frogpilot-api/1.0"}, timeout=30)
-    response.raise_for_status()
-    print("Successfully sent error report!")
-  except requests.exceptions.RequestException as exception:
-    print(f"Error sending report: {exception}")
+    BOGPILOT_REPORTS_PATH.mkdir(parents=True, exist_ok=True)
+    report_path = BOGPILOT_REPORTS_PATH / f"report_{int(time.time())}.json"
+    report_path.write_text(json.dumps(payload, indent=2, default=str))
+    print(f"Saved issue report locally: {report_path}")
+  except OSError as exception:
+    print(f"Error saving report: {exception}")
 
 def clean_model_name(name):
   return (
@@ -197,23 +194,6 @@ def flash_panda():
       sentry.capture_exception(exception)
 
   params_memory.remove("FlashPanda")
-
-@dataclasses.dataclass(frozen=True)
-class FrogPilotApiInfo:
-  api_token: str | None
-  build_metadata: dict
-  device_type: str
-  dongle_id: str | None
-  os_version: str | None
-
-def get_frogpilot_api_info():
-  return FrogPilotApiInfo(
-    api_token=params.get("FrogPilotApiToken", encoding="utf-8"),
-    build_metadata=dataclasses.asdict(get_build_metadata()),
-    device_type=HARDWARE.get_device_type(),
-    dongle_id=params.get("FrogPilotDongleId", encoding="utf-8"),
-    os_version=HARDWARE.get_os_version(),
-  )
 
 def get_lock_status(can_parser, can_sock):
   can_msgs = messaging.drain_sock_raw(can_sock, wait_for_one=True)

@@ -95,10 +95,14 @@ class CarController(CarControllerBase):
     chassis_das_only = ap1
     soft_start = False
     driver_yield = False
+    # AP1 lateral session: engaged, or Always On Lateral steering while not engaged. controlsd only
+    # sets latActive without enabled when frogpilotCarState.alwaysOnLateralEnabled is true, so with
+    # AOL off steer_session == CC.enabled and nothing below changes.
+    steer_session = bool(CC.enabled) or (ap1 and bool(CC.latActive))
     if ap1:
-      enabled = bool(CC.enabled)
+      enabled = steer_session
       # Hands >= 2 starts it; level 0 for AP1_RESUME_HOLD_S ends it. Only
-      # while enabled, so it never holds off disengage or a new engage.
+      # during a lateral session, so it never holds off disengage or a new engage.
       driver_yield = self.ap1_yield.update(enabled, CS.hands_on_level)
       if enabled and not self.ap1_prev_enabled:
         self.ap1_engage_frame = self.frame
@@ -119,9 +123,9 @@ class CarController(CarControllerBase):
       # Planner path this step: same gate as build_actuator_plan's lkas branch
       # (hands pause / yield, EAC fault and soft-start hold take other branches).
       hands_pause = CS.hands_on_level >= AP1_HANDS_ON_LEVEL or driver_yield
-      held = ap1_hold_measured_angle(True, bool(CC.enabled), bool(CS.eac_fault), hands_pause,
+      held = ap1_hold_measured_angle(True, steer_session, bool(CS.eac_fault), hands_pause,
                                      CS.eac_status, CS.steer_warning, soft_start)
-      path_active = (bool(CC.enabled) and lat_active and not hands_on_fault and not hands_pause and
+      path_active = (steer_session and lat_active and not hands_on_fault and not hands_pause and
                      not bool(CS.eac_fault) and not held)
       requested_angle = self.ap1_steer_ramp.update(path_active, CS.out.steeringAngleDeg, actuators.steeringAngleDeg)
     accel = actuators.accel
@@ -169,6 +173,7 @@ class CarController(CarControllerBase):
       # AP1: neutral DAS_control while the driver presses the accelerator.
       gas_pressed=bool(getattr(CS.out, "gasPressed", False)) if ap1 else False,
       steer_tick=steer_tick,
+      steer_session=steer_session if ap1 else None,
       standby=ap1_standby_allowed(self.ap1_standstill, self.CP.openpilotLongitudinalControl, CC.enabled,
                                   CS.out.gearShifter == car.CarState.GearShifter.drive,
                                   bool(getattr(CS, "stock_ap_active", False))) if (ap1 and self.ap1_standstill) else False,

@@ -6,6 +6,14 @@ Owners of other legacy Teslas — **Pre-AP, Model X AP1, and Model S/X AP2** —
 
 **Not a product. No warranty. The driver remains responsible. Comply with local law.** Not validated as safe to drive. The maintainer has driven it on one AP1 Model S with a comma 3X, but that is a personal impression, not a bench or safety validation.
 
+> **AGNOS note:** This branch is pinned to AGNOS 10.1. If your comma runs a newer AGNOS (NotAutopilot and other 0.10.x/0.11.x forks use 12.x to 19.x), the first boot will reflash the operating system down to 10.1. That takes about 10 minutes, so keep it powered. Your settings and drives are normally kept, but back up first. Branches pinned to newer AGNOS for installs with no reflash are being coded and tested now: `bogpilot-tesla-agnos-17.2` (in testing) and `bogpilot-tesla-agnos-19.9` (in development).
+
+## UI demo
+
+[![BogPilot UI demo: blind-spot warning, then a car passing at about 115 mph](docs/media/bogpilot_ui_demo_bsm_pass.gif)](docs/media/bogpilot_ui_demo.mp4)
+
+The current BogPilot UI replayed from a real drive log on the AP1 Model S: set speed, speed and speed limit row, live acceleration graph, path, and speed pills on tracked cars as one passes at about 115 mph. Plates are blurred. Click for the [full-quality video](docs/media/bogpilot_ui_demo.mp4).
+
 Pinned FrogPilot SHA: `1e23dec6352cef5a36a87be0af7d7a082b7c48a4`.
 
 ## AP1 status (tag `ap1-driving-milestone-4`)
@@ -16,7 +24,7 @@ Milestone 4 (2026-10-07) is longitudinal smoothing, merged into the main branch 
   - **Brake onset ramp:** regen eases in at 2 m/s³ instead of jumping in one frame; deeper requests ramp faster, and −2 m/s² or harder, FCW and stopping still go through at once.
   - **Drive release 2.0:** lifting off drive torque is a soft S-curve at 2 m/s³ (+1.3 → 0 in about 0.8 s instead of 0.25 s), so a lift no longer feels like regen grabbing.
   - **Throttle cap:** the driving model's on/off "allow throttle" hint is filtered (quick cut, slow release). Throttle/coast chatter dropped from about 24 to about 3 flips a minute on the maintainer's drives.
-  - **Standstill hold floor:** while stopped, openpilot asks for at most −1.0 m/s² (was −2.0), so the car latches less Hold pressure to dump at the launch; launch jerk is stock-like (1.5 m/s³).
+  - **Standstill hold:** the −1.0 m/s² hold floor was reverted after milestone 4; at a stop the request passes through to the stock −2.0 m/s² again. Launch jerk stays stock-like (1.5 m/s³).
 - **Stalk / SLC refinements since milestone 3:** a tip-engage now holds through speed limit changes in both directions until you pull or disengage; tips go down to 1 mph (never 0); a posted limit under 15 mph is ignored, and a very large sudden drop must persist 2 s before SLC tracking follows it.
 
 - Openpilot steering (angle control on `0x488`) and longitudinal control (`0x2b9`) through one harness and one panda on chassis CAN.
@@ -31,9 +39,9 @@ Milestone 4 (2026-10-07) is longitudinal smoothing, merged into the main branch 
   - A tipped set speed stays put through speed limit zone changes, up or down, until you pull the stalk or disengage. A 15 mph school-zone tip will not pick up the next 25 or 35 sign.
   - Pull the stalk: back to the posted limit plus offset, following lower limits too (a 45 → 30 sign now follows without cancel and re-engage).
 - **Experimental Mode from the stalk:**
-  - Engaged: hold the stalk pulled for about 2 s.
-  - Disengaged: hold the stalk forward for about 2 s.
-  - A short pull and a short forward push (cancel) work as before. Known tradeoff: during the engaged 2 s pull the car's own cruise may bump its set speed, and the pull also returns openpilot to the posted limit plus offset.
+  - Engaged: hold the stalk pulled for about 1.2 s (was 2 s).
+  - Disengaged: hold the stalk forward for about 1.2 s (was 2 s).
+  - A short pull and a short forward push (cancel) work as before. Known tradeoff: during the engaged hold the car's own cruise may bump its set speed, and the pull also returns openpilot to the posted limit plus offset.
 - Soft steer takeover: gentle start at engage, recovery when EPAS goes inactive, grey border on wheel touch; after a firm override, 0.3 s wait (was 0.5 s) then ease back in from wherever the wheel is.
 - Stalk twist changes driving personality and follow distance; Tesla Hold auto-clears when stopped behind a lead car (like Tinkla).
 - Instrument cluster shows engaged state, planned path, and lane lines (`0x399`/`0x389`/`0x239`); turn off `EnableICIntegration` for the stock cluster.
@@ -47,13 +55,36 @@ The full stalk map is in `docs/tesla/STALK.md`. Every place this tree knowingly 
 - `ap1-driving-milestone-2` (2026-10-05): model-path cluster lanes, FCW engage fix, grey override border, 0.5 s resume hold.
 - `ap1-driving-milestone-1` (2026-10-04): first AP1 drive with openpilot steering, chassis longitudinal, hands-on pause/resume, and stalk follow profiles.
 
+## Since milestone 4 (on `bogpilot-tesla`)
+
+- **Blind spot (AP1):** read from the stock Autopilot status frame `0x399`, so the standard lane-change block, "Car Detected in Blindspot" alert and FrogPilot's blind spot path work. Read-only; nothing new is sent.
+- **Onroad UI redesign** (Tesla-style, on by default; file toggle `RedesignUI`): speed row with MAX / speed / posted-limit tile and offset badge, steering arc (tap toggles Experimental Mode; shows driver steering), 10 s accel graph, lead box coloured by time gap with lead speed and distance tags, adjacent-lane lead speeds, and blind-spot lane fill.
+- **Personality button:** tap cycles Relaxed / Standard / Aggressive; a 2.5 s hold toggles Traffic Mode.
+- **Confidence ball:** port of comma's confidence ball on the right edge (green / orange / red from the model's disengage predictions). Visuals > BogPilot Confidence Ball.
+- **Developer HUD:** sunnypilot-style live metrics panel (accel, lead distance and speed, steering, lateral accel). Hidden while an alert banner shows; buttons don't move.
+- **Remote Screen Viewer:** view-only screen stream on port 8888 for the Tesla MCU2 browser. Device > Screen Settings.
+- **AP1 driving fixes:** steering blends from the measured wheel at engage and lateral resume; one-frame radar lead glitch filter; engage below 18 mph no longer drops; standstill engage (on by default, file toggle `AP1StandstillEngage`); stalk follow-distance changes show a 1 s banner.
+- **AP1 recommended toggles:** applied once when the car is set to Tesla AP1 Model S; owner changes are kept.
+- **Other:** BogPilot boot logo; GPS is optional (no engage block without a modem, no "Poor GPS" banner, GPS assist data without a SIM); experimental HEVC + state stream to a computer on the same Wi-Fi (toggle `HevcStream`).
+
+### On test branches (not on `bogpilot-tesla` yet)
+
+- `bogpilot-tesla-cem-upload-ui`: CEM status next to the no-GPS slot, an on-screen upload-rate readout with pending backlog and ETA, and an offroad upload card (Mbps). Also: look-ahead curve brake that lands on the curve speed (Tesla only), Always On Lateral override fix for an LKAS Fault and AOL held off at parking speed, radar-only close-lead hold under a confident camera lead, quick-twist personality fix, standstill engage brake hold, and a fix for policy-head `lead_prob` being squashed twice.
+- `bogpilot-tesla-upload-ui`: upload card splits pending into Logs and HEVC rows, each with an ETA.
+- `bogpilot-tesla-route-stream` / `-route-stream-telemetry`: all of the above plus state-stream telemetry (rate, gaps and Wi-Fi summary every 60 s, no positions) and lead radar track IDs for smoother lead display.
+- `bogpilot-tesla-bog-theme`: **The Bog**, the device web UI re-themed in BogPilot greys with the BogPilot emblem. A re-imagining of Aidenir's **The Pond**.
+
 ## Install
 
-On the comma 3X setup screen, choose custom software and enter:
+```
+1. On the comma 3X setup screen, choose Custom Software.
+2. Enter: installer.comma.ai/BogPilot/bogpilot-tesla
+   (a test branch: installer.comma.ai/BogPilot/<branch name>)
+3. Wait for the download and install to finish.
+4. Reboot.
+```
 
-    installer.comma.ai/BogPilot/bogpilot-tesla
-
-The main branch now includes the SLC / stalk cruise work and the milestone 4 longitudinal smoothing above. Longitudinal control needs the DEBUG panda firmware that this branch builds. Do not enter `frogpilot.download`, which installs upstream FrogPilot.
+The main branch includes the SLC / stalk cruise work, the milestone 4 longitudinal smoothing and the additions above. Longitudinal control needs the DEBUG panda firmware that this branch builds. Do not enter `frogpilot.download`, which installs upstream FrogPilot.
 
 A sister AP1 port built on sunnypilot lives on `BogPilot/sunnypilot` branch `sunny-tesla`. It has not been road-tested.
 

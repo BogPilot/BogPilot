@@ -2,13 +2,13 @@ import { html, reactive } from "/assets/vendor/arrow.mjs";
 import { Modal } from "/assets/components/modal.js";
 
 const defaultColors = {
-  LaneLines: { red: 23, green: 134, blue: 68, alpha: 255 },
-  LeadMarker: { red: 23, green: 134, blue: 68, alpha: 255 },
-  Path: { red: 23, green: 134, blue: 68, alpha: 255 },
-  PathEdge: { red: 18, green: 107, blue: 54, alpha: 255 },
-  Sidebar1: { red: 23, green: 134, blue: 68, alpha: 255 },
-  Sidebar2: { red: 23, green: 134, blue: 68, alpha: 255 },
-  Sidebar3: { red: 23, green: 134, blue: 68, alpha: 255 },
+  LaneLines: { red: 255, green: 255, blue: 255, alpha: 178 },
+  LeadMarker: { red: 201, green: 34, blue: 49, alpha: 255 },
+  Path: { red: 48, green: 255, blue: 156, alpha: 255 },
+  PathEdge: { red: 38, green: 209, blue: 125, alpha: 255 },
+  Sidebar1: { red: 255, green: 255, blue: 255, alpha: 178 },
+  Sidebar2: { red: 255, green: 255, blue: 255, alpha: 255 },
+  Sidebar3: { red: 255, green: 255, blue: 255, alpha: 255 },
 };
 
 const COLOR_LABELS = {

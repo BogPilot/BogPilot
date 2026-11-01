@@ -1,6 +1,7 @@
 #include "frogpilot/ui/qt/offroad/visual_settings.h"
 #include "frogpilot/ui/qt/onroad/developer_hud.h"
 #include "frogpilot/ui/qt/onroad/bogpilot_redesign.h"
+#include "frogpilot/ui/qt/widgets/bogpilot_file_toggle.h"
 
 FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : FrogPilotListWidget(parent), parent(parent) {
   QJsonObject shownDescriptions = QJsonDocument::fromJson(QString::fromStdString(params.get("ShownToggleDescriptions")).toUtf8()).object();
@@ -91,6 +92,7 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
     {"AccelerationPath", tr("Acceleration Path"), tr("<b>Color the driving path by planned acceleration and braking.</b>"), ""},
     {"AdjacentPath", tr("Adjacent Lanes"), tr("<b>Show the driving paths for the left and right lanes.</b>"), ""},
     {"BlindSpotPath", tr("Blind Spot Path"), tr("<b>Show a red path when a vehicle is in that lane's blind spot.</b>"), ""},
+    {"BSMFlameTracks", tr("Bog to the Future"), tr("<b>Show flame trails behind fast-passing cars on the blind-spot display.</b><br><br>When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds.<br><br>Display only. It doesn't change how openpilot drives.<br><br>On by default. Saved in <b>/data/params_bogpilot/BSMFlameTracks</b> (1 on, 0 off), the same file the flames read."), ""},
     {"Compass", tr("Compass"), tr("<b>Show the current driving direction</b> with a simple on-screen compass."), ""},
     {"OnroadDistanceButton", tr("Driving Personality Button"), tr("<b>Control and view the current driving personality</b> via a driving screen widget."), ""},
     {"PedalsOnUI", tr("Gas / Brake Pedal Indicators"), tr("<b>On-screen gas and brake indicators.</b><br><br><b>Dynamic</b>: Opacity changes according to how much openpilot is accelerating or braking<br><b>Static</b>: Full when active, dim when not"), ""},
@@ -106,7 +108,7 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
 
     {"NavigationUI", tr("Navigation Widgets"), tr("<b>Map style, speed limits, and other navigation widgets.</b>"), "../../frogpilot/assets/toggle_icons/icon_map.png"},
     {"BigMap", tr("Larger Map Display"), tr("<b>Increase the map size</b> for easier navigation readings."), ""},
-    {"MapStyle", tr("Map Style"), tr("<b>Select the map style</b> for \"Navigate on openpilot\" (NOO):<br><br><b>Stock openpilot</b>: Default comma.ai style<br><b>FrogPilot</b>: Official FrogPilot map style<br><b>Mapbox Streets</b>: Standard street-focused view<br><b>Mapbox Outdoors</b>: Emphasizes outdoor and terrain features<br><b>Mapbox Light</b>: Minimalist, bright theme<br><b>Mapbox Dark</b>: Minimalist, dark theme<br><b>Mapbox Navigation Day</b>: Optimized for daytime navigation<br><b>Mapbox Navigation Night</b>: Optimized for nighttime navigation<br><b>Mapbox Satellite</b>: Satellite imagery only<br><b>Mapbox Satellite Streets</b>: Hybrid satellite imagery with street labels<br><b>Mapbox Traffic Night</b>: Dark theme emphasizing traffic conditions<br><b>Mike's Personalized Style</b>: Customized hybrid satellite view"), ""},
+    {"MapStyle", tr("Map Style"), tr("<b>Select the map style</b> for \"Navigate on openpilot\" (NOO):<br><br><b>Stock openpilot</b>: Default comma.ai style<br><b>BogPilot</b>: Official BogPilot map style<br><b>Mapbox Streets</b>: Standard street-focused view<br><b>Mapbox Outdoors</b>: Emphasizes outdoor and terrain features<br><b>Mapbox Light</b>: Minimalist, bright theme<br><b>Mapbox Dark</b>: Minimalist, dark theme<br><b>Mapbox Navigation Day</b>: Optimized for daytime navigation<br><b>Mapbox Navigation Night</b>: Optimized for nighttime navigation<br><b>Mapbox Satellite</b>: Satellite imagery only<br><b>Mapbox Satellite Streets</b>: Hybrid satellite imagery with street labels<br><b>Mapbox Traffic Night</b>: Dark theme emphasizing traffic conditions<br><b>Mike's Personalized Style</b>: Customized hybrid satellite view"), ""},
     {"RoadNameUI", tr("Road Name"), tr("<b>Display the road name at the bottom of the driving screen</b> using data from \"OpenStreetMap (OSM)\"."), ""},
     {"ShowSpeedLimits", tr("Show Speed Limits"), tr("<b>Show speed limits</b> in the top-left corner of the driving screen. Uses data from the car's dashboard (if supported) and \"OpenStreetMap (OSM)\"."), ""},
     {"SLCMapboxFiller", tr("Show Speed Limits from Mapbox"), tr("<b>Use Mapbox speed-limit data when no other source is available.</b>"), ""},
@@ -165,6 +167,13 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
       std::vector<QString> borderToggleNames{tr("Blind Spot"), tr("Steering Torque"), tr("Turn Signal")};
       borderMetricsButton = new FrogPilotButtonToggleControl(param, title, desc, icon, borderToggles, borderToggleNames);
       visualToggle = borderMetricsButton;
+    } else if (param == "BSMFlameTracks") {
+      // "Bog to the Future" (Appearance > Driving Screen Widgets). File-backed
+      // (/data/params_bogpilot/BSMFlameTracks, default ON: no file = on, an explicit "0" = off), the
+      // same file bsm_flame_tracks.h re-reads every 2 s, so `echo 0 > /data/params_bogpilot/BSMFlameTracks`
+      // and this switch stay in sync. The `true` fallback below must match bogpilot_flames::TOGGLE_DEFAULT.
+      // Not a Params key: the prebuilt params store cannot take a new key.
+      visualToggle = new bogpilot::FileToggleControl(param, true, title, desc, icon);
     } else if (param == "DeveloperHUD") {
       // File-backed (/data/params_bogpilot/DeveloperHUD): the prebuilt params_pyx.so cannot store new Params keys
       ToggleControl *developerHudToggle = new ToggleControl(title, desc, icon, developerHudFileEnabled());
@@ -327,7 +336,7 @@ FrogPilotVisualsPanel::FrogPilotVisualsPanel(FrogPilotSettingsWindow *parent) : 
     } else if (param == "MapStyle") {
       QMap<int, QString> styleMap {
         {0, tr("Stock openpilot")},
-        {1, tr("FrogPilot")},
+        {1, tr("BogPilot")},
         {2, tr("Mapbox Streets")},
         {3, tr("Mapbox Outdoors")},
         {4, tr("Mapbox Light")},
@@ -537,6 +546,10 @@ void FrogPilotVisualsPanel::updateToggles() {
     }
 
     else if (key == "BlindSpotPath") {
+      setVisible &= parent->hasBSM;
+    }
+
+    else if (key == "BSMFlameTracks") {
       setVisible &= parent->hasBSM;
     }
 

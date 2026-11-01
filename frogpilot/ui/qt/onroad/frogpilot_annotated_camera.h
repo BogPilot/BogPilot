@@ -5,6 +5,7 @@
 
 #include "frogpilot/ui/qt/onroad/bogpilot_redesign.h"
 #include "frogpilot/ui/qt/onroad/developer_hud.h"
+#include "frogpilot/ui/qt/onroad/upload_rate.h"
 #include "selfdrive/ui/qt/onroad/buttons.h"
 #include "selfdrive/ui/qt/widgets/cameraview.h"
 
@@ -28,6 +29,7 @@ public:
   bool bigMapOpen = false;  // BogPilot: was uninitialized; only set once a map widget exists
   bool developerHudEnabled = false;
   bool alertShowing = false;  // BogPilot: set from OnroadAlerts each update; hides the Developer HUD
+  bool fullAlertShowing = false;  // BogPilot: a full-screen alert is up (set from OnroadAlerts each update)
   bool hideBottomIcons;
   bool isCruiseSet;
   bool mapButtonVisible;
@@ -37,6 +39,10 @@ public:
   bool noGpsShown = false;            // BogPilot: no-GPS indicator drawn this frame (status icons shift one slot)
   qint64 lastGpsOkMs = 0;             // BogPilot: last time liveLocationKalman.gpsOK was true (5 s debounce)
   QRect roadNameRect;                 // BogPilot: last drawn road name pill (part of the steering-arc tap area); null if none
+  // BogPilot redesign: icons in the driver-side bottom corner as drawn in the last frame (pedals, record button,
+  // no-GPS slot, CEM / paused icons, personality / DM / map row with its label). Leads paint before them, so the
+  // adjacent-lead speed pill moves out of its box when it would land under one. Empty outside the redesign.
+  QVector<QRectF> leadLabelKeepout;
 
   int alertHeight;
   int frogHopCount;
@@ -99,6 +105,15 @@ private:
   void paintTurnSignals(QPainter &p, const cereal::CarState::Reader &carState);
   void paintWeather(QPainter &p, const cereal::FrogPilotPlan::Reader &frogpilotPlan, FrogPilotUIScene &frogpilot_scene);
   void updateSignals();
+  void updateLeadLabelKeepout(bool pedalsShown);
+  QRect longitudinalPausedRect;        // last drawn longitudinal paused icon (null when not drawn)
+#if BOGPILOT_UPLOAD_RATE
+  void paintUploadRate(QPainter &p);   // TEMPORARY rlog upload-rate readout (upload_rate.h)
+  bool uploadRateEnabled = true;
+  bogpilot_uprate::Sample uploadRate;
+  QRect weatherDrawnRect;              // weather box drawn this frame (the readout stacks above it)
+  QTimer *uploadRateTimer = nullptr;
+#endif
 
   int animationFrameIndex;
   bool hudShown = false;

@@ -1237,7 +1237,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;Automatically share anonymized driving data with FrogPilot to help improve it.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Only driving signals are shared: no video, no GPS or location, no VIN, and no identifiers. Turn this off to opt out.</source>
+        <source>&lt;b&gt;Help improve BogPilot&lt;/b&gt; by sharing a privacy-safe car fingerprint. BogPilot itself sends no data: this toggle does not upload anything. To share a fingerprint from your own logs, see github.com/BogPilot/bogpilot-fingerprint</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1254,6 +1254,14 @@
     </message>
     <message>
         <source>Tesla's browser blocks private addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x), so connect the comma through a router that hands out a non-private range.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Offroad Screensaver</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;After the offroad screen timeout, bounce the upload readout instead of turning the screen off.&lt;/b&gt;&lt;br&gt;&lt;br&gt;While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says "Up to date", it bounces the BogPilot logo with those words.&lt;br&gt;&lt;br&gt;On by default. File &lt;b&gt;/data/params_bogpilot/OffroadScreensaver&lt;/b&gt; (1 on, 0 off). The prebuilt params store cannot take a new key.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5180,8 +5188,8 @@ Developer - Highly customizable settings for seasoned enthusiasts</source>
         <translation>&lt;b&gt;Збільште розмір карти&lt;/b&gt; для зручнішого читання навігації.</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Select the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai style&lt;br&gt;&lt;b&gt;FrogPilot&lt;/b&gt;: Official FrogPilot map style&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street-focused view&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Emphasizes outdoor and terrain features&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimalist, bright theme&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimalist, dark theme&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Optimized for daytime navigation&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Optimized for nighttime navigation&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Satellite imagery only&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Hybrid satellite imagery with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark theme emphasizing traffic conditions&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Customized hybrid satellite view</source>
-        <translation>&lt;b&gt;Виберіть стиль карти&lt;/b&gt; для «Навігація на openpilot» (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Стандартний openpilot&lt;/b&gt;: Стиль comma.ai за замовчуванням&lt;br&gt;&lt;b&gt;FrogPilot&lt;/b&gt;: Офіційний стиль карти FrogPilot&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Стандартний вигляд з акцентом на вулицях&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Акцент на особливостях місцевості та ландшафту&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Мінімалістична, світла тема&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Мінімалістична, темна тема&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Оптимізовано для денної навігації&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Оптимізовано для нічної навігації&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Тільки супутникові знімки&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Гібридні супутникові знімки з позначками вулиць&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Темна тема, що підкреслює дорожні умови&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Індивідуальний гібридний супутниковий вигляд</translation>
+        <source>&lt;b&gt;Select the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai style&lt;br&gt;&lt;b&gt;BogPilot&lt;/b&gt;: Official BogPilot map style&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street-focused view&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Emphasizes outdoor and terrain features&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimalist, bright theme&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimalist, dark theme&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Optimized for daytime navigation&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Optimized for nighttime navigation&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Satellite imagery only&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Hybrid satellite imagery with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark theme emphasizing traffic conditions&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Customized hybrid satellite view</source>
+        <translation>&lt;b&gt;Виберіть стиль карти&lt;/b&gt; для «Навігація на openpilot» (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Стандартний openpilot&lt;/b&gt;: Стиль comma.ai за замовчуванням&lt;br&gt;&lt;b&gt;BogPilot&lt;/b&gt;: Офіційний стиль карти BogPilot&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Стандартний вигляд з акцентом на вулицях&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Акцент на особливостях місцевості та ландшафту&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Мінімалістична, світла тема&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Мінімалістична, темна тема&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Оптимізовано для денної навігації&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Оптимізовано для нічної навігації&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Тільки супутникові знімки&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Гібридні супутникові знімки з позначками вулиць&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Темна тема, що підкреслює дорожні умови&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Індивідуальний гібридний супутниковий вигляд</translation>
     </message>
     <message>
         <source>&lt;b&gt;Display the road name at the bottom of the driving screen&lt;/b&gt; using data from "OpenStreetMap (OSM)".</source>
@@ -5220,8 +5228,8 @@ Developer - Highly customizable settings for seasoned enthusiasts</source>
         <translation>Сховай мапу</translation>
     </message>
     <message>
-        <source>FrogPilot</source>
-        <translation>ЖабоПілот</translation>
+        <source>BogPilot</source>
+        <translation>BogPilot</translation>
     </message>
     <message>
         <source>&lt;b&gt;Set the lane-line thickness.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Default matches the MUTCD lane-line width standard of 10 centimeters.</source>
@@ -5265,6 +5273,22 @@ Developer - Highly customizable settings for seasoned enthusiasts</source>
     </message>
     <message>
         <source>Right</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Accel Graph on Top</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Swap the top-left stack&lt;/b&gt;: the acceleration request graph sits on top and the speed row (MAX, speed, limit) sits below it.&lt;br&gt;&lt;br&gt;Display only. Takes effect on the driving screen within 2 seconds.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bog to the Future</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Show flame trails behind fast-passing cars on the blind-spot display.&lt;/b&gt;&lt;br&gt;&lt;br&gt;When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds.&lt;br&gt;&lt;br&gt;Display only. It doesn't change how openpilot drives.&lt;br&gt;&lt;br&gt;On by default. Saved in &lt;b&gt;/data/params_bogpilot/BSMFlameTracks&lt;/b&gt; (1 on, 0 off), the same file the flames read.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

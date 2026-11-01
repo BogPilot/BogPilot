@@ -172,11 +172,15 @@ public:
   void setOffroadBrightness(int brightness) {
     offroad_brightness = std::clamp(brightness, 0, 100);
   }
+  // Keeps the panel powered through an offroad interactive timeout (screensaver).
+  // Slots on interactiveTimeout must set this before updateWakefulness calls setAwake.
+  void setDisplayHold(bool hold);
 
 private:
   bool awake = false;
   int interactive_timeout = 0;
   bool ignition_on = false;
+  bool display_hold = false;
 
   int offroad_brightness = BACKLIGHT_OFFROAD;
   int last_brightness = 0;

@@ -121,7 +121,6 @@ class Parser:
     for k in ['lead_prob', 'lane_lines_prob']:
       self.parse_binary_crossentropy(k, outs)
     self.parse_categorical_crossentropy('desire_state', outs, out_shape=(ModelConstants.DESIRE_PRED_WIDTH,))
-    self.parse_binary_crossentropy('lead_prob', outs)
     self.parse_mdn('lead', outs, in_N=ModelConstants.LEAD_MHP_N, out_N=ModelConstants.LEAD_MHP_SELECTION,
       out_shape=(ModelConstants.LEAD_TRAJ_LEN,ModelConstants.LEAD_WIDTH))
     return outs

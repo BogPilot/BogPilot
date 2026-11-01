@@ -43,8 +43,9 @@ def test_bogus_epoch_restores_from_file(tmp_path):
   set_fn.assert_called_once()
   got = set_fn.call_args[0][0]
   assert isinstance(got, datetime.datetime)
-  got_epoch = (got - datetime.datetime(1970, 1, 1)).total_seconds()
-  assert abs(got_epoch - _REAL_EPOCH) < 2
+  # Aware UTC, so timed.set_time never reads it as local time.
+  assert got.utcoffset() == datetime.timedelta(0)
+  assert abs(got.timestamp() - _REAL_EPOCH) < 2
 
 
 def test_already_correct_is_noop(tmp_path):

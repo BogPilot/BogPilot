@@ -1,0 +1,62 @@
+/* The Bog: BogPilot re-theme layer for The Pond.
+   Loaded after main.css. Every grey is sampled from the BogPilot boot screen
+   (frogpilot/assets/other_images/frogpilot_boot_logo.png, commit a72c24b). */
+:root {
+  /* boot-screen grey palette */
+  --bog-black:   #010101; /* boot background (dominant pixel, #000000/#010101) */
+  --bog-ink:     #080808; /* background falloff */
+  --bog-shadow:  #222222; /* lily-pad shadow edge */
+  --bog-dark:    #474747; /* darkest lily-pad tone */
+  --bog-mid-lo:  #686868; /* lily pad 25th pct */
+  --bog-mid:     #7f7f7f; /* lily pad median */
+  --bog-mid-hi:  #939393; /* lily pad 75th pct */
+  --bog-light:   #b9b9b9; /* lily pad highlight (95th pct) */
+  --bog-glow:    #e4e4e4; /* ring / wordmark anti-alias */
+  --bog-white:   #ffffff; /* ring + "BogPilot" wordmark */
+
+  --main-bg: var(--bog-black);
+  --sidebar-bg: var(--bog-shadow);
+  --secondary-bg: var(--bog-shadow);
+  --card-bg: var(--bog-shadow);
+  --input-bg: var(--bog-dark);
+  --sidebar-border-color: var(--bog-dark);
+  --selected-camera-bg: var(--bog-ink);
+  --track-color: var(--bog-dark);
+  --thumb-color: var(--bog-light);
+  --main-fg: var(--bog-mid-lo);   /* header bars + menu button: white text stays readable */
+  --sidebar-active-bg: #7f7f7f40;
+  --sidebar-title-fg: var(--bog-glow);
+  --accent-bg: var(--bog-mid-lo);
+  --accent-hover-bg: var(--bog-mid);
+  --color-confirm: var(--bog-mid-lo);
+  --color-confirm-hover: var(--bog-mid);
+  --text-muted: var(--bog-mid-hi);
+
+  --color-gray-200: var(--bog-glow);
+  --color-gray-300: var(--bog-light);
+  --color-gray-400: var(--bog-mid-hi);
+  --color-gray-500: var(--bog-mid);
+  --color-gray-600: var(--bog-mid-lo);
+  --color-gray-700: var(--bog-dark);
+  --color-gray-800: var(--bog-shadow);
+  --color-gray-900: var(--bog-ink);
+  /* --success-bg is The Pond's primary-button colour (Choose File, Save, Download...) */
+  --success-bg: var(--bog-mid-lo);
+  --success-hover-bg: var(--bog-mid);
+  /* real status colours (--success-fg/--success-text, danger, warning) intentionally unchanged */
+}
+
+/* hard-coded #c0c0c0 placeholders (navigation_destination.css:28, navigation_keys.css:88, tsk_manager.css:114) */
+#search-field::placeholder,
+.navkeys-input::placeholder,
+.tskkeys-input::placeholder { color: var(--bog-light); }
+
+/* attribution wraps onto two lines in the sidebar header */
+.title_text a { white-space: normal; line-height: 1.2; display: inline-block; }
+
+/* green accents that use the semantic --success-text var (sidebar.css:191, home.css:59) */
+.sidebar_header p { color: var(--bog-white); }
+.drivingStat:last-of-type h2 { color: var(--bog-light); }
+
+/* disk bar: home.css:9 green->yellow->orange->red gradient -> boot-screen grey ramp */
+.disk .progress { background: linear-gradient(to right, var(--bog-dark) 0%, var(--bog-mid) 60%, var(--bog-light) 85%, var(--bog-white) 100%); }

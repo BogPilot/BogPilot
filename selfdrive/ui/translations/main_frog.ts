@@ -1237,7 +1237,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;Automatically share anonymized driving data with FrogPilot to help improve it.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Only driving signals are shared: no video, no GPS or location, no VIN, and no identifiers. Turn this off to opt out.</source>
+        <source>&lt;b&gt;Help improve BogPilot&lt;/b&gt; by sharing a privacy-safe car fingerprint. BogPilot itself sends no data: this toggle does not upload anything. To share a fingerprint from your own logs, see github.com/BogPilot/bogpilot-fingerprint</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1254,6 +1254,14 @@
     </message>
     <message>
         <source>Tesla's browser blocks private addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x), so connect the comma through a router that hands out a non-private range.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Offroad Screensaver</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;After the offroad screen timeout, bounce the upload readout instead of turning the screen off.&lt;/b&gt;&lt;br&gt;&lt;br&gt;While uploads are pending, it shows the same realdata speed (Mbps) and data remaining as the offroad upload card. When that card says "Up to date", it bounces the BogPilot logo with those words.&lt;br&gt;&lt;br&gt;On by default. File &lt;b&gt;/data/params_bogpilot/OffroadScreensaver&lt;/b&gt; (1 on, 0 off). The prebuilt params store cannot take a new key.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4920,8 +4928,8 @@ Developer - Highly customizable settings for seasoned swamp pros</translation>
         <translation type="gpt-5-generated">Ribbit Map Style croak</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Select the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai style&lt;br&gt;&lt;b&gt;FrogPilot&lt;/b&gt;: Official FrogPilot map style&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street-focused view&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Emphasizes outdoor and terrain features&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimalist, bright theme&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimalist, dark theme&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Optimized for daytime navigation&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Optimized for nighttime navigation&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Satellite imagery only&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Hybrid satellite imagery with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark theme emphasizing traffic conditions&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Customized hybrid satellite view</source>
-        <translation type="gpt-5-generated">&lt;b&gt;Ribbit! Pick the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai lily-pad look, croak&lt;br&gt;&lt;b&gt;FrogPilot&lt;/b&gt;: Official FrogPilot swampy style, ribbit&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street view, hop-hop&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Terrain and trails, croak&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimal, bright pond sheen&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimal, night-swamp shade&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Tuned for sunny hops&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Tuned for moonlit hops&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Sky eyes only, ribbit&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Sky eyes with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark pond showing traffic ripples&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Custom hybrid sky-view, croak</translation>
+        <source>&lt;b&gt;Select the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai style&lt;br&gt;&lt;b&gt;BogPilot&lt;/b&gt;: Official BogPilot map style&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street-focused view&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Emphasizes outdoor and terrain features&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimalist, bright theme&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimalist, dark theme&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Optimized for daytime navigation&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Optimized for nighttime navigation&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Satellite imagery only&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Hybrid satellite imagery with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark theme emphasizing traffic conditions&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Customized hybrid satellite view</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Ribbit! Pick the map style&lt;/b&gt; for "Navigate on openpilot" (NOO):&lt;br&gt;&lt;br&gt;&lt;b&gt;Stock openpilot&lt;/b&gt;: Default comma.ai lily-pad look, croak&lt;br&gt;&lt;b&gt;BogPilot&lt;/b&gt;: Official BogPilot swampy style, ribbit&lt;br&gt;&lt;b&gt;Mapbox Streets&lt;/b&gt;: Standard street view, hop-hop&lt;br&gt;&lt;b&gt;Mapbox Outdoors&lt;/b&gt;: Terrain and trails, croak&lt;br&gt;&lt;b&gt;Mapbox Light&lt;/b&gt;: Minimal, bright pond sheen&lt;br&gt;&lt;b&gt;Mapbox Dark&lt;/b&gt;: Minimal, night-swamp shade&lt;br&gt;&lt;b&gt;Mapbox Navigation Day&lt;/b&gt;: Tuned for sunny hops&lt;br&gt;&lt;b&gt;Mapbox Navigation Night&lt;/b&gt;: Tuned for moonlit hops&lt;br&gt;&lt;b&gt;Mapbox Satellite&lt;/b&gt;: Sky eyes only, ribbit&lt;br&gt;&lt;b&gt;Mapbox Satellite Streets&lt;/b&gt;: Sky eyes with street labels&lt;br&gt;&lt;b&gt;Mapbox Traffic Night&lt;/b&gt;: Dark pond showing traffic ripples&lt;br&gt;&lt;b&gt;Mike's Personalized Style&lt;/b&gt;: Custom hybrid sky-view, croak</translation>
     </message>
     <message>
         <source>Road Name</source>
@@ -5136,8 +5144,8 @@ Developer - Highly customizable settings for seasoned swamp pros</translation>
         <translation type="gpt-5-generated">Ribbit! Stock openpilot, croak!</translation>
     </message>
     <message>
-        <source>FrogPilot</source>
-        <translation type="gpt-5-generated">FrogPilot Ribbit!</translation>
+        <source>BogPilot</source>
+        <translation type="gpt-5-generated">BogPilot Ribbit!</translation>
     </message>
     <message>
         <source>Mapbox Streets</source>
@@ -5265,6 +5273,22 @@ Developer - Highly customizable settings for seasoned swamp pros</translation>
     </message>
     <message>
         <source>Right</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Accel Graph on Top</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Swap the top-left stack&lt;/b&gt;: the acceleration request graph sits on top and the speed row (MAX, speed, limit) sits below it.&lt;br&gt;&lt;br&gt;Display only. Takes effect on the driving screen within 2 seconds.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bog to the Future</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Show flame trails behind fast-passing cars on the blind-spot display.&lt;/b&gt;&lt;br&gt;&lt;br&gt;When the red blind spot path on a side turns off and the radar sees the car in that lane going faster than 88 mph, two DeLorean-style flame tire tracks burn down that lane for 3 seconds.&lt;br&gt;&lt;br&gt;Display only. It doesn't change how openpilot drives.&lt;br&gt;&lt;br&gt;On by default. Saved in &lt;b&gt;/data/params_bogpilot/BSMFlameTracks&lt;/b&gt; (1 on, 0 off), the same file the flames read.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

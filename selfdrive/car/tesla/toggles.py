@@ -137,3 +137,31 @@ def ap1_standstill_engage(fingerprint: str | None, stored: str | bytes | None = 
     except OSError:
       stored = "1"
   return _as_text(stored) not in ("0", "false", "off")
+
+
+# AP1 stalk tip rounding (AP1TipRoundSet). File-backed, default OFF:
+# /data/params_bogpilot/AP1TipRoundSet ("1"/"true"/"on" = on; absent or
+# anything else = off). When on, Ap1RaiseHoldoff rounds the software set to a
+# whole display unit (km/h when IsMetric, else mph) before a ±1 / next-5 /
+# prev-5 tip, so a 14.8 mph tip-engage latch + full tip up gives 20, not 15.
+# Read once per process by frogpilot_vcruise; restart openpilot after changing.
+# Default ON on this test branch (bogpilot-tesla-vcruise-round): a missing
+# file means on, so no SSH is needed. Only an explicit 0/false/off disables.
+#   echo 0 > /data/params_bogpilot/AP1TipRoundSet   # off
+#   rm /data/params_bogpilot/AP1TipRoundSet         # on (default)
+AP1_TIP_ROUND_PATH = IC_INTEGRATION_DIR / "AP1TipRoundSet"
+_ap1_tip_round_path = AP1_TIP_ROUND_PATH
+
+
+def ap1_tip_round_set(fingerprint: str | None, stored: str | bytes | None = None) -> bool:
+  """AP1 only. Default on (test branch): off only when the file (or `stored`)
+  says 0/false/off. A missing, empty or unreadable file means on."""
+  from openpilot.selfdrive.car.tesla.values import CAR
+  if fingerprint != CAR.TESLA_AP1_MODELS:
+    return False
+  if stored is None:
+    try:
+      stored = _ap1_tip_round_path.read_text(encoding="utf-8", errors="replace") if _ap1_tip_round_path.is_file() else ""
+    except OSError:
+      stored = ""
+  return _as_text(stored).strip().lower() not in ("0", "false", "off")

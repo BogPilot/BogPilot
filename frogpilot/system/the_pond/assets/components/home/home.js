@@ -120,12 +120,12 @@ export function Home() {
       if (!state.data) return "";
       const { driveStats, softwareInfo } = state.data;
       return html`
-        <h1>The Pond</h1>
+        <h1>The Bog</h1>
 
         <div class="drivingStats">
           ${DriveStat("All Time", driveStats?.all, state.unit)}
           ${DriveStat("Past Week", driveStats?.week, state.unit)}
-          ${DriveStat("FrogPilot", driveStats?.frogpilot, state.unit)}
+          ${DriveStat("BogPilot", driveStats?.frogpilot, state.unit)}
         </div>
 
         <h2>Disk Usage</h2>

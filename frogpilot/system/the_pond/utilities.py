@@ -540,13 +540,16 @@ def has_preserve_attr(path: str):
 def list_file(path):
   return sorted(os.listdir(path), reverse=True)
 
+THEME_NAME_DISPLAY_OVERRIDES = {"bogpilot": "BogPilot"}
+
 def normalize_theme_name(name, for_path=False):
   name = name.replace("-user_created", "")
   if for_path:
     return name.lower().replace(" (", "-").replace(")", "").replace(" ", "-").replace("'", "").replace(".", "")
 
   parts = re.split(r"[-_]", name)
-  normalized_parts = [part.capitalize() for part in parts]
+  # str.capitalize() lowercases everything after the first letter, which would turn "BogPilot" into "Bogpilot".
+  normalized_parts = [THEME_NAME_DISPLAY_OVERRIDES.get(part.lower(), part.capitalize()) for part in parts]
 
   if "-" in name and len(normalized_parts) > 1:
     return f"{normalized_parts[0]} ({' '.join(normalized_parts[1:])})".replace(" Week", "")
