@@ -34,11 +34,11 @@ def model(center=lambda x: 0.0, probs=(0.9, 0.9, 0.9, 0.9), width=3.3, path=None
                          position=SimpleNamespace(x=list(xs[1:]), y=[p(x) for x in xs[1:]]))
 
 
-def test_default_lanes_on_and_ap1_only(toggle):
+def test_default_snap_on_and_ap1_only(toggle):
   assert not toggle.exists()
-  assert L.ic_lanes_mode(AP1) == L.MODE_LANES  # missing file = lanes on (test branch default), never snap
+  assert L.ic_lanes_mode(AP1) == L.MODE_SNAP  # missing file = snap (lane fix + shadow log), test branch default
   for word, mode in (("1", L.MODE_LANES), ("lanes\n", L.MODE_LANES), ("SNAP", L.MODE_SNAP),
-                     ("", L.MODE_LANES), ("junk", L.MODE_LANES),
+                     ("", L.MODE_SNAP), ("junk", L.MODE_SNAP),
                      ("0", L.MODE_OFF), ("false", L.MODE_OFF), ("OFF\n", L.MODE_OFF), (" 0 ", L.MODE_OFF)):
     toggle.write_text(word)
     assert L.ic_lanes_mode(AP1) == mode
@@ -50,7 +50,7 @@ def test_default_lanes_on_and_ap1_only(toggle):
   il = L.IcLanes(AP1)
   toggle.unlink()
   il.poll()
-  assert il.on and il.mode == L.MODE_LANES
+  assert il.on and il.mode == L.MODE_SNAP
 
 
 def test_lane_fit_unscaled_keeps_offset_and_sign():
@@ -157,6 +157,11 @@ def test_carcontroller_on_sends_unscaled(tesla_modules, toggle):  # noqa: F811
   assert v["DAS_virtualLaneC2"] == pytest.approx(0.001 / 2, abs=2e-5)  # curvature fallback, 1x
 
 
+def can_out(ctl, enabled=True):
+  CC, CS = _cc_inputs(enabled, [1], {0x239: stock(0x239)})
+  return ctl.update(CC, CS, 0, None)[1]
+
+
 def test_carcontroller_default_missing_file_sends_unscaled(tesla_modules, toggle):  # noqa: F811
   _, cc = tesla_modules
   assert not toggle.exists()
@@ -164,8 +169,9 @@ def test_carcontroller_default_missing_file_sends_unscaled(tesla_modules, toggle
   logs = []
   ctl.ic_lanes._log_fn = lambda n, kw: logs.append(kw)
   v = _sent_c2(ctl)
-  assert ctl.ic_lanes is not None and ctl.ic_lanes.mode == L.MODE_LANES
-  assert logs and logs[0]["mode"] == L.MODE_LANES and "lead" not in logs[0]  # no snap shadow by default
+  assert ctl.ic_lanes is not None and ctl.ic_lanes.mode == L.MODE_SNAP
+  assert logs and logs[0]["mode"] == L.MODE_SNAP and "lead" in logs[0]  # snap shadow log on by default
+  assert not [m for m in can_out(ctl) if m[0] == 0x309]  # still nothing sent for objects
   assert v["DAS_virtualLaneC2"] == pytest.approx(0.001 / 2, abs=2e-5)  # default on: unscaled
 
 

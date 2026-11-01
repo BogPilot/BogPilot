@@ -51,8 +51,8 @@ class CarController(CarControllerBase):
     # only; nothing from it reaches the actuator plan.
     self.ic_onroad = IcOnRoad(CP.carFingerprint) if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
     # AP1 only, test branch. /data/params_bogpilot/ICLanes: engaged 0x239 path
-    # from lane lines in cluster units (ic_lanes.py). Default on (missing file);
-    # 0/false/off = shipped mapping.
+    # from lane lines in cluster units (ic_lanes.py). Default on, snap (missing file);
+    # 1/lanes = no shadow log; 0/false/off = shipped mapping.
     self.ic_lanes = IcLanes(CP.carFingerprint) if CP.carFingerprint == CAR.TESLA_AP1_MODELS else None
     # Lazy SubMaster for radarState, only in ICLanes snap mode (shadow log).
     self._lanes_sm = None
