@@ -676,9 +676,14 @@ def test_carcontroller_toggle_off_sends_no_cluster(tesla_modules, monkeypatch, t
   assert any(m[0] == "DAS_steeringControl" for m in can)
 
 
-def test_carcontroller_uses_model_path_when_engaged(tesla_modules, monkeypatch):
+def test_carcontroller_uses_model_path_when_engaged(tesla_modules, monkeypatch, tmp_path):
   _, cc = tesla_modules
+  from openpilot.selfdrive.car.tesla import ic_lanes
   from openpilot.selfdrive.car.tesla.values import CAR
+  # Shipped model-path mapping: pin ICLanes off (it defaults on on this test branch).
+  off = tmp_path / "ICLanes"
+  off.write_text("0")
+  monkeypatch.setattr(ic_lanes, "_iclanes_path", off)
   ctl = cc.CarController("tesla_can", _cp(CAR.TESLA_AP1_MODELS), None)
   path = c.ModelPath(c0=0.5, c1=0.02, c2=-0.001, c3=0.0, view_range_m=55)
   monkeypatch.setattr(ctl, "_model_path_for_cluster", lambda enabled, ic_on: path if enabled and ic_on else None)

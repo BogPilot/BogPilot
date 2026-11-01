@@ -1,13 +1,15 @@
 """AP1 cluster lane placement fix (test branch). Display only.
 
-Off unless /data/params_bogpilot/ICLanes holds one of:
-  1 / lanes   Engaged 0x239 DAS_lanes path from openpilot's lane lines in the
+Default ON on this test branch: a missing /data/params_bogpilot/ICLanes means
+lanes mode, so no SSH is needed. The file can hold one of:
+  1 / lanes   (default) Engaged 0x239 DAS_lanes path from openpilot's lane lines in the
               cluster's own units (see "Mapping" below).
   snap        Same, plus a shadow log of where openpilot's lead would be drawn
               snapped to the center of the ego / left / right lane. Nothing is
               sent for objects: 0x309 is dropped by the branch panda whenever
-              the car moves or openpilot is engaged.
-Off (file absent / anything else): the shipped cluster.py mapping, unchanged.
+              the car moves or openpilot is engaged. Opt-in only (never default).
+  0 / false / off   The shipped cluster.py mapping, unchanged.
+A missing, empty, unreadable or unrecognized file means lanes (not snap).
 
 Why. While engaged the cluster draws openpilot's 0x239 lane path but stock
 Mobileye 0x309 objects. The shipped path was C0 = C1 = 0, C2 = 4 * model path
@@ -63,7 +65,10 @@ _iclanes_path = ICLANES_PATH
 MODE_OFF = "off"
 MODE_LANES = "lanes"
 MODE_SNAP = "snap"
-_MODE_WORDS = {"1": MODE_LANES, "true": MODE_LANES, "on": MODE_LANES, "lanes": MODE_LANES, "snap": MODE_SNAP}
+_MODE_WORDS = {"1": MODE_LANES, "true": MODE_LANES, "on": MODE_LANES, "lanes": MODE_LANES, "snap": MODE_SNAP,
+               "0": MODE_OFF, "false": MODE_OFF, "off": MODE_OFF}
+# Test branch default: lanes on. Snap (shadow log) stays opt-in.
+MODE_DEFAULT = MODE_LANES
 
 LANE_FIT_MAX_M = 60.0
 LANE_PROB_MIN = 0.0
@@ -79,7 +84,7 @@ SRC_CURV = "curvature"
 
 
 def ic_lanes_mode(fingerprint: Optional[str], stored=None) -> str:
-  """AP1 only. MODE_OFF unless the file (or `stored`) names a mode."""
+  """AP1 only. Default lanes (test branch); MODE_OFF only for 0/false/off."""
   from openpilot.selfdrive.car.tesla.values import CAR
   if fingerprint != CAR.TESLA_AP1_MODELS:
     return MODE_OFF
@@ -90,7 +95,7 @@ def ic_lanes_mode(fingerprint: Optional[str], stored=None) -> str:
       stored = ""
   if isinstance(stored, bytes):
     stored = stored.decode(errors="replace")
-  return _MODE_WORDS.get(stored.strip().lower(), MODE_OFF)
+  return _MODE_WORDS.get(stored.strip().lower(), MODE_DEFAULT)
 
 
 def _clip(v, lo_hi):
