@@ -1320,7 +1320,7 @@ def test_ap1_guard_drop_back_window_expires():
   assert out[-1] == (25, 6)
 
 
-# --- AP1TipRoundSet: whole-unit rounding before tip steps (default off) -------
+# --- AP1TipRoundSet: whole-unit rounding before tip steps (toggle default on) --
 
 KPH = CV.KPH_TO_MS
 
@@ -1429,20 +1429,24 @@ def test_holdoff_default_round_whole_off():
   assert h.round_whole is False and h.is_metric is False
 
 
-def test_ap1_tip_round_set_toggle_default_off(tmp_path, monkeypatch):
+def test_ap1_tip_round_set_toggle_default_on(tmp_path, monkeypatch):
   from openpilot.selfdrive.car.tesla import toggles
   from openpilot.selfdrive.car.tesla.values import CAR
   path = tmp_path / "AP1TipRoundSet"
   monkeypatch.setattr(toggles, "_ap1_tip_round_path", path)
-  assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is False  # absent → off
-  for on in ("1", "true", "on", "ON\n"):
+  assert not path.exists()
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is True  # absent → on (test branch default)
+  for on in ("1", "true", "on", "ON\n", "", "garbage"):
     path.write_text(on)
     assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is True
-  for off in ("0", "false", "off", "", "garbage"):
+  for off in ("0", "false", "off", "OFF\n", " 0 ", "False"):
     path.write_text(off)
     assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS) is False
-  path.write_text("1")
-  assert toggles.ap1_tip_round_set(CAR.TESLA_AP2_MODELS) is False
+  path.unlink()
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP2_MODELS) is False  # AP1 only, even by default
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP2_MODELS, stored="1") is False
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS, stored="0") is False
+  assert toggles.ap1_tip_round_set(CAR.TESLA_AP1_MODELS, stored=b"1") is True
   assert toggles.ap1_tip_round_set("TESLA_AP1_MODELS") is True  # frogpilot_toggles.car_model string
 
 

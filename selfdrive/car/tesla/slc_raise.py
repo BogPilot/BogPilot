@@ -191,7 +191,8 @@ class Ap1RaiseHoldoff:
   DT_DEFAULT = 0.05  # model tick; avoid importing realtime here
 
   def __init__(self, round_whole: bool = False, is_metric: bool = False):
-    # AP1TipRoundSet (default off): round the tip base to a whole display unit
+    # AP1TipRoundSet (toggle default on for this test branch; the class default
+    # stays off and frogpilot_vcruise sets it): round the tip base to a whole display unit
     # before ±1 / next-5 / prev-5. Caller may update both attributes.
     self.round_whole = bool(round_whole)
     self.is_metric = bool(is_metric)

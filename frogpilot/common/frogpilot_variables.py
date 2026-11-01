@@ -587,7 +587,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   # /data/params_bogpilot/EnableICIntegration (see selfdrive/car/tesla/toggles.py).
   # RegenComfortBrake is likewise file-backed at
   # /data/params_bogpilot/RegenComfortBrake (see selfdrive/car/tesla/regen_brake.py).
-  # AP1TipRoundSet is likewise file-backed (default off) at
+  # AP1TipRoundSet is likewise file-backed (default on for this test branch) at
   # /data/params_bogpilot/AP1TipRoundSet (see selfdrive/car/tesla/toggles.py).
   # LastKnownTime is file-backed at /data/params_bogpilot/LastKnownTime
   # (see common/bogpilot_clock.py); device-global wall-clock restore, not a toggle.

@@ -24,7 +24,7 @@ class FrogPilotVCruise:
     self.ap1_raise_holdoff = Ap1RaiseHoldoff()
     self.ap1_limit_guard = Ap1SlcLimitGuard()
     self._ap1_tip_override_active = False
-    # AP1TipRoundSet (file-backed, default off); read once on the first AP1 tick.
+    # AP1TipRoundSet (file-backed, default on for this test branch); read once on the first AP1 tick.
     self._ap1_tip_round = None
 
   def update(self, gps_position, now, time_validated, v_cruise, v_ego, sm, frogpilot_toggles):
